@@ -1,4 +1,9 @@
-import { Prisma, type RetailDeclineReason, type RetailParcelState } from "@prisma/client";
+import {
+  Prisma,
+  type RetailDeclineReason,
+  type RetailParcelState,
+  type RetailPieceStatus,
+} from "@prisma/client";
 import { z } from "zod";
 
 import { AppError } from "@/lib/errors";
@@ -11,6 +16,7 @@ import { createSalesReturn } from "@/modules/sales/return.service";
 
 import { settleExchangePieces } from "./exchanges.service";
 import { putBackOnReserve } from "./reserve";
+import { shopEventTx } from "./shop-events";
 
 /*
  * Business > Returns (plan v6 sec 8.4 to 8.8): the parcels retail stores sent
@@ -390,6 +396,19 @@ export async function resolveHold(
         });
       }
     }
+    const came = new Map<string, number>();
+    for (const p of pieces) came.set(p.lineId, (came.get(p.lineId) ?? 0) + 1);
+    const resolvedEventId = await shopEventTx(tx, parcel.list.store.id, "return.parcel.resolved", {
+      returnListId: parcel.list.returnListId,
+      consignmentId: parcel.consignmentId,
+      externalOrderId: parcel.order.order.externalOrderId,
+      result: input.missing ? "PARCEL_MISSING" : "IN_RETURN_STOCK",
+      pieces: [...came].map(([id, quantity]) => {
+        const line = lines.get(id)!;
+        return { lineId: line.lineId, sku: line.variant.sku, quantity };
+      }),
+    });
+    await tx.retailReturnParcel.update({ where: { id: parcel.id }, data: { resolvedEventId } });
     await auditInCompany(
       ctx,
       meta,
@@ -530,12 +549,26 @@ export async function checkParcel(
     if (d.decision === "APPROVE") {
       await ctx.db.retailReturnPiece.update({ where: { id: piece.id }, data: { atPacking: true } });
     } else {
-      await ctx.db.retailOrderLine.update({
+      const line = await ctx.db.retailOrderLine.update({
         where: { id: piece.reservedForLineId },
         data: { waitingStock: true },
+        include: {
+          variant: { select: { sku: true } },
+          order: { select: { storeId: true, order: { select: { externalOrderId: true } } } },
+        },
+      });
+      await shopEventTx(prisma, line.order.storeId, "order.line.short", {
+        externalOrderId: line.order.order.externalOrderId,
+        lineId: line.lineId,
+        sku: line.variant.sku,
+        reason: "RETURN_PIECE_FAILED_CHECK",
       });
     }
   }
+  await piecesDecided(
+    ctx,
+    input.decisions.map((d) => d.pieceId),
+  );
   const left = await ctx.db.retailReturnPiece.count({
     where: { parcelId: parcel.id, status: "WAITING" },
   });
@@ -599,6 +632,82 @@ async function creditApproved(
   } catch (error) {
     throw new CreditedThen(error);
   }
+}
+
+/**
+ * return.piece.decided to the site, one per piece (site-changes 2.5.4), with
+ * the claim details; an exchange's piece carries its exchangeId and no credit
+ * (its money comes through the exchange.* events). A correction names the
+ * event it reverses. The piece keeps the event's id for GET /returns.
+ */
+async function piecesDecided(ctx: CompanyContext, pieceIds: string[], reverses = false) {
+  const pieces = await ctx.db.retailReturnPiece.findMany({
+    where: { id: { in: pieceIds } },
+    include: {
+      line: { select: { lineId: true } },
+      variant: { select: { sku: true } },
+      parcel: {
+        include: {
+          list: true,
+          order: {
+            select: {
+              order: { select: { externalOrderId: true } },
+              exchange: { select: { number: true } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  for (const x of pieces) {
+    await prisma.$transaction(async (tx) => {
+      const exchange = x.parcel.order.exchange;
+      const eventId = await shopEventTx(tx, x.parcel.list.storeId, "return.piece.decided", {
+        ...pieceEventData(x),
+        ...(exchange ? { exchangeId: exchange.number } : {}),
+        ...(reverses && x.eventId ? { reverses: x.eventId } : {}),
+      });
+      await tx.retailReturnPiece.update({
+        where: { id: x.id },
+        data: { eventId, reversesEventId: reverses ? x.eventId : null },
+      });
+    });
+  }
+}
+
+/** One piece's decision as the site sees it (the webhook and GET /returns). */
+export function pieceEventData(x: {
+  id: string;
+  status: RetailPieceStatus;
+  atPacking: boolean;
+  reason: RetailDeclineReason | null;
+  differentPiece: boolean;
+  price: Prisma.Decimal;
+  decidedAt: Date | null;
+  line: { lineId: string };
+  variant: { sku: string };
+  parcel: {
+    consignmentId: string;
+    list: { returnListId: string; courier: string; handedBackAt: Date };
+    order: { order: { externalOrderId: string | null }; exchange: { number: string } | null };
+  };
+}) {
+  return {
+    pieceId: x.id,
+    returnListId: x.parcel.list.returnListId,
+    consignmentId: x.parcel.consignmentId,
+    courier: x.parcel.list.courier,
+    handedBackAt: x.parcel.list.handedBackAt.toISOString().slice(0, 10),
+    externalOrderId: x.parcel.order.order.externalOrderId,
+    lineId: x.line.lineId,
+    sku: x.variant.sku,
+    status: x.atPacking ? "APPROVED_AT_PACKING" : x.status,
+    reason: x.reason,
+    differentPiece: x.differentPiece,
+    credit: x.status === "APPROVED" && !x.parcel.order.exchange ? Number(x.price.toFixed(2)) : 0,
+    decidedAt: x.decidedAt?.toISOString() ?? null,
+  };
 }
 
 /** A step after the store's credit failed: the credit stands, so nothing is undone. */

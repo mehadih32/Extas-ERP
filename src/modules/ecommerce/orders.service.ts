@@ -33,7 +33,9 @@ import {
   OPEN_STATES,
   replacedLines,
 } from "@/modules/retail/exchanges.service";
+import { ownerStandIn } from "@/modules/bug-guard/owner";
 import { takeFromReserveTx } from "@/modules/retail/reserve";
+import { shopEventTx } from "@/modules/retail/shop-events";
 import { storePrices } from "@/modules/retail/stores.service";
 
 import { amount, variantActive } from "./catalog.service";
@@ -712,7 +714,7 @@ async function assertLinesReadyTx(tx: Tx, ctx: CompanyContext, retailOrderId: st
     include: {
       reservedPieces: { select: { status: true } },
       variant: { select: { sku: true } },
-      order: { include: { order: { select: { warehouseId: true } } } },
+      order: { include: { order: { select: { warehouseId: true, externalOrderId: true } } } },
     },
   });
   const unchecked = lines.filter((l) => l.reservedPieces.some((p) => p.status === "WAITING"));
@@ -739,8 +741,64 @@ async function assertLinesReadyTx(tx: Tx, ctx: CompanyContext, retailOrderId: st
       );
     }
     // Stock came: the line is filled.
-    await tx.retailOrderLine.update({ where: { id: line.id }, data: { waitingStock: false } });
+    await fillLineTx(tx, line);
   }
+}
+
+/** A waiting line has stock again: it goes on, and the site hears order.line.filled. */
+async function fillLineTx(
+  tx: Tx,
+  line: {
+    id: string;
+    lineId: string;
+    variant: { sku: string };
+    order: { storeId: string; order: { externalOrderId: string | null } };
+  },
+) {
+  const claimed = await tx.retailOrderLine.updateMany({
+    where: { id: line.id, waitingStock: true },
+    data: { waitingStock: false },
+  });
+  if (claimed.count !== 1) return;
+  await shopEventTx(tx, line.order.storeId, "order.line.filled", {
+    externalOrderId: line.order.order.externalOrderId,
+    lineId: line.lineId,
+    sku: line.variant.sku,
+  });
+}
+
+/**
+ * With the shop clock: store lines waiting for stock (WAIT after a failed
+ * packing check) are filled as soon as the SKU is in stock again.
+ */
+export async function fillWaitingLines() {
+  const lines = await prisma.retailOrderLine.findMany({
+    where: { waitingStock: true, cancelledAt: null, order: { billedAt: null } },
+    include: {
+      variant: { select: { sku: true } },
+      order: {
+        include: {
+          order: { select: { externalOrderId: true, warehouseId: true, status: true } },
+        },
+      },
+    },
+    take: 200,
+  });
+  let filled = 0;
+  for (const line of lines) {
+    if (line.order.order.status === "CANCELLED") continue;
+    const ctx = await ownerStandIn(line.companyId, null, "Retail lines waiting for stock");
+    if (!ctx) continue;
+    const available = await availableByVariant(
+      ctx,
+      [line.variantId],
+      line.order.order.warehouseId ?? undefined,
+    );
+    if ((available.get(line.variantId) ?? 0) < 0) continue;
+    await prisma.$transaction((tx) => fillLineTx(tx, line));
+    filled++;
+  }
+  return filled;
 }
 
 /**

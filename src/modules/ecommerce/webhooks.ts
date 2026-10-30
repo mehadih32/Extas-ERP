@@ -12,6 +12,7 @@ import { assertMayWrite } from "@/lib/read-only";
 import type { CompanyContext } from "@/modules/auth/context";
 import { DeferJob, enqueueJobs, retryDelayMs } from "@/modules/jobs/queue";
 
+import { RETAIL_EVENT_TYPES } from "@/modules/retail/shop-events";
 import { pricesOfStore } from "@/modules/retail/stores.service";
 
 import { catalogVariantOf, stockRowOf, storeCatalogVariantOf } from "./catalog.service";
@@ -68,7 +69,13 @@ const OVERLAP_MS = 5 * 60_000;
 /** Events are written this many at a time. */
 const CHUNK = 500;
 
-export const EVENT_TYPES = ["stock.changed", "variant.changed", "summary.missing", "ping"] as const;
+export const EVENT_TYPES = [
+  "stock.changed",
+  "variant.changed",
+  "summary.missing",
+  "ping",
+  ...RETAIL_EVENT_TYPES,
+] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 /** What the shop receives: the body of every webhook. */
@@ -605,6 +612,11 @@ export async function runWebhookSendJob(job: BackgroundJob) {
   const shop = event.integration;
   if (!shop || !shop.isActive || !shop.company.isActive) {
     return closeEvent(event, "IGNORED", "The shop is switched off.", now);
+  }
+  // A restore drill copy or a copy on standby never sends anything to a shop.
+  const { onDrill, onStandby } = await import("@/modules/backups/standby");
+  if ((await onDrill()) || (await onStandby())) {
+    return closeEvent(event, "IGNORED", "This copy of the ERP sends nothing to shops.", now);
   }
   if (!shop.webhookUrl) {
     return closeEvent(event, "IGNORED", "The shop has no webhook address.", now);

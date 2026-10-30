@@ -25,6 +25,13 @@ export async function ecommerceWebhookTick(now: Date = new Date()) {
     await summaryGuards(now).catch((error) =>
       console.error("[retail] summary guard failed", error),
     );
+    // Retail sites: lines filled again, payments recorded, holds (site-changes 2.8).
+    const { fillWaitingLines } = await import("./orders.service");
+    await fillWaitingLines().catch((error) => console.error("[retail] line fill failed", error));
+    const { retailSiteWatch } = await import("@/modules/retail/site-watch");
+    await retailSiteWatch(now).catch((error) =>
+      console.error("[retail] site notices failed", error),
+    );
     // The night summary of the stores, its alerts and the Saturday advice (plan v6 sec 13).
     const { retailWatch } = await import("@/modules/retail/watch.service");
     await retailWatch(now).catch((error) => console.error("[retail] night watch failed", error));

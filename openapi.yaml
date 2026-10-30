@@ -865,6 +865,94 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /returns/claims:
+    get:
+      tags: [Returns]
+      summary: Pieces and parcels found missing or damaged, for the courier claim
+      description: |
+        Only for a shop linked to a retail store (404 otherwise). The owner's decisions made on the
+        days from `from` to `to` (at most 92 days; the last 30 by default) with a reason the courier may
+        be to blame for: PARCEL_MISSING (the whole parcel never came; `pieceId` is null), PIECE_MISSING
+        and STAIN_OR_DAMAGE. Each carries what a claim needs: the return list, the consignment, the
+        courier, the courier's date and when the owner decided it.
+      operationId: listReturnClaims
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: The claims, oldest decision first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, claims]
+                properties:
+                  from: { type: string, format: date }
+                  to: { type: string, format: date }
+                  claims:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        reason:
+                          { type: string, enum: [PARCEL_MISSING, PIECE_MISSING, STAIN_OR_DAMAGE] }
+                        returnListId: { type: string }
+                        consignmentId: { type: string }
+                        courier: { type: string }
+                        handedBackAt: { type: string, format: date }
+                        externalOrderId: { type: string }
+                        pieceId: { type: [string, "null"] }
+                        lineId: { type: [string, "null"] }
+                        sku: { type: [string, "null"] }
+                        eventId: { type: [string, "null"] }
+                        decidedAt: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /returns/summary:
+    get:
+      tags: [Returns]
+      summary: One day's returns, for the site's nightly compare
+      description: |
+        Only for a shop linked to a retail store (404 otherwise). For `date` (today by default):
+        parcels and pieces the courier handed back that day, pieces approved that day with their
+        `credit` (exchange pieces settle through the exchange events and are not in it), pieces
+        declined, parcels found missing, and what waits now (parcels on Hold, pieces in Return stock).
+      operationId: getReturnsSummary
+      parameters:
+        - { name: date, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: The day's counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  handedBack:
+                    {
+                      type: object,
+                      properties: { parcels: { type: integer }, pieces: { type: integer } },
+                    }
+                  approved:
+                    {
+                      type: object,
+                      properties: { pieces: { type: integer }, credit: { type: number } },
+                    }
+                  declined: { type: object, properties: { pieces: { type: integer } } }
+                  missingParcels: { type: integer }
+                  now:
+                    type: object
+                    properties:
+                      parcelsOnHold: { type: integer }
+                      piecesInReturnStock: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /exchanges:
     get:
       tags: [Returns]
@@ -1350,6 +1438,518 @@ webhooks:
                     message: { type: string }
                     shop: { type: string }
                     company: { type: string }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  delivery.identified:
+    post:
+      summary: The ERP's answer for a retail store's delivery result
+      description: |
+        Only for a shop linked to a retail store. GREEN, YELLOW or ORANGE, with the lines it thinks are coming back (as the answer to PUT /orders/{externalOrderId}/delivery). Sent when the result or the answer changes.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: delivery.identified }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    externalOrderId: { type: string }
+                    status: { type: string, enum: [DELIVERED, PARTIAL, RETURNED] }
+                    identification: { type: string, enum: [GREEN, YELLOW, ORANGE] }
+                    returningLines: { type: [array, "null"], items: { type: object } }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  return.parcel.resolved:
+    post:
+      summary: The owner ticked a Hold parcel
+      description: |
+        Only for a shop linked to a retail store. The pieces that came back go to Return stock (IN_RETURN_STOCK), or the parcel never came (PARCEL_MISSING, the store's loss). No money changes.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: return.parcel.resolved }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    returnListId: { type: string }
+                    consignmentId: { type: string }
+                    externalOrderId: { type: string }
+                    result: { type: string, enum: [IN_RETURN_STOCK, PARCEL_MISSING] }
+                    pieces: { type: array, items: { type: object } }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  return.piece.decided:
+    post:
+      summary: The owner's check of one returned piece
+      description: |
+        Only for a shop linked to a retail store. APPROVED (credit: the price the store paid, off what it owes), APPROVED_AT_PACKING (the same, passed at packing), DECLINED with a reason (no money change, the store's loss) or WAITING (a decision undone). A piece of an exchange carries exchangeId and credit 0: its money comes through the exchange events. A correction carries `reverses`: undo that event's effect, then apply this one. Keep these ids for good.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: return.piece.decided }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    pieceId: { type: string }
+                    returnListId: { type: string }
+                    consignmentId: { type: string }
+                    courier: { type: string }
+                    handedBackAt: { type: string, format: date }
+                    externalOrderId: { type: string }
+                    lineId: { type: string }
+                    sku: { type: string }
+                    status:
+                      { type: string, enum: [WAITING, APPROVED, APPROVED_AT_PACKING, DECLINED] }
+                    reason: { type: [string, "null"] }
+                    differentPiece: { type: boolean }
+                    credit: { type: number }
+                    decidedAt: { type: [string, "null"], format: date-time }
+                    exchangeId: { type: string }
+                    reverses: { type: string }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  order.line.short:
+    post:
+      summary: A Return stock piece on an order failed the packing check
+      description: |
+        Only for a shop linked to a retail store. The line, and the order, wait. Answer with PATCH /orders/{externalOrderId}/lines/{lineId}: WAIT, REPLACE or CANCEL.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: order.line.short }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    externalOrderId: { type: string }
+                    lineId: { type: string }
+                    sku: { type: string }
+                    reason: { type: string, const: RETURN_PIECE_FAILED_CHECK }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  order.line.filled:
+    post:
+      summary: A waiting line has stock again
+      description: |
+        Only for a shop linked to a retail store. The order goes on.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: order.line.filled }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    externalOrderId: { type: string }
+                    lineId: { type: string }
+                    sku: { type: string }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  exchange.settled:
+    post:
+      summary: An exchange's old piece came back in time and was approved
+      description: |
+        Only for a shop linked to a retail store. Only the difference: kind EXTRA (owes more by amount), ADJUSTMENT (owes less) or EVEN.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: exchange.settled }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    exchangeId: { type: string }
+                    lineId: { type: string }
+                    date: { type: string, format: date }
+                    amount: { type: number }
+                    kind: { type: string, enum: [EXTRA, ADJUSTMENT, EVEN] }
+                    reverses: { type: string }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  exchange.billed:
+    post:
+      summary: An exchange's new piece is billed in full
+      description: |
+        Only for a shop linked to a retail store. reason DEADLINE_PASSED, OLD_PIECE_DECLINED or NEW_PIECE_DECLINED; owes more by amount. A bill taken back (the piece was back in time after all) carries `reverses` and a negative amount.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: exchange.billed }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    exchangeId: { type: string }
+                    lineId: { type: string }
+                    date: { type: string, format: date }
+                    amount: { type: number }
+                    reason: { type: string }
+                    reverses: { type: string }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  exchange.credited:
+    post:
+      summary: A piece came back after its exchange was billed, and was approved
+      description: |
+        Only for a shop linked to a retail store. Owes less by amount (negative).
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: exchange.credited }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    exchangeId: { type: string }
+                    lineId: { type: string }
+                    date: { type: string, format: date }
+                    amount: { type: number }
+                    reason: { type: [string, "null"] }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  exchange.cancelled:
+    post:
+      summary: An exchange line ended with no money
+      description: |
+        Only for a shop linked to a retail store. For example the customer refused the parcel and the new piece came back and was approved.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: exchange.cancelled }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    exchangeId: { type: string }
+                    lineId: { type: string }
+                    date: { type: string, format: date }
+                    amount: { type: number }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  account.hold:
+    post:
+      summary: The store went on hold
+      description: |
+        Only for a shop linked to a retail store. It owes money and 30 days passed after its last payment: new orders answer 409 ACCOUNT_ON_HOLD (exchanges still go through).
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: account.hold }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    balance: { type: number }
+                    waitingCheck: { type: number }
+                    reason: { type: [string, "null"] }
+                    lastPaymentAt: { type: [string, "null"], format: date }
+                    releasedUntil: { type: [string, "null"], format: date-time }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  account.released:
+    post:
+      summary: The store is no longer on hold
+      description: |
+        Only for a shop linked to a retail store. A payment came, or the owner lifted the hold for some days (releasedUntil).
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: account.released }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    balance: { type: number }
+                    waitingCheck: { type: number }
+                    reason: { type: [string, "null"] }
+                    lastPaymentAt: { type: [string, "null"], format: date }
+                    releasedUntil: { type: [string, "null"], format: date-time }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  payment.recorded:
+    post:
+      summary: Accounts recorded money from the store
+      description: |
+        Only for a shop linked to a retail store. Owes less by amount. A payment reversed later (a bounced cheque) comes again with `reverses` and a negative amount. Keep these ids for good.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: payment.recorded }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    paymentId: { type: string }
+                    number: { type: string }
+                    date: { type: string, format: date }
+                    amount: { type: number }
+                    reverses: { type: string }
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  switch.orders.moved:
+    post:
+      summary: The old website orders the ERP moved to the store on the switch day
+      description: |
+        Only for a shop linked to a retail store. Each order with what moved: billed to the store at its shop prices (out with the courier), customer money moved to the store's account (advances and unpaid cash on delivery). Book the same on the site.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: switch.orders.moved }
+                createdAt: { type: string, format: date-time }
+                data:
+                  type: object
+                  properties:
+                    eventId: { type: string }
+                    switchedAt: { type: string, format: date-time }
+                    orders: { type: array, items: { type: object } }
       responses:
         "2XX":
           description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.

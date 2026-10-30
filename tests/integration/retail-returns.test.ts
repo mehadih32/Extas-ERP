@@ -6,15 +6,20 @@ import { GET as accountRoute } from "@/app/api/v1/ecommerce/account/route";
 import { PUT as deliveryRoute } from "@/app/api/v1/ecommerce/orders/[externalOrderId]/delivery/route";
 import { POST as ordersRoute } from "@/app/api/v1/ecommerce/orders/route";
 import { POST as returnListsRoute } from "@/app/api/v1/ecommerce/return-lists/route";
+import { GET as claimsRoute } from "@/app/api/v1/ecommerce/returns/claims/route";
 import { GET as returnsRoute } from "@/app/api/v1/ecommerce/returns/route";
+import { GET as summaryRoute } from "@/app/api/v1/ecommerce/returns/summary/route";
 import { POST as shipmentsRoute } from "@/app/api/v1/ecommerce/shipments/route";
 import { prisma } from "@/lib/prisma";
 import { storeDashboard } from "@/modules/retail/dashboards.service";
+import { reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { setPin } from "@/modules/ai/settings.service";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { checkParcel, resolveHold, returnsPage } from "@/modules/retail/returns.service";
 import * as stores from "@/modules/retail/stores.service";
+import { retailSiteWatch } from "@/modules/retail/site-watch";
 import { retailWatch } from "@/modules/retail/watch.service";
+import { receivePayment } from "@/modules/sales/payment.service";
 
 import { callShop, type Shop, setupShop } from "./ecommerce-helpers";
 import { resetDb } from "./helpers";
@@ -269,5 +274,126 @@ run("Retail store's returns (plan v6, part 2)", () => {
     expect(await night("2026-11-30")).toContain(
       `Extas Retail owes BDT ${owes.toLocaleString("en-IN", { minimumFractionDigits: 2 })} at the end of the month, of which BDT 1,875.00 is returns waiting for the check.`,
     );
+  });
+
+  /** What the ERP queued for the site, oldest first. */
+  const sent = async (type: string) =>
+    (
+      await prisma.webhookEvent.findMany({
+        where: { direction: "OUTGOING", eventType: type },
+        orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
+      })
+    ).map((e) => ({ id: e.id, data: (e.payload as { data: Record<string, unknown> }).data }));
+
+  it("tells the site each result and decision, with the ids the pull calls show, and lists the claims", async () => {
+    await place("WEB-8");
+    await delivery("WEB-8", { status: "PARTIAL", collected: 1310 });
+    // The same result again tells nothing new.
+    await delivery("WEB-8", { status: "PARTIAL", collected: 1310 });
+    const identified = await sent("delivery.identified");
+    expect(identified).toHaveLength(1);
+    expect(identified[0]!.data).toMatchObject({
+      externalOrderId: "WEB-8",
+      identification: "GREEN",
+      returningLines: [
+        { lineId: "WEB-8-1", quantity: 1 },
+        { lineId: "WEB-8-3", quantity: 1 },
+      ],
+    });
+    await handBack("RL-8", [{ consignmentId: "PTH-WEB-8", externalOrderId: "WEB-8" }]);
+    const parcel = (await returnsPage(shop.owner)).waiting[0]!;
+    const [first, second] = parcel.pieces;
+    await checkParcel(shop.owner, parcel.id, {
+      decisions: [
+        { pieceId: first!.id, decision: "APPROVE" },
+        { pieceId: second!.id, decision: "DECLINE", reason: "PIECE_MISSING" },
+      ],
+    });
+    const decided = await sent("return.piece.decided");
+    expect(decided.map((e) => [e.data.status, e.data.credit, e.data.reason])).toEqual([
+      ["APPROVED", 625, null],
+      ["DECLINED", 0, "PIECE_MISSING"],
+    ]);
+    expect(decided[1]!.data).toMatchObject({
+      eventId: decided[1]!.id,
+      returnListId: "RL-8",
+      consignmentId: "PTH-WEB-8",
+      courier: "Pathao",
+      handedBackAt: "2026-11-05",
+    });
+    const pulled = await callShop(shop, returnsRoute, { path: "/returns" });
+    expect(pulled.body.data[0].pieces.map((p: { eventId: string }) => p.eventId)).toEqual(
+      decided.map((e) => e.id),
+    );
+
+    const today = new Date().toISOString().slice(0, 10);
+    const claims = await callShop(shop, claimsRoute, { path: "/returns/claims" });
+    expect(claims.status, JSON.stringify(claims.body)).toBe(200);
+    expect(claims.body.claims).toEqual([
+      expect.objectContaining({
+        reason: "PIECE_MISSING",
+        consignmentId: "PTH-WEB-8",
+        lineId: "WEB-8-3",
+        eventId: decided[1]!.id,
+      }),
+    ]);
+    expect(
+      (await callShop(shop, claimsRoute, { path: "/returns/claims?from=2026-02-30" })).status,
+    ).toBe(422);
+    const summary = await callShop(shop, summaryRoute, { path: `/returns/summary?date=${today}` });
+    expect(summary.body).toMatchObject({
+      approved: { pieces: 1, credit: 625 },
+      declined: { pieces: 1 },
+      now: { parcelsOnHold: 0, piecesInReturnStock: 0 },
+    });
+    const handed = await callShop(shop, summaryRoute, { path: "/returns/summary?date=2026-11-05" });
+    expect(handed.body).toMatchObject({ handedBack: { parcels: 1, pieces: 2 } });
+  });
+
+  it("tells the site a Hold parcel's result, and a missing parcel is a claim", async () => {
+    await place("WEB-9");
+    await delivery("WEB-9", { status: "PARTIAL", collected: 3000 });
+    await handBack("RL-9", [{ consignmentId: "PTH-WEB-9", externalOrderId: "WEB-9" }]);
+    const held = (await returnsPage(shop.owner)).hold[0]!;
+    await resolveHold(shop.owner, held.id, { missing: true });
+    const [resolved] = await sent("return.parcel.resolved");
+    expect(resolved!.data).toMatchObject({
+      consignmentId: "PTH-WEB-9",
+      result: "PARCEL_MISSING",
+      pieces: [],
+    });
+    const claims = await callShop(shop, claimsRoute, { path: "/returns/claims" });
+    expect(claims.body.claims).toEqual([
+      expect.objectContaining({ reason: "PARCEL_MISSING", pieceId: null, eventId: resolved!.id }),
+    ]);
+  });
+
+  it("tells the site of payments, a reversed payment, and the hold", async () => {
+    await prisma.user.update({ where: { id: shop.owner.user.id }, data: { isSuperAdmin: true } });
+    await place("WEB-10");
+    // The first pass only takes its place.
+    await retailSiteWatch();
+    await receivePayment(shop.accounts, { partyId: store.partyId, amount: 500, method: "CASH" });
+    await retailSiteWatch();
+    await retailSiteWatch();
+    const paid = await sent("payment.recorded");
+    expect(paid).toHaveLength(1);
+    expect(paid[0]!.data).toMatchObject({ amount: 500 });
+    await reverseJournalEntry(prisma, paid[0]!.id, { description: "Cheque bounced" });
+    await retailSiteWatch();
+    const again = await sent("payment.recorded");
+    expect(again[1]!.data).toMatchObject({ amount: -500, reverses: paid[0]!.id });
+
+    // 31 days after the bill, with no payment standing: on hold, once.
+    await prisma.journalEntry.updateMany({
+      where: { companyId: shop.company.id, sourceType: "SALE" },
+      data: { date: new Date(Date.now() - 31 * 86_400_000) },
+    });
+    await retailSiteWatch();
+    await retailSiteWatch();
+    expect(await sent("account.hold")).toHaveLength(1);
+    await receivePayment(shop.accounts, { partyId: store.partyId, amount: 100, method: "CASH" });
+    await retailSiteWatch();
+    expect((await sent("account.released"))[0]!.data).toMatchObject({ balance: 1775 });
   });
 });

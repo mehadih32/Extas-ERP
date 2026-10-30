@@ -81,13 +81,13 @@ export function EcommerceScreen({ page }: { page: EcommercePage }) {
                   <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
                     <dt className="text-muted-foreground">Net sales</dt>
                     <dd className="text-right tabular-nums">
-                      <Amount>{money(s.sales)}</Amount>
+                      <Amount>{money(s.sales, currency)}</Amount>
                     </dd>
                     <dt className="text-muted-foreground">Profit or loss</dt>
                     <dd
                       className={`text-right tabular-nums ${Number(s.profit) < 0 ? "text-destructive" : ""}`}
                     >
-                      <Amount>{money(s.profit)}</Amount>
+                      <Amount>{money(s.profit, currency)}</Amount>
                     </dd>
                     <dt className="text-muted-foreground">Profit rate</dt>
                     <dd className="text-right tabular-nums">
@@ -95,7 +95,7 @@ export function EcommerceScreen({ page }: { page: EcommercePage }) {
                     </dd>
                     <dt className="text-muted-foreground">Owes the ERP</dt>
                     <dd className="text-right tabular-nums">
-                      <Amount>{money(s.owes)}</Amount>
+                      <Amount>{money(s.owes, currency)}</Amount>
                     </dd>
                   </dl>
                   {s.incomplete.length > 0 && (

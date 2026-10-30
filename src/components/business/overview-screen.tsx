@@ -124,7 +124,8 @@ export function OverviewScreen({ page }: { page: OverviewPage }) {
                   <p className="text-muted-foreground">{when(c.at)}</p>
                   <p>
                     <Amount>
-                      Was {currency} {money(c.was)}, now {currency} {money(c.now)}
+                      Was {currency} {money(c.was, currency)}, now {currency}{" "}
+                      {money(c.now, currency)}
                     </Amount>
                   </p>
                   {c.lines.length > 0 && (
@@ -132,7 +133,8 @@ export function OverviewScreen({ page }: { page: OverviewPage }) {
                       {c.lines.map((l) => (
                         <li key={l.figure}>
                           <Amount>
-                            {FIGURE[l.figure] ?? l.figure}: {money(l.was)} to {money(l.now)}
+                            {FIGURE[l.figure] ?? l.figure}: {money(l.was, currency)} to{" "}
+                            {money(l.now, currency)}
                           </Amount>
                         </li>
                       ))}

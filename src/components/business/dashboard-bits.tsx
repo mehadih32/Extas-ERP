@@ -7,6 +7,7 @@ import { Amount } from "@/components/accounts/privacy";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { groupAmount } from "@/lib/display";
 import { cn } from "@/lib/utils";
 
 /*
@@ -94,13 +95,13 @@ function Change({ change, currency }: { change: string; currency: string }) {
   if (n === 0) return <span className="text-muted-foreground">Same as the period before</span>;
   return (
     <span className={n > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-destructive"}>
-      {n > 0 ? "Up" : "Down"} {currency} {money(String(Math.abs(n)))} on the period before
+      {n > 0 ? "Up" : "Down"} {currency} {money(String(Math.abs(n)), currency)} on the period before
     </span>
   );
 }
 
-export const money = (v: string) =>
-  Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** An amount grouped the way the company's currency is (BDT: 1,24,500.00), as on the PDFs. */
+export const money = (v: string, currency: string) => groupAmount(Number(v).toFixed(2), currency);
 
 /** One big figure: its label, the amount (red when below 0) and the change on the period before. */
 export function BigCard({
@@ -120,7 +121,7 @@ export function BigCard({
   plain?: boolean;
 }) {
   const negative = Number(value) < 0;
-  const shown = plain ? value : `${currency} ${money(value)}`;
+  const shown = plain ? value : `${currency} ${money(value, currency)}`;
   return (
     <div
       className={cn(

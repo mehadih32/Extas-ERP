@@ -50,7 +50,7 @@ export function StoreDashboard({
   currency: string;
   storeId: string;
 }) {
-  const cash = (v: string | null) => (v === null ? "-" : `${currency} ${money(v)}`);
+  const cash = (v: string | null) => (v === null ? "-" : `${currency} ${money(v, currency)}`);
   // How fast pieces go: per day of the period (of the days sent, for Lifetime).
   const days =
     d.period.key === "all"
@@ -129,7 +129,7 @@ export function StoreDashboard({
                 <span className="block text-muted-foreground">
                   <Amount>
                     {Object.entries(d.ads.byPlatform)
-                      .map(([p, v]) => `${PLATFORM[p] ?? p} ${money(v)}`)
+                      .map(([p, v]) => `${PLATFORM[p] ?? p} ${money(v, currency)}`)
                       .join(", ")}
                   </Amount>
                 </span>

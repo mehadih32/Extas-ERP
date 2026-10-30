@@ -989,7 +989,8 @@ class Writer {
     const bottom = Math.min(0, ...values);
     const scale = height / (top - bottom);
     const zero = this.y + top * scale;
-    const slot = this.width / Math.max(1, block.rows.length);
+    // At most a thick bar per row: one or two months never fill the page with one block.
+    const slot = Math.min(48, this.width / Math.max(1, block.rows.length));
     const bar = Math.max(1, (slot - 4) / block.series.length);
     block.rows.forEach((r, i) => {
       r.values.forEach((v, k) => {

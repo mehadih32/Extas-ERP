@@ -952,7 +952,7 @@
       "target": "Pad and year-end summaries"
     },
     "route": "/business/stores/[storeId]",
-    "screen": "4826be9735f168e0",
+    "screen": "ffff743861219937",
     "guide": "7cef8bc301953a81",
     "taken": "2026-10-30"
   },
@@ -970,7 +970,7 @@
       "target": "Profit by business"
     },
     "route": "/business/overview",
-    "screen": "6d808547a131b709",
+    "screen": "cf9077066aa54778",
     "guide": "4af57c7be1c55d46",
     "taken": "2026-10-30"
   },
@@ -989,7 +989,7 @@
       "target": "Stores side by side"
     },
     "route": "/business/retail",
-    "screen": "8c3da5f63fc032a7",
+    "screen": "c6942719bc72ed8d",
     "guide": "6c6aa6b8b3d48f92",
     "taken": "2026-10-30"
   },
@@ -1027,7 +1027,7 @@
       "target": "Account"
     },
     "route": "/business/stores/[storeId]",
-    "screen": "4826be9735f168e0",
+    "screen": "ffff743861219937",
     "guide": "c6acd17cf2d89b4f",
     "taken": "2026-10-30"
   },
@@ -1047,7 +1047,7 @@
       "target": "Daily figures"
     },
     "route": "/business/stores/[storeId]",
-    "screen": "4826be9735f168e0",
+    "screen": "ffff743861219937",
     "guide": "895922720a14428a",
     "taken": "2026-10-30"
   },
@@ -1070,7 +1070,7 @@
       "target": "Store dashboard"
     },
     "route": "/business/stores/[storeId]",
-    "screen": "4826be9735f168e0",
+    "screen": "ffff743861219937",
     "guide": "f2b6678d9bf27f8d",
     "taken": "2026-10-30"
   },
@@ -1092,7 +1092,7 @@
       "target": "Price rules"
     },
     "route": "/business/stores/[storeId]",
-    "screen": "4826be9735f168e0",
+    "screen": "ffff743861219937",
     "guide": "5fbd21d28cb984f0",
     "taken": "2026-10-30"
   },

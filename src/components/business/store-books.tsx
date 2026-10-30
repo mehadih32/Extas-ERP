@@ -9,6 +9,7 @@ import { Fact, Panel } from "@/components/sales/detail-bits";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { groupAmount } from "@/lib/display";
 import type { StoreBooks as Books } from "@/modules/retail/summaries.service";
 import {
   copyLastMonthBudgetAction,
@@ -66,7 +67,8 @@ export function StoreBooks({
   const close = () => setDialog(null);
   const month = monthName(books.month);
   const so = books.monthSoFar;
-  const money = (v: string | null) => (v === null ? "-" : `${currency} ${v}`);
+  const g = (v: string | number) => groupAmount(Number(v).toFixed(2), currency);
+  const money = (v: string | null) => (v === null ? "-" : `${currency} ${g(v)}`);
 
   return (
     <>
@@ -86,7 +88,7 @@ export function StoreBooks({
           <Fact label="Profit before fixed costs">{money(so.netProfit)}</Fact>
           <Fact label="Fixed costs">
             {books.fixed ? (
-              `${currency} ${books.fixed.total.toFixed(2)} (${currency} ${books.fixed.perDay} a day)`
+              `${currency} ${g(books.fixed.total)} (${currency} ${g(books.fixed.perDay)} a day)`
             ) : (
               <span className="text-destructive">Fixed costs for {month} not in yet</span>
             )}
@@ -105,7 +107,7 @@ export function StoreBooks({
             {books.days.map((d) => (
               <li key={d.date} className="rounded-md border p-3 text-sm">
                 <p className="font-medium">
-                  {dayName(d.date)} · Profit {currency} {d.netProfit}
+                  {dayName(d.date)} · Profit {currency} {g(d.netProfit)}
                 </p>
                 {d.incomplete.length > 0 && (
                   <p className="text-amber-700 dark:text-amber-400">
@@ -114,12 +116,12 @@ export function StoreBooks({
                 )}
                 {!d.profitMatches && (
                   <p className="text-destructive">
-                    The sum does not match: the ERP gets {currency} {d.checkedProfit}
+                    The sum does not match: the ERP gets {currency} {g(d.checkedProfit)}
                   </p>
                 )}
                 {d.previousProfit !== null && (
                   <p className="text-muted-foreground">
-                    Sent {d.versions} times; profit was {currency} {d.previousProfit}
+                    Sent {d.versions} times; profit was {currency} {g(d.previousProfit)}
                   </p>
                 )}
               </li>
@@ -162,8 +164,8 @@ export function StoreBooks({
           {books.budget.map((b) => (
             <Fact key={b.line} label={LINE[b.line]!}>
               <span className={STATE[b.state]}>
-                {currency} {b.spent}
-                {b.budget !== null ? ` of ${b.budget}` : " (no budget)"}
+                {currency} {g(b.spent)}
+                {b.budget !== null ? ` of ${g(b.budget)}` : " (no budget)"}
               </span>
             </Fact>
           ))}
@@ -183,7 +185,7 @@ export function StoreBooks({
       >
         <p className="mt-4 text-sm">
           {books.target
-            ? `${month}: ${currency} ${books.target.done} of ${currency} ${books.target.sales} (${books.target.percent}%)`
+            ? `${month}: ${currency} ${g(books.target.done)} of ${currency} ${g(books.target.sales)} (${books.target.percent}%)`
             : `No target for ${month}.`}
         </p>
       </Panel>

@@ -314,6 +314,9 @@ function AccountPanel({
         <Fact label="Waiting for check">
           {currency} {account.waitingCheck}
         </Fact>
+        <Fact label="Exchanges at risk">
+          {currency} {account.exchangesAtRisk}
+        </Fact>
         <Fact label="Last payment">{account.lastPaymentAt ?? "None yet"}</Fact>
         <Fact label="Hold">
           <span className={account.onHold ? "text-destructive" : undefined}>{hold}</span>

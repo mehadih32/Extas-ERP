@@ -26,6 +26,13 @@ import {
 import { releaseStock } from "@/modules/sales/stock-ops";
 import { collectOrderLines } from "@/modules/sales/totals";
 
+import {
+  cancelExchangeTx,
+  createExchangeTx,
+  ExchangeRefusal,
+  OPEN_STATES,
+  replacedLines,
+} from "@/modules/retail/exchanges.service";
 import { storePrices } from "@/modules/retail/stores.service";
 
 import { amount, variantActive } from "./catalog.service";
@@ -94,7 +101,11 @@ export async function shopOrderOf(ctx: CompanyContext, orderId: string): Promise
       items: { include: { variant: { select: { sku: true } } }, orderBy: { id: "asc" } },
       retailOrder: {
         include: {
-          lines: { include: { variant: { select: { sku: true } } }, orderBy: { createdAt: "asc" } },
+          lines: {
+            include: { variant: { select: { sku: true } }, replaces: true },
+            orderBy: { createdAt: "asc" },
+          },
+          exchange: true,
         },
       },
     },
@@ -127,7 +138,26 @@ export async function shopOrderOf(ctx: CompanyContext, orderId: string): Promise
             shopPrice: amount(l.shopPrice),
             customerPrice: amount(l.customerPrice),
             fromReturnStock: false,
+            ...(l.replaces
+              ? {
+                  replacesLineId: l.replaces.lineId,
+                  replacedShopPrice: amount(l.replaces.shopPrice),
+                }
+              : {}),
           })),
+          ...(retail.exchange
+            ? {
+                exchangeId: retail.exchange.number,
+                atRisk: amount(
+                  retail.lines
+                    .filter((l) => l.exchangeState && OPEN_STATES.includes(l.exchangeState))
+                    .reduce(
+                      (sum, l) => sum.plus(l.shopPrice.times(l.quantity)),
+                      new Prisma.Decimal(0),
+                    ),
+                ),
+              }
+            : {}),
         }
       : {}),
   };
@@ -381,6 +411,34 @@ type CreateInput = ReturnType<typeof createOrderSchema.parse>;
 
 const round2 = (value: Prisma.Decimal) => value.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
+/** The ERP's own line on an exchange order, e.g. "Exchange of WEB-1043, line WEB-1043-2". */
+const exchangeNote = (of: string, lines: Array<{ replacesLineId?: string }>) =>
+  `Exchange of ${of}, line ${[...new Set(lines.map((l) => l.replacesLineId))].join(", ")}`;
+
+/** The order an exchange names and the lines it replaces, checked (site-changes 2.10.2). */
+async function exchangeOf(
+  call: Call,
+  exchange: NonNullable<CreateInput["exchange"]>,
+  lines: Array<{ lineId: string; replacesLineId?: string; quantity: number }>,
+) {
+  const of = await findShopOrder(call, exchange.ofExternalOrderId);
+  if (!of) {
+    throw new EcommerceApiError(
+      404,
+      "NOT_FOUND",
+      `Order ${exchange.ofExternalOrderId} is not this shop's.`,
+    );
+  }
+  try {
+    return await replacedLines(call.ctx, of.id, lines);
+  } catch (error) {
+    if (error instanceof ExchangeRefusal) {
+      throw new EcommerceApiError(error.status, error.code, error.message, error.details);
+    }
+    throw error;
+  }
+}
+
 /**
  * POST /orders from a retail store's shop (plan v6 sec 9): a sale to the store
  * (its buyer) at the store's own prices, fixed now and billed when the parcel
@@ -396,7 +454,8 @@ async function createStoreOrder(
 ): Promise<ShopOrder> {
   const { ctx, integration, meta } = call;
   assertStoreOpen(store);
-  await assertStoreNotOnHold(ctx, store);
+  // An exchange is not a new sale: it goes through while the store is on hold.
+  if (!input.exchange) await assertStoreNotOnHold(ctx, store);
   const bGrade = input.items.filter((i) => i.grade === "B").map((i) => i.sku);
   if (bGrade.length > 0) {
     throw new EcommerceApiError(
@@ -417,6 +476,10 @@ async function createStoreOrder(
       lineId: [...new Set(twice)],
     });
   }
+  const exchange = input.exchange ? await exchangeOf(call, input.exchange, siteLines) : null;
+  if (!exchange && siteLines.some((l) => l.replacesLineId)) {
+    throw new EcommerceApiError(422, "VALIDATION", "replacesLineId is only for an exchange order.");
+  }
   const lines = await resolveItems(
     ctx,
     siteLines.map((l) => ({ sku: l.sku, quantity: l.quantity, unitPrice: 0, discount: 0 })),
@@ -436,7 +499,11 @@ async function createStoreOrder(
       { skus: noPrice },
     );
   }
-  const priced = lines.map((l) => ({ ...l, unitPrice: Number(prices.get(l.variantId)) }));
+  // An exchange's new pieces go out at 0: their money settles when the old pieces are checked.
+  const priced = lines.map((l) => ({
+    ...l,
+    unitPrice: exchange ? 0 : Number(prices.get(l.variantId)),
+  }));
   const checked = await assertInStock(ctx, warehouseId, priced);
   const variantOf = new Map(lines.map((l) => [l.sku, l.variantId]));
   const customerPriceOf = (l: (typeof siteLines)[number]) =>
@@ -473,13 +540,17 @@ async function createStoreOrder(
           customerName: input.customer.name,
           customerPhone: input.customer.phone,
           shippingAddress: input.shippingAddress,
-          notes: input.note ?? null,
+          notes: exchange
+            ? [exchangeNote(input.exchange!.ofExternalOrderId, siteLines), input.note]
+                .filter(Boolean)
+                .join("\n")
+            : (input.note ?? null),
           integrationId: integration.id,
           externalOrderId: input.externalOrderId,
         },
         meta,
       );
-      await tx.retailOrder.create({
+      const retail = await tx.retailOrder.create({
         data: {
           companyId: ctx.company.id,
           storeId: store.id,
@@ -498,10 +569,24 @@ async function createStoreOrder(
               shopPrice: prices.get(variantOf.get(l.sku)!)!,
               customerPrice: customerPriceOf(l),
               comboId: l.comboId ?? null,
+              ...(exchange
+                ? {
+                    replacesLineId: exchange.replaced.get(l.lineId)!.id,
+                    exchangeState: "WAITING_DELIVERY" as const,
+                  }
+                : {}),
             })),
           },
         },
       });
+      if (exchange) {
+        await createExchangeTx(tx, ctx, {
+          storeId: store.id,
+          retailOrderId: retail.id,
+          ofRetailOrderId: exchange.of.id,
+          note: input.exchange?.note ?? null,
+        });
+      }
       return order.id;
     }, TX_OPTIONS);
     return await shopOrderOf(ctx, orderId);
@@ -958,6 +1043,7 @@ async function updateStoreOrder(
       }
       const current = await call.ctx.db.salesOrder.findUniqueOrThrow({ where: { id: orderId } });
       if (current.status !== "CANCELLED") await cancelShopOrder(call, orderId, input.reason);
+      await runTransaction((tx) => cancelExchangeTx(tx, call.ctx, retail.id), TX_OPTIONS);
       break;
     }
   }

@@ -146,6 +146,8 @@ model Company {
   retailReturnLists      RetailReturnList[]
   retailReturnParcels    RetailReturnParcel[]
   retailReturnPieces     RetailReturnPiece[]
+  retailExchanges        RetailExchange[]
+  retailExchangeEvents   RetailExchangeEvent[]
   webhookEvents          WebhookEvent[]
   integrationApiCalls    IntegrationApiCall[]
   integrationIdempotency IntegrationIdempotency[]
@@ -5702,6 +5704,8 @@ enum JournalSource {
   SUPPLIER_FAULT
   /// An adjusting entry Bug Guard posted with the owner's PIN (modules/bug-guard/corrections.ts).
   CORRECTION
+  /// A retail store's exchange: the new piece billed, or only the price difference (plan v6 sec 8.9).
+  RETAIL_EXCHANGE
 }
 
 enum AssetStatus {
@@ -7342,6 +7346,7 @@ model RetailStore {
   changes     RetailPriceChange[]
   orders      RetailOrder[]
   returnLists RetailReturnList[]
+  exchanges   RetailExchange[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -7410,12 +7415,16 @@ model RetailOrder {
   billedAt       DateTime?
   createdAt      DateTime  @default(now())
 
-  company  Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  store    RetailStore         @relation(fields: [storeId], references: [id])
-  order    SalesOrder          @relation(fields: [orderId], references: [id])
-  lines    RetailOrderLine[]
-  delivery RetailDelivery?
-  parcel   RetailReturnParcel?
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store       RetailStore         @relation(fields: [storeId], references: [id])
+  order       SalesOrder          @relation(fields: [orderId], references: [id])
+  lines       RetailOrderLine[]
+  delivery    RetailDelivery?
+  parcel      RetailReturnParcel?
+  /// Set when this order is an exchange (plan v6 sec 8.9).
+  exchange    RetailExchange?     @relation("ExchangeOrder")
+  /// The exchanges made of this order's pieces.
+  exchangesOf RetailExchange[]    @relation("ExchangesOf")
 
   @@index([companyId, storeId])
 }
@@ -7423,22 +7432,31 @@ model RetailOrder {
 /// One line of a store's website order as the site sent it (its own lineId):
 /// the shop price fixed for it and the customer's price per piece.
 model RetailOrderLine {
-  id            String      @id @default(cuid())
-  companyId     String
-  retailOrderId String
-  lineId        String
-  variantId     String
-  grade         RetailGrade @default(A)
-  quantity      Int
-  shopPrice     Decimal     @db.Decimal(14, 2)
-  customerPrice Decimal     @db.Decimal(14, 2)
-  comboId       String?
-  createdAt     DateTime    @default(now())
+  id             String               @id @default(cuid())
+  companyId      String
+  retailOrderId  String
+  lineId         String
+  variantId      String
+  grade          RetailGrade          @default(A)
+  quantity       Int
+  shopPrice      Decimal              @db.Decimal(14, 2)
+  customerPrice  Decimal              @db.Decimal(14, 2)
+  comboId        String?
+  /// On an exchange order: the line (of the earlier order) whose piece this one replaces.
+  replacesLineId String?
+  exchangeState  RetailExchangeState?
+  /// The day the exchange parcel was delivered, and the last day the old piece may come back.
+  deliveredOn    DateTime?            @db.Date
+  deadline       DateTime?            @db.Date
+  createdAt      DateTime             @default(now())
 
-  company Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  order   RetailOrder         @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
-  variant ProductVariant      @relation(fields: [variantId], references: [id])
-  pieces  RetailReturnPiece[]
+  company        Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order          RetailOrder           @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
+  variant        ProductVariant        @relation(fields: [variantId], references: [id])
+  pieces         RetailReturnPiece[]
+  replaces       RetailOrderLine?      @relation("ExchangeReplaces", fields: [replacesLineId], references: [id])
+  replacedBy     RetailOrderLine[]     @relation("ExchangeReplaces")
+  exchangeEvents RetailExchangeEvent[]
 
   @@unique([retailOrderId, lineId])
   @@index([companyId, variantId])
@@ -7586,4 +7604,69 @@ model RetailReturnPiece {
 
   @@index([parcelId])
   @@index([companyId, status])
+}
+
+/// Where an exchange line stands (plan v6 sec 8.9, site-changes 2.10.5).
+enum RetailExchangeState {
+  WAITING_DELIVERY
+  WAITING_RETURN
+  RETURNED_WAITING_CHECK
+  SETTLED
+  BILLED
+  CREDITED
+  CANCELLED
+}
+
+enum RetailExchangeEventType {
+  SETTLED
+  BILLED
+  CREDITED
+  CANCELLED
+}
+
+/// An exchange: a store's new order that replaces pieces of an earlier one. The
+/// new pieces go out unbilled; money settles when the old pieces are checked.
+model RetailExchange {
+  id              String   @id @default(cuid())
+  companyId       String
+  storeId         String
+  /// EXG-YYYY-NNNNN
+  number          String
+  retailOrderId   String   @unique
+  ofRetailOrderId String
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore           @relation(fields: [storeId], references: [id])
+  order   RetailOrder           @relation("ExchangeOrder", fields: [retailOrderId], references: [id])
+  of      RetailOrder           @relation("ExchangesOf", fields: [ofRetailOrderId], references: [id])
+  events  RetailExchangeEvent[]
+
+  @@unique([companyId, number])
+  @@index([companyId, storeId])
+}
+
+/// Each money step of an exchange, one per piece (never edited: a reversed
+/// bill is a new event naming the one it reverses).
+model RetailExchangeEvent {
+  id             String                  @id @default(cuid())
+  companyId      String
+  exchangeId     String
+  lineId         String
+  type           RetailExchangeEventType
+  /// SETTLED: EXTRA, ADJUSTMENT or EVEN. BILLED: DEADLINE_PASSED, OLD_PIECE_DECLINED or NEW_PIECE_DECLINED.
+  kind           String?
+  amount         Decimal                 @db.Decimal(14, 2)
+  journalEntryId String?
+  reversesId     String?
+  createdAt      DateTime                @default(now())
+
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  exchange RetailExchange  @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+  line     RetailOrderLine @relation(fields: [lineId], references: [id])
+
+  @@index([exchangeId])
+  @@index([companyId, createdAt])
 }

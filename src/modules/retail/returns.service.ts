@@ -8,6 +8,8 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { createSalesReturn } from "@/modules/sales/return.service";
 
+import { settleExchangePieces } from "./exchanges.service";
+
 /*
  * Business > Returns (plan v6 sec 8.4 to 8.8): the parcels retail stores sent
  * back. Nothing changes money until the owner checks a piece:
@@ -73,6 +75,13 @@ export async function waitingCheckOf(ctx: CompanyContext, storeId: string) {
   return new Prisma.Decimal(waiting._sum.price ?? 0).plus(onHold);
 }
 
+const VARIANT = {
+  id: true,
+  sku: true,
+  color: { select: { name: true } },
+  size: { select: { name: true } },
+} as const;
+
 const parcelInclude = {
   list: { include: { store: { select: { id: true, name: true } } } },
   order: {
@@ -87,16 +96,11 @@ const parcelInclude = {
         },
       },
       delivery: true,
+      exchange: { select: { id: true, number: true } },
       lines: {
         include: {
-          variant: {
-            select: {
-              id: true,
-              sku: true,
-              color: { select: { name: true } },
-              size: { select: { name: true } },
-            },
-          },
+          variant: { select: VARIANT },
+          replaces: { include: { variant: { select: VARIANT } } },
         },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       },
@@ -111,6 +115,17 @@ const parcelInclude = {
 type ParcelRow = Prisma.RetailReturnParcelGetPayload<{ include: typeof parcelInclude }>;
 
 const money2 = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v).toFixed(2);
+
+/**
+ * The lines whose pieces can be in the parcel: an order's own, or for an
+ * exchange the old piece of each kept line (the new one when it was refused).
+ */
+function returnableLines(p: ParcelRow) {
+  return p.order.lines.map((l) => {
+    const line = p.order.exchange && l.replaces && l.exchangeState !== "CANCELLED" ? l.replaces : l;
+    return { ...line, quantity: l.quantity };
+  });
+}
 
 function parcelView(p: ParcelRow, now: Date, checkDays: number) {
   const days = Math.floor((now.getTime() - p.list.handedBackAt.getTime()) / 86_400_000);
@@ -144,7 +159,8 @@ function parcelView(p: ParcelRow, now: Date, checkDays: number) {
           note: p.order.delivery.note,
         }
       : null,
-    lines: p.order.lines.map((l) => ({
+    exchange: p.order.exchange?.number ?? null,
+    lines: returnableLines(p).map((l) => ({
       id: l.id,
       lineId: l.lineId,
       sku: l.variant.sku,
@@ -244,7 +260,7 @@ export async function resolveHold(
   if (parcel.state !== "HOLD") {
     throw new AppError("CONFLICT", "This parcel is not on Hold any more.");
   }
-  const lines = new Map(parcel.order.lines.map((l) => [l.id, l]));
+  const lines = new Map(returnableLines(parcel).map((l) => [l.id, l]));
   const pieces: Array<{ lineId: string; variantId: string; price: Prisma.Decimal }> = [];
   if (!input.missing) {
     for (const c of input.came) {
@@ -294,6 +310,18 @@ export async function resolveHold(
           price: p.price,
         })),
       });
+    }
+    if (parcel.order.exchange) {
+      // An old piece that did not come waits again (billed in full once its deadline passes).
+      const ticked = new Set(pieces.map((p) => p.lineId));
+      for (const l of parcel.order.lines) {
+        if (l.exchangeState !== "RETURNED_WAITING_CHECK" || ticked.has(l.replacesLineId ?? l.id))
+          continue;
+        await tx.retailOrderLine.update({
+          where: { id: l.id },
+          data: { exchangeState: "WAITING_RETURN" },
+        });
+      }
     }
     await auditInCompany(
       ctx,
@@ -361,7 +389,13 @@ export async function checkParcel(
     });
   }
   const pieces = new Map(parcel.pieces.map((x) => [x.id, x]));
-  const lineOfVariant = new Map(parcel.order.lines.map((l) => [l.variantId, l]));
+  const exchange = await ctx.db.retailExchange.findUnique({
+    where: { retailOrderId: parcel.order.id },
+  });
+  // An exchange parcel's pieces settle by their own lines: no other piece stands in for one.
+  const lineOfVariant = new Map(
+    exchange ? [] : parcel.order.lines.map((l) => [l.variantId, l] as const),
+  );
   for (const d of input.decisions) {
     const piece = pieces.get(d.pieceId);
     if (!piece || piece.status !== "WAITING") {
@@ -401,13 +435,18 @@ export async function checkParcel(
     }
   });
   try {
-    if (approving.length > 0) await creditApproved(ctx, parcel, approving, meta);
+    if (exchange) await settleExchangePieces(ctx, parcel.id, input.decisions, meta);
+    else if (approving.length > 0) await creditApproved(ctx, parcel, approving, meta);
   } catch (error) {
-    // Nothing was credited: the approved pieces wait for the check again.
+    // Nothing was credited: the pieces wait for the check again.
     await prisma.retailReturnPiece.updateMany({
-      where: { id: { in: approving.map((d) => d.pieceId) }, salesReturnId: null },
+      where: {
+        id: { in: (exchange ? input.decisions : approving).map((d) => d.pieceId) },
+        salesReturnId: null,
+      },
       data: {
         status: "WAITING",
+        reason: null,
         decidedById: null,
         decidedAt: null,
         differentPiece: false,

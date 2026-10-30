@@ -814,6 +814,113 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /exchanges:
+    get:
+      tags: [Returns]
+      summary: A retail store's exchanges, what is still at risk, and every money step
+      description: |
+        `status=pending` (the default) lists the exchanges not settled yet; `status=all` every one.
+        Poll with `updatedSince`. Each event (`exchange.settled` with `kind` EXTRA, ADJUSTMENT or EVEN;
+        `exchange.billed` with `reason` DEADLINE_PASSED, OLD_PIECE_DECLINED or NEW_PIECE_DECLINED;
+        `exchange.credited`; `exchange.cancelled`) is one step on the store's account: a positive
+        `amount` is owed, a negative one comes off. A reversed bill is a new `exchange.billed` event
+        with `reverses`. `totalAtRisk` is `exchangesAtRisk` in GET /account.
+      operationId: listExchanges
+      parameters:
+        - {
+            name: status,
+            in: query,
+            required: false,
+            schema: { type: string, enum: [pending, all] },
+          }
+        - $ref: "#/components/parameters/UpdatedSince"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The exchanges.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, totalAtRisk]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        exchangeId: { type: string }
+                        externalOrderId: { type: string }
+                        ofExternalOrderId: { type: string }
+                        status:
+                          type: string
+                          enum:
+                            [
+                              WAITING_DELIVERY,
+                              WAITING_RETURN,
+                              RETURNED_WAITING_CHECK,
+                              SETTLED,
+                              BILLED,
+                              CREDITED,
+                              CANCELLED,
+                            ]
+                        lines: { type: array, items: { type: object } }
+                        atRisk: { type: number }
+                        deliveredAt: { type: [string, "null"], format: date }
+                        deadline: { type: [string, "null"], format: date }
+                        events: { type: array, items: { type: object } }
+                  totalAtRisk: { type: number }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /exchanges/{exchangeId}/late-return:
+    post:
+      tags: [Returns]
+      summary: An exchange's old piece came back on no matching consignment
+      description: |
+        The pieces go on Hold for the owner to tick, and count as back on `handedBackAt`. 409 when the
+        exchange parcel has no delivery result yet, or its pieces were handed back already.
+      operationId: lateReturn
+      parameters:
+        - { name: exchangeId, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [handedBackAt, courier]
+              properties:
+                handedBackAt: { type: string, format: date }
+                courier: { type: string, maxLength: 60 }
+                returnListId: { type: [string, "null"], maxLength: 60 }
+                consignmentId: { type: [string, "null"], maxLength: 100 }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "201":
+          description: On Hold.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exchangeId: { type: string }
+                  result: { type: string, enum: [HOLD] }
+                  parcelId: { type: string }
+        "400": { $ref: "#/components/responses/IdempotencyKeyRequired" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: CONFLICT or ALREADY_HANDED_BACK.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /ad-spend:
     post:
       tags: [Marketing]
@@ -1089,6 +1196,17 @@ components:
         discount:
           allOf: [{ $ref: "#/components/schemas/Money" }]
           description: The discount on the whole line, not per piece.
+        lineId:
+          { type: string, maxLength: 60, description: "A retail store's own id for the line." }
+        customerPrice:
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+          description: A retail store's customer price per piece (its own figure).
+        comboId: { type: string, maxLength: 60 }
+        grade: { type: string, enum: [A, B], description: "A retail store's line; A by default." }
+        replacesLineId:
+          type: string
+          maxLength: 60
+          description: On an exchange order, the line of the exchanged order this piece replaces.
     Customer:
       type: object
       required: [name, phone]
@@ -1116,6 +1234,20 @@ components:
           description: What the courier collects on delivery (0 when paid online).
         paymentMethod: { $ref: "#/components/schemas/PaymentMethod" }
         note: { type: string, maxLength: 1000 }
+        deliveryCharge: { $ref: "#/components/schemas/Money" }
+        advancePaid: { $ref: "#/components/schemas/Money" }
+        exchange:
+          type: object
+          description: |
+            A retail store's exchange (every line names `replacesLineId`). The new pieces go out
+            unbilled (`erpTotal` 0) and accepted while the store is on hold; money settles when the
+            old pieces are checked. 409 LINE_NOT_DELIVERED (the line is not with the customer for
+            that many pieces) or EXCHANGE_OPEN (the line has an exchange not settled); 404 when the
+            order is not this shop's.
+          required: [ofExternalOrderId]
+          properties:
+            ofExternalOrderId: { type: string, maxLength: 100 }
+            note: { type: string, maxLength: 500 }
     UpdateOrder:
       type: object
       minProperties: 1
@@ -1168,6 +1300,29 @@ components:
               quantity: { type: integer }
               unitPrice: { type: number }
               discount: { type: number }
+        erpTotal:
+          { type: number, description: "A retail store's order: what the store owes for it." }
+        billedAt: { type: [string, "null"], format: date-time }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              lineId: { type: string }
+              sku: { type: string }
+              grade: { type: string, enum: [A, B] }
+              quantity: { type: integer }
+              shopPrice: { type: number }
+              customerPrice: { type: number }
+              fromReturnStock: { type: boolean }
+              replacesLineId: { type: string }
+              replacedShopPrice: { type: number }
+        exchangeId: { type: string, examples: [EXG-2026-00031] }
+        atRisk:
+          {
+            type: number,
+            description: "An exchange: what is billed if the old pieces do not come.",
+          }
     AdSpend:
       type: object
       required: [erpAdSpendId, date, platform, campaign, amount, replaced]

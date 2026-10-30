@@ -153,6 +153,14 @@ function ParcelCard({
             ({p.externalOrderId}), {p.store}
           </dd>
         </div>
+        {p.exchange && (
+          <div className="flex flex-wrap gap-x-2">
+            <dt className="text-muted-foreground">Exchange:</dt>
+            <dd className="min-w-0 break-words">
+              {p.exchange}: the old pieces; money settles by the check
+            </dd>
+          </div>
+        )}
         <div className="flex flex-wrap gap-x-2">
           <dt className="text-muted-foreground">Customer:</dt>
           <dd className="min-w-0 break-words">{p.customer || "Not given"}</dd>

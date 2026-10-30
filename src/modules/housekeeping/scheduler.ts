@@ -7,6 +7,7 @@ import { purgeShopLogs } from "@/modules/ecommerce/housekeeping";
 import { purgeOldPings } from "@/modules/hr/location.service";
 import { purgeOldJobs } from "@/modules/jobs/queue";
 import { refreshStatusesForCompany } from "@/modules/parties/dormant.service";
+import { billOverdueExchanges } from "@/modules/retail/exchanges.service";
 import { purgeUnusedProofs } from "@/modules/sales/proof.service";
 import { purgeUnusedReferenceImages } from "@/modules/sales/reference-image.service";
 
@@ -30,7 +31,9 @@ import { purgeUnusedReferenceImages } from "@/modules/sales/reference-image.serv
  *     (hr/location.service.ts);
  *   - the online shops' call log (90 days), their kept Idempotency-Key answers
  *     (30 days) and the webhooks sent to them that were delivered or skipped
- *     (90 days) are cleared; failed webhooks stay (ecommerce/housekeeping.ts).
+ *     (90 days) are cleared; failed webhooks stay (ecommerce/housekeeping.ts);
+ *   - a retail store's exchange whose old piece is not back by its deadline is
+ *     billed in full (retail/exchanges.service.ts).
  * Every step is safe to repeat, so a run after a restart changes nothing new.
  */
 
@@ -76,6 +79,7 @@ export async function runHousekeeping(now: Date = new Date()) {
   const jobsCleared = await purgeOldJobs(now);
   const pingsRemoved = await purgeOldPings(now);
   const shopLogsCleared = await purgeShopLogs(now);
+  const exchangesBilled = await billOverdueExchanges(now);
   return {
     companies: companies.length,
     markedDormant,
@@ -87,6 +91,7 @@ export async function runHousekeeping(now: Date = new Date()) {
     jobsCleared,
     pingsRemoved,
     shopLogsCleared,
+    exchangesBilled,
   };
 }
 

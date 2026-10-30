@@ -35,7 +35,9 @@ export type LockableTable =
   | "SalesReturn"
   | "Cheque"
   | "StaffClaim"
-  | "TechPack";
+  | "TechPack"
+  | "RetailStore"
+  | "RetailExchange";
 
 /**
  * Locks rows until the transaction ends (`SELECT ... FOR UPDATE`), so two people

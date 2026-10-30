@@ -120,6 +120,8 @@ export const orderItemSchema = z.object({
   comboId: z.string().trim().min(1).max(60).optional(),
   /** "A" (the default) or "B" for B-grade stock. */
   grade: z.enum(["A", "B"]).default("A"),
+  /** On an exchange order: the lineId (of the order being exchanged) this piece replaces. */
+  replacesLineId: z.string().trim().min(1).max(60).optional(),
 });
 
 export const createOrderSchema = z.object({
@@ -141,6 +143,10 @@ export const createOrderSchema = z.object({
   deliveryCharge: money.default(0),
   /** A retail store's shop: the customer's advance (bKash or another). */
   advancePaid: money.default(0),
+  /** A retail store's exchange (plan v6 sec 8.9): the order whose pieces this one replaces. */
+  exchange: z
+    .object({ ofExternalOrderId: externalOrderIdSchema, note: optionalText(500) })
+    .optional(),
 });
 
 export const ORDER_STATUSES = [
@@ -191,7 +197,14 @@ export type ShopOrder = {
     shopPrice: number;
     customerPrice: number;
     fromReturnStock: boolean;
+    /** On an exchange: the line it replaces and what the store paid for that piece. */
+    replacesLineId?: string;
+    replacedShopPrice?: number;
   }>;
+  /** An exchange order (plan v6 sec 8.9). */
+  exchangeId?: string;
+  /** What would be billed if the old pieces do not come back. */
+  atRisk?: number;
 };
 
 /** details of the 409 INSUFFICIENT_STOCK answer to POST /orders (and an edit). */
@@ -376,4 +389,18 @@ export const returnListSchema = z.object({
     )
     .min(1)
     .max(500),
+});
+
+/** GET /exchanges: pending (the default) or all, since a time. */
+export const exchangesQuerySchema = pageQuerySchema.extend({
+  status: z.enum(["pending", "all"]).default("pending"),
+});
+
+/** POST /exchanges/{exchangeId}/late-return: an old piece that came back on no matching consignment. */
+export const lateReturnSchema = z.object({
+  handedBackAt: day,
+  courier: text(60),
+  returnListId: z.string().trim().min(1).max(60).nullish(),
+  consignmentId: z.string().trim().min(1).max(100).nullish(),
+  note: optionalText(500),
 });

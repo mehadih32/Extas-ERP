@@ -10,6 +10,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { getPartyBalance, getStatement } from "@/modules/parties/ledger.service";
 
+import { exchangesAtRiskOf } from "./exchanges.service";
 import { waitingCheckOf } from "./returns.service";
 
 import { assertCanManageStores, assertCanSeeStores, storeOrThrow } from "./stores.service";
@@ -45,13 +46,6 @@ async function paymentDays(ctx: CompanyContext, partyId: string) {
     });
   const [payment, bill] = await Promise.all([lineOf("PAYMENT", "credit"), lineOf("SALE", "debit")]);
   return { lastPaymentAt: payment?.date ?? null, firstBillAt: bill?.date ?? null };
-}
-
-/** New exchange pieces not billed yet (exchanges: plan v6 sec 8.9, not built yet). */
-export async function exchangesAtRiskOf(ctx: CompanyContext, storeId: string) {
-  void ctx;
-  void storeId;
-  return ZERO;
 }
 
 /** The store's balance and its hold, as of now. */
@@ -163,7 +157,7 @@ export async function accountOf(ctx: CompanyContext, store: Store, raw: unknown 
   let period = null;
   let statement: Array<{
     date: string;
-    kind: "BILL" | "CREDIT" | "PAYMENT" | "OTHER";
+    kind: "BILL" | "CREDIT" | "PAYMENT" | "EXCHANGE" | "OTHER";
     number: string;
     description: string | null;
     amount: number;
@@ -171,7 +165,7 @@ export async function accountOf(ctx: CompanyContext, store: Store, raw: unknown 
   if (q.from && q.to) {
     if (q.from > q.to) throw new AppError("VALIDATION", "'from' is after 'to'.");
     const s = await getStatement(ctx, store.partyId, { from: q.from, to: q.to });
-    const sum = { orders: ZERO, credits: ZERO, payments: ZERO, other: ZERO };
+    const sum = { orders: ZERO, credits: ZERO, payments: ZERO, exchanges: ZERO, other: ZERO };
     statement = s.lines.map((line) => {
       const debit = new Prisma.Decimal(line.debit);
       const credit = new Prisma.Decimal(line.credit);
@@ -183,17 +177,20 @@ export async function accountOf(ctx: CompanyContext, store: Store, raw: unknown 
             ? "CREDIT"
             : line.sourceType === "PAYMENT"
               ? "PAYMENT"
-              : "OTHER";
+              : line.sourceType === "RETAIL_EXCHANGE"
+                ? "EXCHANGE"
+                : "OTHER";
       if (kind === "BILL") sum.orders = sum.orders.plus(net);
       else if (kind === "CREDIT") sum.credits = sum.credits.minus(net);
       else if (kind === "PAYMENT") sum.payments = sum.payments.minus(net);
+      else if (kind === "EXCHANGE") sum.exchanges = sum.exchanges.plus(net);
       else sum.other = sum.other.plus(net);
       return {
         date: localDay(line.date, ctx.company.timezone),
         kind,
         number: line.number,
         description: line.description,
-        amount: money(net.abs()),
+        amount: money(kind === "EXCHANGE" ? net : net.abs()),
       };
     });
     period = {
@@ -201,7 +198,7 @@ export async function accountOf(ctx: CompanyContext, store: Store, raw: unknown 
       to: q.to,
       openingBalance: Number(s.summary.openingBalance),
       ordersTotal: money(sum.orders),
-      exchangesTotal: 0,
+      exchangesTotal: money(sum.exchanges),
       otherCharges: money(sum.other),
       creditsTotal: money(sum.credits),
       paymentsTotal: money(sum.payments),
@@ -230,12 +227,14 @@ export async function storeAccount(ctx: CompanyContext, storeId: string) {
   assertCanSeeStores(ctx);
   const store = await storeOrThrow(ctx, storeId);
   const hold = await holdOf(ctx, store);
-  const billed = await ctx.db.retailOrder.count({
-    where: { storeId: store.id, billedAt: { not: null } },
-  });
+  const [billed, atRisk] = await Promise.all([
+    ctx.db.retailOrder.count({ where: { storeId: store.id, billedAt: { not: null } } }),
+    exchangesAtRiskOf(ctx, store.id),
+  ]);
   return {
     balance: hold.balance.toFixed(2),
     waitingCheck: hold.waitingCheck.toFixed(2),
+    exchangesAtRisk: atRisk.toFixed(2),
     onHold: hold.onHold,
     reason: hold.reason,
     lastPaymentAt: hold.lastPaymentAt,

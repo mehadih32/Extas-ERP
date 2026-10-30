@@ -207,6 +207,10 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-30 (retail loss rule): every piece a shop takes from the ERP is the shop's to pay, whatever happens to it
+  (lost, the courier never hands it back, stolen, taken by staff). Only a piece that comes back and is approved in the
+  ERP's check comes off. So a refused exchange parcel's new piece not back by the exchange deadline is billed in full
+  the night after, and credited if it comes back later and is approved.
 - 2026-10-29 (copy codes for sold copies): a sold copy of the ERP gets the Extas Google client only through a
   one-time copy code the owner makes on the Extas ERP's Backups screen ("Copies of this ERP", with the PIN; only
   where the client was set on screen, never one that came from another ERP). A code works once and for 30 days;

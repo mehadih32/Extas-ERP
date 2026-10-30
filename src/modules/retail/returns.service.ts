@@ -69,7 +69,7 @@ export async function waitingCheckOf(ctx: CompanyContext, storeId: string) {
       select: {
         price: true,
         parcel: { select: { order: { select: { exchange: { select: { id: true } } } } } },
-        line: { select: { replacedBy: { select: { exchangeState: true } } } },
+        line: { select: { exchangeState: true, replacedBy: { select: { exchangeState: true } } } },
       },
     }),
     ctx.db.retailReturnParcel.findMany({
@@ -92,7 +92,9 @@ export async function waitingCheckOf(ctx: CompanyContext, storeId: string) {
   const inStock = waiting
     .filter(
       (p) =>
-        !p.parcel.order.exchange || p.line.replacedBy.some((l) => l.exchangeState === "BILLED"),
+        !p.parcel.order.exchange ||
+        p.line.exchangeState === "BILLED" ||
+        p.line.replacedBy.some((l) => l.exchangeState === "BILLED"),
     )
     .reduce((sum, p) => sum.plus(p.price), ZERO);
   const onHold = held
@@ -173,7 +175,8 @@ function returnableLines(p: ParcelRow) {
   type Line = ParcelRow["order"]["lines"][number];
   const rows = new Map<string, Omit<Line, "replaces"> & { quantity: number }>();
   for (const l of p.order.lines) {
-    const line = p.order.exchange && l.replaces && l.exchangeState !== "CANCELLED" ? l.replaces : l;
+    // A kept line's old piece comes back; a refused line's own new piece does.
+    const line = p.order.exchange && l.replaces && l.deliveredOn !== null ? l.replaces : l;
     const seen = rows.get(line.id);
     rows.set(line.id, { ...line, quantity: (seen?.quantity ?? 0) + l.quantity });
   }
@@ -368,13 +371,14 @@ export async function resolveHold(
       });
     }
     if (parcel.order.exchange) {
-      // An old piece that did not come waits again (billed in full once its deadline passes).
-      // Each ticked old piece covers one new line's piece; a new line not covered waits again.
+      // A piece that did not come waits again (billed in full once its deadline passes): the
+      // old piece of a kept line, the new piece of a refused one. Each ticked piece covers one
+      // new line's piece; a new line not covered waits again.
       const left = new Map<string, number>();
       for (const p of pieces) left.set(p.lineId, (left.get(p.lineId) ?? 0) + 1);
       for (const l of parcel.order.lines) {
         if (l.exchangeState !== "RETURNED_WAITING_CHECK") continue;
-        const old = l.replacesLineId ?? l.id;
+        const old = l.deliveredOn ? (l.replacesLineId ?? l.id) : l.id;
         const came = left.get(old) ?? 0;
         if (came >= l.quantity) {
           left.set(old, came - l.quantity);

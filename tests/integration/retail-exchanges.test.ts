@@ -271,6 +271,50 @@ run("Retail store's exchanges (plan v6 sec 8.9)", () => {
     expect(await balance()).toBe(1250);
   });
 
+  it("bills a refused exchange piece the courier never hands back, and credits it if it comes back approved", async () => {
+    const placed = await order({
+      externalOrderId: "WEB-8",
+      items: [{ sku: sku("Navy", "S"), quantity: 1, unitPrice: 850, lineId: "WEB-8-1" }],
+    });
+    expect(placed.status).toBe(201);
+    await ship("WEB-8");
+    await deliver("WEB-8");
+    expect(await balance()).toBe(625);
+    await exchange("WEB-8-X1", "WEB-8", "WEB-8-1", sku("Navy", "L"));
+    await ship("WEB-8-X1");
+    await deliver("WEB-8-X1", "RETURNED"); // refused on 3 Nov: the piece is due back by 7 Nov
+    expect(await billOverdueExchanges(new Date("2026-11-07T17:00:00Z"))).toBe(0);
+    expect(await balance()).toBe(625);
+    expect(await billOverdueExchanges(new Date("2026-11-07T21:00:00Z"))).toBe(1); // lost on the way
+    expect(await balance()).toBe(1250);
+    expect(await billOverdueExchanges(new Date("2026-11-09T21:00:00Z"))).toBe(0);
+
+    // The courier finds it later: back and approved, the bill comes off.
+    const navyL = await stockOf(sku("Navy", "L"));
+    await handBack("RL-180", "WEB-8-X1", "2026-11-10");
+    await check("APPROVE");
+    expect(await stockOf(sku("Navy", "L"))).toBe(navyL + 1);
+    expect(await balance()).toBe(625);
+    const pulled = await callShop(shop, exchangesRoute, { path: "/exchanges?status=all" });
+    expect(pulled.body.items[0].status).toBe("CREDITED");
+    expect(
+      pulled.body.items[0].events.map((e: { type: string; amount: number }) => [e.type, e.amount]),
+    ).toEqual([
+      ["exchange.billed", 625],
+      ["exchange.credited", -625],
+    ]);
+
+    // Again refused, billed when late, then back damaged: it stays billed, never twice.
+    await exchange("WEB-8-X2", "WEB-8", "WEB-8-1", sku("Navy", "L"));
+    await ship("WEB-8-X2");
+    await deliver("WEB-8-X2", "RETURNED");
+    await billOverdueExchanges(new Date("2026-11-07T21:00:00Z"));
+    expect(await balance()).toBe(1250);
+    await handBack("RL-181", "WEB-8-X2", "2026-11-10");
+    await check("DECLINE");
+    expect(await balance()).toBe(1250);
+  });
+
   it("settles each new line when two pieces of one old line are swapped for two SKUs", async () => {
     const placed = await order({
       externalOrderId: "WEB-20",

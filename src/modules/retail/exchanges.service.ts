@@ -22,8 +22,11 @@ import { putBackOnReserve } from "@/modules/retail/reserve";
  *   old piece back and declined    the new piece in full; the old one stays the store's
  *   old piece not back in time     the new piece in full, the night after the deadline
  *   back after that and approved   the old piece credited at the price paid for it
- *   exchange parcel refused        nothing; a declined (damaged, missing) new
- *                                  piece is billed in full as the store's loss
+ *   exchange parcel refused        nothing while the new piece comes back; a
+ *                                  declined (damaged, wrong) one, or one not back
+ *                                  by the deadline (lost, kept by the courier),
+ *                                  is billed in full as the store's loss, and
+ *                                  credited if it comes back later and is approved
  * Each exchange settles on its own, so a chain adds up: 650 -> 700 -> 720 bills
  * 650 + 50 + 20.
  */
@@ -43,6 +46,18 @@ export const OPEN_STATES: readonly RetailExchangeState[] = [
 // Placing an exchange
 // ---------------------------------------------------------------------------
 
+/**
+ * An exchange line that takes (or will take) the old piece: on its way or kept.
+ * A refused one (no delivery day) left the old piece with the customer; only
+ * its own new piece is still owed back.
+ */
+const swapsOldPiece = (l: {
+  exchangeState: RetailExchangeState | null;
+  deliveredOn: Date | null;
+}) =>
+  l.exchangeState !== "CANCELLED" &&
+  (l.exchangeState === "WAITING_DELIVERY" || l.deliveredOn !== null);
+
 /** How many pieces of a line the customer has (delivered, kept, not exchanged away). */
 function withCustomer(
   line: Prisma.RetailOrderLineGetPayload<{
@@ -57,9 +72,7 @@ function withCustomer(
   const returning = Array.isArray(delivery.returning) ? (delivery.returning as string[]) : [];
   const back = returning.filter((id) => id === line.id).length;
   const kept = delivery.status === "RETURNED" ? 0 : line.quantity - back;
-  const exchanged = line.replacedBy
-    .filter((l) => l.exchangeState !== "CANCELLED")
-    .reduce((sum, l) => sum + l.quantity, 0);
+  const exchanged = line.replacedBy.filter(swapsOldPiece).reduce((sum, l) => sum + l.quantity, 0);
   return Math.max(kept - exchanged, 0);
 }
 
@@ -113,7 +126,11 @@ export async function replacedLines(
         },
       );
     }
-    if (old.replacedBy.some((l) => l.exchangeState && OPEN_STATES.includes(l.exchangeState))) {
+    if (
+      old.replacedBy.some(
+        (l) => swapsOldPiece(l) && l.exchangeState && OPEN_STATES.includes(l.exchangeState),
+      )
+    ) {
       throw new ExchangeRefusal(
         409,
         "EXCHANGE_OPEN",
@@ -169,8 +186,10 @@ export async function createExchangeTx(
 // ---------------------------------------------------------------------------
 
 /**
- * The exchange parcel's courier result: kept lines start their deadline, the
- * others (refused) are cancelled. Answers the ERP line ids of the pieces that
+ * The exchange parcel's courier result: kept lines start their deadline for
+ * the old piece, refused lines theirs for the new piece (no delivery day).
+ * Every piece that left the warehouse is the store's until it is back and
+ * approved, whatever happened to it on the way. Answers the ERP line ids of the pieces that
  * will come back: the old piece of each kept line, the new piece of the others.
  */
 export async function exchangeDeliveredTx(
@@ -190,25 +209,12 @@ export async function exchangeDeliveredTx(
     const kept = args.kept.has(line.id);
     await tx.retailOrderLine.update({
       where: { id: line.id },
-      data: kept
-        ? {
-            exchangeState: "WAITING_RETURN",
-            deliveredOn: dateColumn(deliveredOn),
-            deadline: dateColumn(addDays(deliveredOn, args.exchangeDays)),
-          }
-        : { exchangeState: "CANCELLED" },
+      data: {
+        exchangeState: "WAITING_RETURN",
+        deliveredOn: kept ? dateColumn(deliveredOn) : null,
+        deadline: dateColumn(addDays(deliveredOn, args.exchangeDays)),
+      },
     });
-    if (!kept) {
-      await tx.retailExchangeEvent.create({
-        data: {
-          companyId: ctx.company.id,
-          exchangeId: args.exchangeId,
-          lineId: line.id,
-          type: "CANCELLED",
-          amount: ZERO,
-        },
-      });
-    }
     for (let i = 0; i < line.quantity; i++) returning.push(kept ? line.replacesLineId! : line.id);
   }
   await touch(tx, args.exchangeId);
@@ -498,7 +504,8 @@ export async function settleExchangePieces(
         amount: Prisma.Decimal;
       } | null = null;
       if (isNewPiece) {
-        // The refused exchange parcel came back: nothing was billed for it.
+        // The refused exchange parcel came back. Billed already (not back by the
+        // deadline): an approved piece is credited, a declined one stays billed.
         if (d.decision === "APPROVE") {
           await restockTx(tx, ctx, {
             warehouseId,
@@ -508,7 +515,10 @@ export async function settleExchangePieces(
             note: `${note}: refused exchange piece`,
           });
           summary.push(`${piece.variant.sku} (refused exchange piece) back in stock`);
-        } else {
+          if (fresh.exchangeState === "BILLED") {
+            event = { type: "CREDITED", kind: "LATE_RETURN", amount: newPrice.negated() };
+          }
+        } else if (fresh.exchangeState !== "BILLED") {
           event = { type: "BILLED", kind: "NEW_PIECE_DECLINED", amount: newPrice };
         }
       } else if (fresh.exchangeState === "BILLED") {
@@ -562,7 +572,9 @@ export async function settleExchangePieces(
         where: {
           parcelId: parcel.id,
           status: "WAITING",
-          retailOrderLineId: { in: [line.id, line.replacesLineId ?? line.id] },
+          retailOrderLineId: {
+            in: isNewPiece ? [line.id] : [line.id, line.replacesLineId ?? line.id],
+          },
         },
       });
       // An old line swapped for several new ones: a new line is done once its own pieces settled.
@@ -571,6 +583,15 @@ export async function settleExchangePieces(
         await tx.retailOrderLine.update({
           where: { id: line.id },
           data: { exchangeState: event.type },
+        });
+      } else if (waiting === 0 && isNewPiece && fresh.exchangeState === "RETURNED_WAITING_CHECK") {
+        // Every refused piece checked: billed if one was declined, else nothing is owed.
+        const declined = await tx.retailExchangeEvent.count({
+          where: { lineId: line.id, kind: "NEW_PIECE_DECLINED" },
+        });
+        await tx.retailOrderLine.update({
+          where: { id: line.id },
+          data: { exchangeState: declined > 0 ? "BILLED" : "CANCELLED" },
         });
       }
     }
@@ -608,8 +629,8 @@ const exchangeLabel = (type: string, kind: string | null) =>
 // ---------------------------------------------------------------------------
 
 /**
- * Every exchange whose old piece is not back by the end of its deadline (the
- * company's own day) is billed in full. Safe to repeat: a line billed once is
+ * Every exchange whose old piece (or, from a refused parcel, new piece) is not
+ * back by the end of its deadline (the company's own day) is billed in full. Safe to repeat: a line billed once is
  * not waiting any more.
  */
 export async function billOverdueExchanges(now: Date = new Date()) {
@@ -628,6 +649,8 @@ export async function billOverdueExchanges(now: Date = new Date()) {
     const exchange = line.order.exchange;
     if (!exchange) continue;
     const amount = line.shopPrice.times(line.quantity);
+    const deadline = line.deadline!.toISOString().slice(0, 10);
+    const what = line.deliveredOn ? "the old piece" : "the refused new piece";
     await runTransaction(async (tx) => {
       await lockRow(tx, "RetailExchange", exchange.id);
       const claimed = await tx.retailOrderLine.updateMany({
@@ -640,7 +663,7 @@ export async function billOverdueExchanges(now: Date = new Date()) {
         companyId: line.companyId,
         partyId: line.order.store.partyId,
         amount,
-        description: `Exchange billed in full ${exchange.number} — ${line.variant.sku}: the old piece did not come back by ${line.deadline!.toISOString().slice(0, 10)}`,
+        description: `Exchange billed in full ${exchange.number} — ${line.variant.sku}: ${what} did not come back by ${deadline}`,
         sourceId: exchange.id,
       });
       await tx.retailExchangeEvent.create({
@@ -661,7 +684,7 @@ export async function billOverdueExchanges(now: Date = new Date()) {
           action: "UPDATE",
           entityType: "RetailExchange",
           entityId: exchange.id,
-          summary: `${exchange.number}: the old piece of ${line.lineId} did not come back in time; the new piece billed in full (${amount.toFixed(2)})`,
+          summary: `${exchange.number}: ${what} of ${line.lineId} did not come back in time; the new piece billed in full (${amount.toFixed(2)})`,
         },
         tx,
       );

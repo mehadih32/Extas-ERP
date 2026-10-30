@@ -264,7 +264,9 @@ describe("the restore command in a drill", () => {
   });
 
   it("takes --drill only after the version, and sets the drill up before DNS, Docker and the ERP", () => {
-    expect(SCRIPT).toMatch(/case "\$\{2:-\}" in\n\s+""\) ;;\n\s+--drill\) drill=1 ;;/);
+    expect(SCRIPT).toMatch(
+      /if \[ \$# -gt 0 \]; then shift; fi\nwhile \[ \$# -gt 0 \]; do\n\s+case "\$1" in\n\s+--drill\) drill=1 ;;/,
+    );
     const settings = SCRIPT.indexOf(
       '[ -z "$drill" ] || drill_settings "$env_file" "$DATA" "$(tool fact --work "$WORK" appDomain)"',
     );
@@ -282,11 +284,11 @@ describe("the restore command in a drill", () => {
     expect(SCRIPT).toMatch(
       /if \[ -z "\$drill" \] && \[ -f "\$DATA\/backups\/\.drill" \]; then[\s\S]{0,200}drill=1/,
     );
-    // The end says the drill's time and never sends the owner to set up GitHub's updates.
+    // The end says the drill's time and never says a drill copy takes GitHub's updates.
     expect(SCRIPT).toContain('say "Restore drill finished in $((took / 60)) min $((took % 60)) s');
-    for (const next of SCRIPT.match(/^.*\n\s+note "Next \(part F of the guide\)/gm) ?? []) {
+    for (const next of SCRIPT.match(/^.*\n\s+note "New versions from GitHub install/gm) ?? []) {
       expect(next).toMatch(/^(?:if|elif) \[ -z "\$drill" \]/);
     }
-    expect(SCRIPT.match(/note "Next \(part F of the guide\)/g)).toHaveLength(2);
+    expect(SCRIPT.match(/note "New versions from GitHub install/g)).toHaveLength(2);
   });
 });

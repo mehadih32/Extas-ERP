@@ -14,11 +14,11 @@ export function whatPoints(what: HelpArticle["what"]): string[] {
 }
 
 /**
- * The most of one guide the AI reads: about twice the longest guide today
- * (16,000 characters in October 2026). tests/unit/help-ai-guides.test.ts fails
- * when a guide outgrows it.
+ * The most of one guide the AI reads: room above the longest guide today (the
+ * restore guide, about 32,000 characters at the end of October 2026).
+ * tests/unit/help-ai-guides.test.ts fails when a guide outgrows it.
  */
-export const GUIDE_CHARS = 30_000;
+export const GUIDE_CHARS = 40_000;
 
 /** One guide in plain text for the AI; tips are left out first if it is ever too long. */
 export function guideText(

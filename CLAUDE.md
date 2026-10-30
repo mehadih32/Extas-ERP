@@ -21,10 +21,11 @@ places disagree, the newer instruction wins.
 5. Ask the owner only when something is unsafe, would delete or overwrite data, would change live money or stock
    figures, or clashes with the blueprint in a way the owner would notice. Otherwise pick the safe default, say which,
    and keep going.
-6. Delivery: stacked part PRs, then ONE Release PR into `main` that the owner merges once. Before asking to merge,
-   send screenshots, sample PDFs, a plain-English list of what is inside and the steps only the owner can do. Merging
-   to `main` deploys automatically (`.github/workflows/deploy.yml`); after the merge, check the Deploy run and
-   report in plain words.
+6. Delivery: stacked part PRs, then ONE Release PR into `main`. Once every check is green, Claude merges it itself
+   (the owner's decision, 2026-10-30); if GitHub refuses, say so plainly and the owner merges. Before merging, send
+   screenshots, sample PDFs, a plain-English list of what is inside and the steps only the owner can do. The server
+   installs each merge into `main` by itself once "Tests and build" passed on it (`deploy/self-update.sh`, every 5
+   minutes); after the merge, check that the live site runs the new version and report in plain words.
 7. Write to the owner in short, plain sentences. No code words, no ids. Lead with what the owner needs to do, if
    anything.
 8. Every release ends with a readiness report in plain English: a table of every area (Orders and bookings,
@@ -207,6 +208,18 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-30 (no PuTTY, updates by themselves): the owner no longer uses PuTTY or Azure's Run command, not even
+  after a restore on a new server, a new IP or a new web address. Claude merges its own PRs once every check is
+  green (this replaces "only the owner merges" below; the rulesets stay as they are). The server pulls each merge
+  into `main` itself (`deploy/self-update.sh`, cron `/etc/cron.d/extras-erp-self-update`, read-only from the public
+  repository, only a commit whose "Tests and build" passed; never on a drill, standby or unfinished restore;
+  `AUTO_UPDATE=off` in `deploy/.env` stops it); the Deploy workflow signs in over SSH only when the GitHub variable
+  `DEPLOY_OVER_SSH` is `true`. The restore command in the guide PDF (download and Drive copy) carries the Google
+  client and, when kept in Drive, the recovery key, so nothing is typed (it stays out of the shell history); it
+  shows the server against the minimum (2 CPUs, 8 GB memory, Azure B2ms) and goes on by itself, goes on from the
+  step that stopped when pasted again, and takes `--domain` for a new web address. The build fits 8 GB (no type
+  check in the image build, a 4 GB heap, swap up to 16 GB with memory); CI still type-checks. The owner approved
+  these changes to the restore files.
 - 2026-10-30 (retail leftovers): the website never sent real orders to the live ERP through the old link, so the
   switch-over steps (moving old website orders, `GET /cost-of-goods`) are not built. B-grade order lines for the shops
   come in a separate release with full checks of wholesale sales, because they change how every sale takes stock and

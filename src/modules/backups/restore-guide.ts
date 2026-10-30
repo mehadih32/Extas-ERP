@@ -187,8 +187,8 @@ export const DRILL_PART = {
       en: "Pick a new address for the drill inside your domain that nobody uses: like drill.extasbd.com. Never the real ERP's or the demo site's address.",
     },
     {
-      bn: "পার্ট A করুন, শুধু এই বদলগুলো: A4-এ Resource group-এর নাম extas-drill, A5-এ সার্ভারের নাম extas-drill, A8-এ “Key pair name” extas-drill-key। আকার “Standard_B2s” আর ডিস্ক “64 GiB”-ই রাখুন, গাইডের সার্ভারের মতো।",
-      en: "Do part A with only these changes: at A4 name the resource group extas-drill, at A5 name the VM extas-drill, at A8 make the “Key pair name” extas-drill-key. Keep the size “Standard_B2s” and the disk “64 GiB”, as for the guide's server.",
+      bn: "পার্ট A করুন, শুধু এই বদলগুলো: A4-এ Resource group-এর নাম extas-drill, A5-এ সার্ভারের নাম extas-drill, A8-এ “Key pair name” extas-drill-key। আকার “Standard_B2ms” আর ডিস্ক “64 GiB”-ই রাখুন, গাইডের সার্ভারের মতো।",
+      en: "Do part A with only these changes: at A4 name the resource group extas-drill, at A5 name the VM extas-drill, at A8 make the “Key pair name” extas-drill-key. Keep the size “Standard_B2ms” and the disk “64 GiB”, as for the guide's server.",
     },
     {
       bn: "পার্ট B করুন extas-drill-key ফাইল দিয়ে; B5-এ “Saved Sessions”-এ নাম দিন extas-drill।",
@@ -215,8 +215,8 @@ export const DRILL_PART = {
       en: "On your real ERP, open Settings > Backups, click “Record a drill”, type the drill address and click “Record”. “Last new-server drill” shows the date, the time it took and the result.",
     },
     {
-      bn: "মহড়া মুছে ফেলুন: Azure-এ শুধু extas-drill Resource group খুলে “Delete resource group” চাপুন (নাম লিখে নিশ্চিত করুন), আর Cloudflare-এ drill লাইনটি মুছুন। আসল সার্ভারের group-এ কখনো হাত দেবেন না। মহড়ায় F5 করবেন না।",
-      en: "Remove the drill: in Azure open only the extas-drill resource group and click “Delete resource group” (type its name to confirm), and in Cloudflare delete the drill line. Never touch the real server's group. Do not do F5 in a drill.",
+      bn: "মহড়া মুছে ফেলুন: Azure-এ শুধু extas-drill Resource group খুলে “Delete resource group” চাপুন (নাম লিখে নিশ্চিত করুন), আর Cloudflare-এ drill লাইনটি মুছুন। আসল সার্ভারের group-এ কখনো হাত দেবেন না। মহড়ার কপি কখনো আপডেট নেয় না।",
+      en: "Remove the drill: in Azure open only the extas-drill resource group and click “Delete resource group” (type its name to confirm), and in Cloudflare delete the drill line. Never touch the real server's group. A drill copy never takes updates.",
     },
   ] satisfies Text[],
   commandMissing: {
@@ -229,6 +229,46 @@ export const DRILL_PART = {
 export function drillCommandLines(lines: string[] | null): string[] | null {
   if (!lines?.length) return null;
   return [...lines.slice(0, -1), `${lines[lines.length - 1]} --drill`];
+}
+
+/** What the command in the owner's own guide carries, so nothing is typed in PuTTY. */
+export type CommandKeys = {
+  clientId: string;
+  clientSecret: string;
+  /** Only while the owner keeps the key in Drive. */
+  recoveryKey?: string | null;
+};
+
+/**
+ * The one command with the keys inside (the guide in Google Drive and the one
+ * downloaded from the Backups screen): bootstrap.sh's --keys reads them from the
+ * command's input as one sealed block (base64), never from its words, so no
+ * process list shows them, and `unset HISTFILE` keeps the command out of the
+ * shell's history file. The newest backup is picked by itself. The block is cut
+ * into short lines inside its quotes, so a PDF viewer that breaks or joins them
+ * changes nothing (the script drops every space and line break in it).
+ */
+export function keyedCommandLines(lines: string[] | null, keys: CommandKeys): string[] | null {
+  if (!lines?.length) return null;
+  const answers = [
+    `google_client_id=${keys.clientId}`,
+    `google_client_secret=${keys.clientSecret}`,
+    ...(keys.recoveryKey ? [`recovery_key=${keys.recoveryKey}`] : []),
+    "pick=",
+    // bootstrap.sh takes the block only whole: it must end with this line.
+    "end=ok",
+  ];
+  const block = Buffer.from(`${answers.join("\n")}\n`, "utf8").toString("base64");
+  const parts = block.match(/.{1,64}/g) ?? [];
+  const [first, ...rest] = lines;
+  const last = rest.pop() ?? "";
+  return [
+    `unset HISTFILE && ${first}`,
+    ...rest,
+    `${last} --keys <<< '`,
+    ...parts.slice(0, -1),
+    `${parts.at(-1)}'`,
+  ];
 }
 
 /** The one command without its line that downloads from GitHub (the copy beside it is used). */
@@ -257,8 +297,8 @@ export const GUIDE_RULES: Text[] = [
     en: "If you get stuck, look for a code like “Error R12” or “Note W03” on the screen, then find that code in the list of errors at the end of this guide.",
   },
   {
-    bn: "কমান্ড আবার চালালে কোনো ক্ষতি হয় না: যেখানে থেমেছিল সেখান থেকে নিরাপদে আবার শুরু করে।",
-    en: "Running the command again does no harm: it safely starts over from where it stopped.",
+    bn: "কমান্ড আবার চালালে কোনো ক্ষতি হয় না: যে ধাপে থেমেছিল সেখান থেকে চলে, আর আগে শেষ হওয়া লম্বা ধাপগুলো (ডাউনলোড, সার্ভার তৈরি, ERP বানানো) আবার করে না।",
+    en: "Running the command again does no harm: it goes on from the step that stopped, and the slow steps already done (the download, preparing the server, building the ERP) are not done again.",
   },
   {
     bn: "অনুশীলনের জন্য (পুরনো ERP চালু রেখে) এই গাইডের শেষের “অনুশীলন: রিস্টোরের মহড়া” অংশটি করুন: তাতে কমান্ড টেস্ট মোডে চলে, আসল ওয়েব ঠিকানায় হাত দেয় না।",
@@ -297,6 +337,10 @@ export const DETAILS_TEXT = {
   commandMissing: {
     bn: "সার্ভার একবার আপডেট হলে কমান্ডটি এখানে আসে। তার আগে Google Drive-এর গাইডের কপিটি দেখুন।",
     en: "The command appears here once the server has been updated. Until then, see the copy of this guide in Google Drive.",
+  } satisfies Text,
+  keyedNote: {
+    bn: "এই কমান্ডের ভেতরেই আপনার Google client আর রিকভারি কী আছে (শেষের দিকের অক্ষরগুলো), তাই PuTTY-তে কিছু টাইপ করতে হয় না: শুধু ফোনে Google-এর কোডটি মেনে নেবেন। সবচেয়ে নতুন ব্যাকআপ নিজেই বেছে নেয়। কমান্ডটি সার্ভারের history-তে থাকে না। নতুন ওয়েব ঠিকানায় ERP তুলতে কমান্ডের একদম শেষে, শেষ ' চিহ্নের পরে, একটা ফাঁকা দিয়ে লিখুন --domain আর নতুন ঠিকানা (যেমন --domain erp.newcompany.com), আর আগে থেকেই সেই ঠিকানা নতুন সার্ভারের দিকে দিন। এই গাইড যার হাতে যাবে সে আপনার ব্যাকআপ খুলতে পারবে: কাউকে পাঠাবেন না।",
+    en: "Your Google client and recovery key are inside this command (the letters near its end), so nothing is typed in PuTTY: you only approve Google's code on your phone. It picks the newest backup by itself and stays out of the server's history. To bring the ERP up at a new web address, add a space, --domain and the new address at the very end, after the last ' mark (like --domain erp.newcompany.com), and point that address to the new server first. Whoever has this guide can open your backups: send it to no one.",
   } satisfies Text,
   checksum: { bn: "স্ক্রিপ্টের চেকসাম", en: "The script's checksum" } satisfies Text,
   version: { bn: "সংস্করণ (commit)", en: "Version (commit)" } satisfies Text,
@@ -436,8 +480,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         id: "A7",
         title: { bn: "সার্ভারের আকার", en: "The server's size" },
         text: {
-          bn: "“Size”-এর পাশে “See all sizes” চাপুন, B2s খুঁজে “Standard_B2s” (2 vcpus, 4 GiB memory) বেছে নিন, তারপর “Select” চাপুন। বড় আকারও চলবে, ছোট নয়।",
-          en: "Next to “Size”, click “See all sizes”, search B2s, pick “Standard_B2s” (2 vcpus, 4 GiB memory), then click “Select”. A larger size works too; a smaller one does not.",
+          bn: "“Size”-এর পাশে “See all sizes” চাপুন, B2ms খুঁজে “Standard_B2ms” (2 vcpus, 8 GiB memory) বেছে নিন, তারপর “Select” চাপুন। বড় আকারও চলবে, ছোট নয়।",
+          en: "Next to “Size”, click “See all sizes”, search B2ms, pick “Standard_B2ms” (2 vcpus, 8 GiB memory), then click “Select”. A larger size works too; a smaller one does not.",
         },
         picture: "azure-size",
       },
@@ -450,8 +494,8 @@ export const GUIDE_PARTS: GuidePart[] = [
         },
         picture: "azure-admin",
         tip: {
-          bn: "চাবি (key) একটি ছোট ফাইল, যা পাসওয়ার্ডের কাজ করে আর পাসওয়ার্ডের চেয়ে নিরাপদ। Azure এটি A11-এ একবারই দেয়। এই চাবি থাকলে পরে F5-এ GitHub থেকে আপডেট আবার আপনি নিজেই চালু করতে পারবেন।",
-          en: "The key is a small file that works like a password and is safer than one. Azure gives it to you once, at A11. With it you can also let GitHub update the server again yourself at F5.",
+          bn: "চাবি (key) একটি ছোট ফাইল, যা পাসওয়ার্ডের কাজ করে আর পাসওয়ার্ডের চেয়ে নিরাপদ। Azure এটি A11-এ একবারই দেয়।",
+          en: "The key is a small file that works like a password and is safer than one. Azure gives it to you once, at A11.",
         },
       },
       {
@@ -826,14 +870,14 @@ export const GUIDE_PARTS: GuidePart[] = [
       },
       {
         id: "F5",
-        title: { bn: "GitHub থেকে আপডেট আবার চালু", en: "Let GitHub update the server again" },
+        title: { bn: "নতুন আপডেট নিজে থেকেই আসে", en: "New versions install by themselves" },
         text: {
-          bn: "PuTTY-তে লিখুন cd /opt/extras-erp && sudo ./deploy/setup-auto-deploy.sh আর Enter চাপুন। এটি চারটি জিনিস দেখায়: USERNAME, SSH_HOST_KEY, SSH_PRIVATE_KEY আর SERVER_IP। ব্রাউজারে github.com-এ Extas-ERP রিপোজিটরি খুলে “Settings” > “Secrets and variables” > “Actions” খুলুন। প্রতিটির পাশের পেনসিল চিহ্ন চেপে PuTTY থেকে তার নতুন মান বসান (SERVER_IP-এ A13-এর IP), তারপর “Update secret” চাপুন।",
-          en: "In PuTTY, type cd /opt/extras-erp && sudo ./deploy/setup-auto-deploy.sh and press Enter. It shows four things: USERNAME, SSH_HOST_KEY, SSH_PRIVATE_KEY and SERVER_IP. In the browser, open the Extas-ERP repository on github.com, then “Settings” > “Secrets and variables” > “Actions”. Click the pencil sign next to each one, put in its new value from PuTTY (for SERVER_IP, the IP from A13), then click “Update secret”.",
+          bn: "এখানে কিছু করার নেই। সার্ভার প্রতি 5 মিনিটে GitHub-এ নতুন সংস্করণ আছে কি না দেখে; GitHub-এর চেক পাস করলে নিজেই সেটি বসায়: আগে ডেটাবেসের নিরাপত্তা কপি নেয়, কিছু ভুল হলে নিজেই আগের সংস্করণে ফিরে যায়। কোনো চাবি, secret বা PuTTY-তে লেখা লাগে না; নতুন সার্ভার, নতুন IP বা নতুন ওয়েব ঠিকানাতেও একই।",
+          en: "Nothing to do here. Every 5 minutes the server asks GitHub whether there is a new version; once GitHub's checks passed on it, the server installs it by itself: it takes a safety copy of the database first and goes back to the old version by itself if anything fails. No keys, no secrets and nothing typed in PuTTY, also on a new server, a new IP address or a new web address.",
         },
         tip: {
-          bn: "PuTTY-তে মাউস দিয়ে লেখা টেনে বাছলেই কপি হয়ে যায়; SSH_PRIVATE_KEY-এর BEGIN লাইন থেকে END লাইন পর্যন্ত পুরোটা নিন। এটা না করা পর্যন্ত ERP চলে, শুধু নতুন আপডেট আসে না; পরেও করা যায়। শুধু সেই সার্ভারে করুন যা আপনি রোজ ব্যবহার করবেন, মহড়ার সার্ভারে কখনো নয়। নতুন ERP অপেক্ষায় (standby, W10) থাকলে আগে F6 করুন (go-live.sh); তার আগে এই কমান্ড চলে না, যাতে GitHub কখনো অব্যবহৃত কপি আপডেট না করে।",
-          en: "In PuTTY, selecting text with the mouse copies it; for SSH_PRIVATE_KEY take everything from the BEGIN line to the END line. Until you do this the ERP runs; only new updates do not arrive, and you can do it later. Do it only on the server you will use every day, never on a drill server. If the new ERP waits on standby (W10), do F6 first (go-live.sh); until then this command does not run, so GitHub never updates a copy that is not in use.",
+          bn: "মহড়ার কপি কখনো আপডেট হয় না। নতুন ERP অপেক্ষায় (standby, W10) থাকলে আগে F6 করুন (go-live.sh); তার পরেই আপডেট নিজে থেকে শুরু হয়, যাতে অব্যবহৃত কপি কখনো আপডেট না হয়।",
+          en: "A drill copy is never updated. If the new ERP waits on standby (W10), do F6 first (go-live.sh); updates start by themselves right after it, so a copy that is not in use is never updated.",
         },
       },
       {
@@ -963,11 +1007,11 @@ export const GUIDE_ERRORS: GuideError[] = [
   },
   {
     code: "R03",
-    shown: "the ERP needs 4 GB / at least 20 GB",
+    shown: "the ERP needs 8 GB / at least 20 GB",
     meaning: fix("সার্ভারের মেমরি বা ডিস্ক খুব ছোট।", "The server's memory or disk is too small."),
     todo: fix(
-      "সার্ভারটি আবার বানান: A7 ধাপে “Standard_B2s” বা বড়, A10 ধাপে “64 GiB”।",
-      "Make the VM again: “Standard_B2s” or larger at A7, “64 GiB” at A10.",
+      "মেমরি কম হলে Azure-এ VM-এর “Size” খুলে “Standard_B2ms” বেছে “Resize” চাপুন, তারপর কমান্ড আবার পেস্ট করুন। ডিস্ক কম হলে সার্ভারটি আবার বানান, A10 ধাপে “64 GiB”।",
+      "Memory too small: in Azure open the VM's “Size”, pick “Standard_B2ms”, click “Resize”, then paste the command again. Disk too small: make the VM again with “64 GiB” at A10.",
     ),
   },
   {
@@ -1128,8 +1172,8 @@ export const GUIDE_ERRORS: GuideError[] = [
     shown: "the ERP could not be installed",
     meaning: fix("ERP বানানো বা চালু করা যায়নি।", "The ERP could not be built or started."),
     todo: fix(
-      "কমান্ড আবার চালান: যেখানে থেমেছিল সেখান থেকে চলবে। আবার হলে PuTTY-র শেষ লাইনগুলোর ছবি তুলে ডেভেলপারকে পাঠান।",
-      "Run the command again: it picks up where it stopped. If it happens again, take a picture of PuTTY's last lines and send it to the developer.",
+      "কমান্ড আবার চালান: যেখানে থেমেছিল সেখান থেকে চলবে। শেষ লাইনগুলোতে “npm run build” লেখা থাকলে সার্ভারের মেমরি কম পড়েছে (পুরনো ব্যাকআপে এমন হতে পারে): Azure-এ VM-এর “Size” সাময়িকভাবে “Standard_B4ms” (16 GiB) করুন, কমান্ড আবার চালান, রিস্টোর শেষে আবার “Standard_B2ms” করুন। অন্য কিছু হলে PuTTY-র শেষ লাইনগুলোর ছবি তুলে ডেভেলপারকে পাঠান।",
+      "Run the command again: it picks up where it stopped. If the last lines show “npm run build”, the server ran out of memory (an older backup can need more): in Azure set the VM's “Size” to “Standard_B4ms” (16 GiB) for now, run the command again, and set it back to “Standard_B2ms” after the restore. Anything else: take a picture of PuTTY's last lines and send it to the developer.",
     ),
   },
   {
@@ -1268,6 +1312,19 @@ export const GUIDE_ERRORS: GuideError[] = [
     ),
   },
   {
+    code: "R32",
+    shown:
+      "the keys at the end of the command are damaged / the keys are missing after --keys / after --domain is not a web address / leave --domain out of the drill command",
+    meaning: fix(
+      "কমান্ডের শেষের চাবিগুলো (Google client আর recovery key) পুরোটা কপি হয়নি, অথবা --domain-এর পরে লেখা নতুন ওয়েব ঠিকানাটা ঠিক নেই। কিছুই বদলানো হয়নি।",
+      "The keys at the end of the command (the Google client and the recovery key) were not all copied, or the new web address after --domain is not right. Nothing was changed.",
+    ),
+    todo: fix(
+      "Google Drive-এর গাইড থেকে কমান্ডটি আবার পুরোটা কপি করুন (শেষের ' চিহ্ন পর্যন্ত)। নতুন ঠিকানা দিলে লিখুন যেমন --domain erp.yourcompany.com।",
+      "Copy the whole command again from the guide in Google Drive (up to the last ' mark). For a new address, type it like --domain erp.yourcompany.com.",
+    ),
+  },
+  {
     code: "W01",
     shown: "the web address was not changed",
     meaning: fix(
@@ -1403,6 +1460,18 @@ export const GUIDE_ERRORS: GuideError[] = [
     todo: fix(
       "ঠিক উপরের লাইনগুলোর কোড (যেমন R20 বা W05) এই তালিকায় দেখুন। স্ক্রিন পরীক্ষা করা না গেলে (W05-এ Screens not checked) ERP খুলে F1 আর F2-এর মতো নিজে দেখুন। ERP ঠিক থাকলে আর পুরনো সার্ভার বন্ধ হলে F6 করুন। মহড়ায়: মহড়ার ধাপ 5-এর মতো Cloudflare-এ মহড়ার লাইনটি নিজে যোগ করুন, আর উপরের লাইনগুলোর ছবি তুলে ডেভেলপারকে পাঠান।",
       "Look up the codes in the lines just above (like R20 or W05) in this list. If the screens could not be checked (Screens not checked, under W05), open the ERP and look yourself as in F1 and F2. When the ERP is right and the old server is off, do step F6. In a drill: add the drill's line in Cloudflare yourself as in the drill's step 5, and send a picture of the lines above to the developer.",
+    ),
+  },
+  {
+    code: "W15",
+    shown: "this server has 1 CPU",
+    meaning: fix(
+      "সার্ভারে একটাই CPU, তাই রিস্টোর ধীরে চলবে।",
+      "The server has one CPU, so the restore runs slowly.",
+    ),
+    todo: fix(
+      "কিছু করতে হবে না: রিস্টোর চলতে থাকে। পরে Azure-এ “Size” “Standard_B2ms” করুন।",
+      "Nothing to do: the restore goes on. Later, set the VM's “Size” to “Standard_B2ms” in Azure.",
     ),
   },
   {

@@ -41,7 +41,10 @@ RUN --mount=type=cache,target=/root/.npm \
 # --- The production build --------------------------------------------------------
 FROM deps AS builder
 COPY . .
-RUN npm run build
+# Fits an 8 GB server (B2ms) with its swap file (lib.sh: ensure_build_swap): no type
+# check here (GitHub ran it before this commit could be installed) and a fixed limit
+# for Node's own memory.
+RUN SKIP_BUILD_TYPECHECK=1 NODE_OPTIONS=--max-old-space-size=4096 npm run build
 # Bug Guard's "Packages with known weaknesses" check reads npm's own report on the
 # packages the app runs with. No answer from npm (offline) leaves an empty report.
 RUN (timeout 120 npm audit --omit=dev --json > npm-audit.json || true); \

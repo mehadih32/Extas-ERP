@@ -60,6 +60,7 @@ if [ -n "$free" ] && [ "$free" -lt $((5 * 1024 * 1024)) ]; then
 fi
 
 say "Building the app (this takes a few minutes)"
+ensure_build_swap
 build=(build)
 if [ "$pull" = 1 ]; then
   compose pull db
@@ -173,6 +174,8 @@ install_backup_helpers ||
   say "Restore from the Backups screen is not set up on this server (no systemd); restore with deploy/restore.sh"
 install_host_status ||
   say "Bug Guard cannot see this server's own updates; it says nothing about them"
+install_self_update ||
+  say "This server does not install new versions by itself; run sudo ./deploy/auto-deploy.sh after each merge"
 record_host_files ||
   say "The backups could not take this version's code or settings this time; the Backups screen says what is missing"
 forget_github_token || true

@@ -61,13 +61,10 @@ ufw --force enable
 ufw status
 
 say "Swap file (room for building the app on a small server)"
-if [ -z "$(swapon --show --noheadings)" ]; then
-  fallocate -l 2G /swapfile
-  chmod 600 /swapfile
-  mkswap /swapfile
-  swapon /swapfile
-  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >>/etc/fstab
-fi
+ensure_build_swap
+
+say "New versions install by themselves (each merge into main, once GitHub's checks passed)"
+install_self_update
 swapon --show
 
 if [ -n "${EXTAS_RESTORE:-}" ]; then

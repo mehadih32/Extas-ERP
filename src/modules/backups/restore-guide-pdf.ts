@@ -304,7 +304,13 @@ class GuideWriter {
     const inner = WIDTH - 24;
     const block = lines ? this.monoBlock(lines, inner, 10) : null;
     const lineGap = block ? block.size * 1.75 : 0;
-    const noteH = this.richHeight(this.t(DETAILS_TEXT.commandNote), inner, SMALL, SMALL_LINE);
+    // The owner's own copy: the command carries the keys (keyedCommandLines).
+    const note = this.t(
+      lines?.some((line) => line.includes("--keys"))
+        ? DETAILS_TEXT.keyedNote
+        : DETAILS_TEXT.commandNote,
+    );
+    const noteH = this.richHeight(note, inner, SMALL, SMALL_LINE);
     const facts = withFacts ? this.commandFacts() : [];
     const factsH = facts.reduce((sum, f) => sum + f.lines.length * (f.size * 1.4) + 14, 0);
     const missingH = lines ? 0 : this.richHeight(this.t(missing), inner);
@@ -332,7 +338,7 @@ class GuideWriter {
     } else {
       this.rich(this.t(missing), { x: SIDE + 12, width: inner });
     }
-    this.rich(this.t(DETAILS_TEXT.commandNote), {
+    this.rich(note, {
       x: SIDE + 12,
       width: inner,
       size: SMALL,

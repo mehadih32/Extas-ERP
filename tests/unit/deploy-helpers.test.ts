@@ -509,7 +509,7 @@ describe("standby after a restore on a second server (G2)", () => {
       /warn W10 "this ERP waits on standby: \$APP_DOMAIN does not point to this server yet/,
     );
     const banner = code.lastIndexOf('"THIS ERP IS ON STANDBY"');
-    expect(banner).toBeGreaterThan(code.lastIndexOf("Next (part F of the guide)"));
+    expect(banner).toBeGreaterThan(code.lastIndexOf("New versions from GitHub install"));
     const goLive = readFileSync(path.join("deploy", "go-live.sh"), "utf8");
     expect(goLive).toMatch(/leave_standby "\$DATA_DIR\/backups" "\$APP_DOMAIN"/);
   });

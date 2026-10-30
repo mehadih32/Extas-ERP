@@ -20,7 +20,11 @@ import {
 } from "@/modules/backups/backup-core";
 import { restoreCommandLines } from "@/modules/backups/backup.service";
 import { putRootFile } from "@/modules/backups/drive-root";
-import { guideContentVersion, type GuideLang } from "@/modules/backups/restore-guide";
+import {
+  guideContentVersion,
+  type GuideLang,
+  keyedCommandLines,
+} from "@/modules/backups/restore-guide";
 import { type GuideDetails, restoreGuidePdf } from "@/modules/backups/restore-guide-pdf";
 
 /*
@@ -89,6 +93,26 @@ function personalDetails(
     recoveryKey,
     keyKept,
   };
+}
+
+/**
+ * The owner's own copy: "Your restore details" and, when the Google client is
+ * known, the one command with the client (and the key, when printed) inside it,
+ * so the restore asks nothing in PuTTY (the owner's decision, 2026-10-30).
+ */
+function withPersonal(
+  base: GuideDetails,
+  personal: NonNullable<GuideDetails["personal"]>,
+): GuideDetails {
+  const keyed =
+    personal.clientId && personal.clientSecret
+      ? keyedCommandLines(base.commandLines, {
+          clientId: personal.clientId,
+          clientSecret: personal.clientSecret,
+          recoveryKey: personal.recoveryKey,
+        })
+      : null;
+  return { ...base, commandLines: keyed ?? base.commandLines, personal };
 }
 
 /** A fingerprint of what the copy without details is made from. */
@@ -191,12 +215,15 @@ export async function publishGuide(
   options: { token: string; rootId: string; recoveryKey: string | null },
   now = new Date(),
 ): Promise<boolean> {
-  const details: GuideDetails = {
-    ...(await baseDetails(now)),
-    personal: personalDetails(config, config.keepKeyInDrive ? options.recoveryKey : null),
-  };
+  const base = await baseDetails(now);
+  const details = withPersonal(
+    base,
+    personalDetails(config, config.keepKeyInDrive ? options.recoveryKey : null),
+  );
   const pdfs = await buildGuides(details);
-  const hash = driveFingerprint(config, details);
+  // From the copy without details, as the clock reads it (guideTick); the client and
+  // the key have their own parts in it.
+  const hash = driveFingerprint(config, base);
   await putRootFile(options.token, options.rootId, "guideBn", pdfs.bn, { guide: hash });
   await putRootFile(options.token, options.rootId, "guideEn", pdfs.en, { guide: hash });
   await publishRestoreScripts(options.token, options.rootId, details.bootstrapSha256);
@@ -288,14 +315,14 @@ export function resetGuideRetry() {
  */
 export async function downloadGuide(actor: Actor, lang: GuideLang, meta?: RequestMeta) {
   const config = await getBackupConfig();
-  const details: GuideDetails = {
-    ...(await baseDetails()),
-    personal: personalDetails(
+  const details = withPersonal(
+    await baseDetails(),
+    personalDetails(
       config,
       null,
       config.keepKeyInDrive && Boolean(config.keyPairId && config.keyInDriveAt),
     ),
-  };
+  );
   const data = await restoreGuidePdf(lang, details);
   const name = lang === "bn" ? "Bangla" : "English";
   await audit(actor, meta, {

@@ -184,6 +184,36 @@ app_running() {
   [ -n "$(compose ps -q app 2>/dev/null)" ]
 }
 
+# Building the ERP takes more memory at its peak than an 8 GB server (B2ms) has: the
+# rest comes from the swap file, which grows to 16 GB minus the server's memory (2 GB
+# at least) when the disk keeps 20 GB free beside it. Only the ERP's own /swapfile is
+# changed, never swap set up some other way. Safe to run again.
+ensure_build_swap() {
+  local mem_mb want_mb have_mb free_mb
+  mem_mb="$(awk '/^MemTotal:/ {print int($2 / 1024)}' /proc/meminfo)"
+  want_mb=$((16384 - mem_mb))
+  [ "$want_mb" -ge 2048 ] || want_mb=2048
+  have_mb="$(swapon --show=SIZE --bytes --noheadings 2>/dev/null | awk '{s += $1} END {print int(s / 1048576)}')"
+  # A little under: swapon shows a file's size less one page.
+  [ "${have_mb:-0}" -lt $((want_mb - 64)) ] || return 0
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -qv '^/swapfile$'; then return 0; fi
+  free_mb="$(df --output=avail -m / | tail -n 1 | tr -d ' ')"
+  if [ "${free_mb:-0}" -lt $((want_mb - ${have_mb:-0} + 20480)) ]; then
+    echo "The disk has no room for a larger swap file (${free_mb} MB free): building may run out of memory."
+    return 0
+  fi
+  if swapon --show=NAME --noheadings 2>/dev/null | grep -q '^/swapfile$'; then
+    swapoff /swapfile 2>/dev/null || { echo "The swap file is in use and was not made larger."; return 0; }
+  fi
+  rm -f /swapfile
+  fallocate -l "${want_mb}M" /swapfile || dd if=/dev/zero of=/swapfile bs=1M count="$want_mb" status=none
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >>/etc/fstab
+  echo "Swap file: $((want_mb / 1024)) GB, for building the ERP."
+}
+
 # Waits for a service's health check to pass (about 3 minutes at most).
 wait_healthy() {
   local id status
@@ -796,6 +826,22 @@ EOF
 
 # Bug Guard's view of the server (host-status.sh): Ubuntu updates waiting and a
 # restart needed, written every morning and after every update. It only reads.
+# The server installs each merge into main by itself (self-update.sh, every 5
+# minutes): copied outside the program folder, so it works whatever version the
+# folder holds (an ERP restored from an older backup too). From the deploy folder
+# this file is in: the ERP's own (deploy.sh), or the restore command's own version
+# (setup-server.sh during a restore).
+install_self_update() {
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  [ -f "$here/self-update.sh" ] || return 0
+  install -m 755 "$here/self-update.sh" /usr/local/sbin/extras-erp-self-update
+  cat >/etc/cron.d/extras-erp-self-update <<EOF
+# Extas ERP (deploy.sh): installs each merge into main once GitHub's checks passed on it.
+*/5 * * * * root /usr/local/sbin/extras-erp-self-update $(dirname "$DEPLOY_DIR") >/dev/null 2>&1
+EOF
+}
+
 install_host_status() {
   cat >/etc/cron.d/extras-erp-host-status <<EOF
 # Extas ERP (deploy.sh): tells Bug Guard whether the server has updates waiting.

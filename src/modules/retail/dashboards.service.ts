@@ -504,8 +504,9 @@ async function storeFigures(ctx: CompanyContext, store: { id: string; partyId: s
       select: { quantity: true, unitCost: true },
     }),
   ]);
-  const cost = (rows: Array<{ quantity: number; unitCost: Prisma.Decimal | null }>) =>
-    rows.reduce((t, r) => t + Math.abs(r.quantity) * Number(r.unitCost ?? 0), 0);
+  // Signed, so a voided return (a negative restock) takes its cost back out.
+  const value = (rows: Array<{ quantity: number; unitCost: Prisma.Decimal | null }>) =>
+    rows.reduce((t, r) => t + r.quantity * Number(r.unitCost ?? 0), 0);
   const billed = Number(ledger?.billed ?? 0);
   const credited = Number(ledger?.credited ?? 0);
   const storeLoss = pieces
@@ -547,7 +548,7 @@ async function storeFigures(ctx: CompanyContext, store: { id: string; partyId: s
       taken: billed,
       givenBack: credited,
       storeLoss,
-      erpProfit: billed - credited - (cost(out) - cost(back)),
+      erpProfit: billed - credited - (-value(out) - value(back)),
     },
     incomplete: books.incomplete,
     fixedMissing: books.fixedMissing,

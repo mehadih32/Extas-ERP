@@ -9,7 +9,7 @@ import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { createSalesReturn } from "@/modules/sales/return.service";
 
-import { billMissingNewPiecesTx, settleExchangePieces } from "./exchanges.service";
+import { settleExchangePieces } from "./exchanges.service";
 import { putBackOnReserve } from "./reserve";
 
 /*
@@ -373,15 +373,6 @@ export async function resolveHold(
           data: { exchangeState: "WAITING_RETURN" },
         });
       }
-      // A refused new piece that did not come is the store's loss: billed now.
-      const came = (lineId: string) => pieces.filter((p) => p.lineId === lineId).length;
-      await billMissingNewPiecesTx(tx, ctx, {
-        exchangeId: parcel.order.exchange.id,
-        missing: parcel.order.lines
-          .filter((l) => l.exchangeState === "CANCELLED")
-          .map((l) => ({ lineId: l.id, pieces: l.quantity - came(l.id) })),
-        note: `${parcel.list.returnListId} ${parcel.consignmentId}`,
-      });
     }
     await auditInCompany(
       ctx,

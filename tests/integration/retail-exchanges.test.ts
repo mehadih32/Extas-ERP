@@ -307,7 +307,15 @@ run("Retail store's exchanges (plan v6 sec 8.9)", () => {
     await ship("WEB-20-X1");
     await deliver("WEB-20-X1");
     await handBack("RL-200", "WEB-20-X1");
-    await check("APPROVE");
+    // The two old pieces are checked one at a time.
+    for (let i = 0; i < 2; i++) {
+      const parcel = (await returnsPage(shop.owner)).waiting[0]!;
+      await checkParcel(shop.owner, parcel.id, {
+        decisions: [
+          { pieceId: parcel.pieces.find((p) => p.status === "WAITING")!.id, decision: "APPROVE" },
+        ],
+      });
+    }
     expect(await balance()).toBe(1400); // 1250 + 75 + 75
     const lines = await prisma.retailOrderLine.findMany({
       where: { lineId: { in: ["X1-1", "X1-2"] } },

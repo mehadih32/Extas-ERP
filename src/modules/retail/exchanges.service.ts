@@ -474,8 +474,9 @@ export async function settleExchangePieces(
       settled.set(e.lineId, (settled.get(e.lineId) ?? 0) + 1);
     }
     const newLineOf = (oldLineId: string) => {
+      // Only lines the customer kept (a refused one has no delivery day).
       const candidates = parcel.order.lines.filter(
-        (l) => l.replacesLineId === oldLineId && l.exchangeState !== "CANCELLED",
+        (l) => l.replacesLineId === oldLineId && l.deliveredOn !== null,
       );
       const line = candidates.find((l) => (settled.get(l.id) ?? 0) < l.quantity) ?? candidates[0]!;
       settled.set(line.id, (settled.get(line.id) ?? 0) + 1);
@@ -564,7 +565,9 @@ export async function settleExchangePieces(
           retailOrderLineId: { in: [line.id, line.replacesLineId ?? line.id] },
         },
       });
-      if (waiting === 0 && event) {
+      // An old line swapped for several new ones: a new line is done once its own pieces settled.
+      const own = !isNewPiece && (settled.get(line.id) ?? 0) >= line.quantity;
+      if ((waiting === 0 || own) && event) {
         await tx.retailOrderLine.update({
           where: { id: line.id },
           data: { exchangeState: event.type },
@@ -583,53 +586,6 @@ export async function settleExchangePieces(
       tx,
     );
   });
-}
-
-/**
- * Refused exchange pieces that never came back (the parcel did not come, or
- * the owner ticked fewer on Hold): the store's loss, billed at its price for
- * the new piece (plan v6 owner notes). Once per line.
- */
-export async function billMissingNewPiecesTx(
-  tx: Tx,
-  ctx: CompanyContext,
-  args: { exchangeId: string; missing: Array<{ lineId: string; pieces: number }>; note: string },
-) {
-  const exchange = await tx.retailExchange.findUniqueOrThrow({
-    where: { id: args.exchangeId },
-    include: { store: true },
-  });
-  await lockRow(tx, "RetailExchange", exchange.id);
-  for (const m of args.missing) {
-    if (m.pieces <= 0) continue;
-    const line = await tx.retailOrderLine.findUniqueOrThrow({
-      where: { id: m.lineId },
-      include: { variant: { select: { sku: true } } },
-    });
-    if (line.exchangeState !== "CANCELLED" || line.cancelledAt) continue;
-    const amount = line.shopPrice.times(m.pieces);
-    const journal = await postExchangeTx(tx, {
-      companyId: ctx.company.id,
-      userId: ctx.user.id,
-      partyId: exchange.store.partyId,
-      amount,
-      description: `Exchange billed in full ${exchange.number} — ${line.variant.sku}: refused piece did not come back (${args.note})`,
-      sourceId: exchange.id,
-    });
-    await tx.retailExchangeEvent.create({
-      data: {
-        companyId: ctx.company.id,
-        exchangeId: exchange.id,
-        lineId: line.id,
-        type: "BILLED",
-        kind: "NEW_PIECE_MISSING",
-        amount,
-        journalEntryId: journal?.id ?? null,
-      },
-    });
-    await tx.retailOrderLine.update({ where: { id: line.id }, data: { exchangeState: "BILLED" } });
-  }
-  await touch(tx, exchange.id);
 }
 
 const exchangeLabel = (type: string, kind: string | null) =>

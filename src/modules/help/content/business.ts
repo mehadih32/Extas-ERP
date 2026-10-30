@@ -1,13 +1,303 @@
 import type { HelpSection } from "../types";
 
+/** The period at the top of every Business dashboard (Overview, E-commerce, a store's page). */
+const PERIOD_FIELDS = [
+  { label: "Period", text: "কোন সময়ের হিসাব দেখবেন। শুরুতে এই মাস।" },
+  { label: "Today", text: "শুধু আজ।" },
+  { label: "Last 7 days", text: "আজসহ শেষ 7 দিন।" },
+  { label: "This week", text: "শনিবার থেকে আজ পর্যন্ত।" },
+  { label: "This month", text: "মাসের 1 তারিখ থেকে আজ।" },
+  { label: "This year", text: "1 জানুয়ারি থেকে আজ।" },
+  { label: "Lifetime", text: "শুরু থেকে আজ পর্যন্ত সব।" },
+  { label: "Your own days", text: "নিজের পছন্দের শুরু আর শেষের তারিখ।" },
+  { label: "From", text: "শুরুর তারিখ।" },
+  { label: "To", text: "শেষের তারিখ।" },
+  { label: "Show", text: "বাছাই করা তারিখের হিসাব দেখায়।" },
+];
+
 /** Business: the retail side of the company (plan v6): retail stores and the prices they buy at. */
 export const businessHelp: HelpSection = {
   id: "business",
   title: "ব্যবসা: রিটেল শপ (Business)",
   description:
-    "রিটেল শপগুলো ইআরপির বিশেষ হোলসেল বায়ার: প্রতিটা শপ যোগ করা, বায়ার লিস্টে তার জায়গা, আর শপ কোন দামে মাল কিনবে তা ঠিক করা।",
+    "পুরো ব্যবসা এক নজরে (Overview), অনলাইন শপগুলোর হিসাব (Retail), আর রিটেল শপগুলো: ইআরপির বিশেষ হোলসেল বায়ার, তাদের দাম, ফেরত আর স্টক।",
   href: "/business",
   articles: [
+    {
+      slug: "business-overview",
+      title: "Overview: পুরো ব্যবসা এক নজরে",
+      summary:
+        "বায়িং হাউস আর রিটেল শপ মিলে মোট বিক্রি, লাভ বা লস, নগদ টাকা আর শপের বাকি, আগের সময়ের সাথে তুলনা করে।",
+      keywords: [
+        "overview",
+        "business overview",
+        "total profit",
+        "retail profit",
+        "why profit changed",
+        "ওভারভিউ",
+        "মোট লাভ",
+        "মোট বিক্রি",
+        "লাভ কেন বদলাল",
+      ],
+      routes: ["/business/overview"],
+      who: "যাদের ভূমিকায় টাকার হিসাব (financials) দেখার অনুমতি আছে। শপের হিসাব না আসার সতর্কতা দেখতে রিটেল শপ দেখার অনুমতিও লাগে।",
+      what: [
+        "ওপরে সময় বাছাই, তারপর 6টা বড় সংখ্যা, প্রতিটায় আগের একই লম্বা সময়ের সাথে তুলনা: বাড়লে সবুজ, কমলে লাল।",
+        "মোট বিক্রিতে ইআরপি থেকে নিজের শপে বিক্রি বাদ যায় আর শপের কাস্টমারের কাছে বিক্রি যোগ হয়, তাই একই টাকা দুইবার গোনা হয় না।",
+        "রিটেলের লাভ শপের সাইটের পাঠানো দৈনিক লাভ থেকে, মাসের স্থির খরচ দিনে ভাগ করে বাদ দিয়ে।",
+        "গ্রাফে দুই ব্যবসার লাভ দুই রঙে, প্রতিদিন (2 মাসের বেশি হলে প্রতি মাস)।",
+        "কোনো শপের সাইট আবার হিসাব পাঠালে “Why profit changed”-এ আগে কত ছিল আর এখন কত, কোন খাত বদলাল।",
+      ],
+      why: "ধরুন এই মাসে বায়িং হাউসের লাভ 4,20,000, আর Extas Retail-এর লাভ 35,300। “Total profit or loss” দেখায় 4,55,300। Extas Retail ইআরপি থেকে 60,000-এর মাল নিল আর কাস্টমারের কাছে বেচল 88,400: “Total sales”-এ 60,000 বাদ আর 88,400 যোগ হয়। পরে সাইট 18 নভেম্বরের বিজ্ঞাপন খরচ যোগ করে আবার পাঠাল: “Why profit changed”-এ দেখায় লাভ 41,800 থেকে 35,300 হলো, Ads 0 থেকে 6,500।",
+      steps: [
+        {
+          text: "“Period” থেকে সময় বাছুন: “Today”, “Last 7 days”, “This week”, “This month”, “This year”, “Lifetime” বা “Your own days”।",
+        },
+        {
+          text: "“Your own days” বাছলে “From” আর “To” তারিখ দিয়ে “Show” চাপুন।",
+        },
+        {
+          text: "টাকার অঙ্ক শুরুতে লুকানো থাকে। “Show amounts” চাপলে সব দেখায়, “Hide amounts” চাপলে আবার লুকায়।",
+        },
+        {
+          text: "“Total sales”, “Total profit or loss”, “Buying house profit”, “Retail profit”, “Cash” আর “Shops owe” কার্ড দেখুন। নিচের লাইনে আগের সময়ের সাথে পার্থক্য।",
+        },
+        {
+          text: "“Profit by business” গ্রাফে দুই ব্যবসার লাভ দেখুন। “Why profit changed” চাপলে বদলের তালিকা খোলে।",
+        },
+        {
+          text: "ফেরত দেখতে “Returns” চাপুন। লাল সতর্কতায় শপের নাম চাপলে সেই শপের পাতা খোলে।",
+        },
+      ],
+      tips: [
+        "“Cash” আর “Shops owe” আজকের অবস্থা, সময় বাছাইয়ে বদলায় না।",
+        "“Lifetime”-এ আগের সময় থাকে না, তাই তুলনা দেখায় না।",
+        "স্থির খরচ না এলে হলুদ লেখা দেখায়: তখন রিটেলের লাভ আসলের চেয়ে বেশি দেখায়।",
+      ],
+      fields: [
+        { label: "Overview", text: "পুরো ব্যবসার এক নজরের পাতা।" },
+        ...PERIOD_FIELDS,
+        { label: "Show amounts", text: "লুকানো সব টাকার অঙ্ক দেখায়।" },
+        { label: "Hide amounts", text: "সব টাকার অঙ্ক আবার লুকায়।" },
+        { label: "Returns", text: "শপের ফেরতের পাতা খোলে।" },
+        {
+          label: "Total sales",
+          text: "ইআরপির বিক্রি (ফেরত বাদে), নিজের শপে বিক্রি বাদ দিয়ে, আর শপগুলোর কাস্টমারের কাছে বিক্রি যোগ করে।",
+        },
+        { label: "Total profit or loss", text: "বায়িং হাউসের লাভ আর রিটেলের লাভ মিলে।" },
+        {
+          label: "Buying house profit",
+          text: "ইআরপির খাতার আয় থেকে খরচ বাদ, Profit & Loss-এর মতো।",
+        },
+        {
+          label: "Retail profit",
+          text: "সব শপের পাঠানো দৈনিক লাভ থেকে স্থির খরচের দিনের ভাগ বাদ।",
+        },
+        { label: "Cash", text: "আজ ক্যাশ, ব্যাংক আর মোবাইল ওয়ালেটে মোট কত।" },
+        { label: "Shops owe", text: "আজ সব শপের কাছে ইআরপির পাওনা।" },
+        { label: "Profit by business", text: "দুই ব্যবসার লাভের গ্রাফ, দুই রঙে।" },
+        { label: "Buying house", text: "গ্রাফে বায়িং হাউসের রঙ।" },
+        { label: "Retail", text: "গ্রাফে রিটেলের রঙ। ট্যাবে রিটেল শপগুলোর পাতা।" },
+        {
+          label: "Why profit changed",
+          text: "শপের সাইট কোনো দিন বা মাসের স্থির খরচ আবার পাঠালে আগে কত ছিল, এখন কত, কোন খাত বদলাল।",
+        },
+      ],
+      next: "সময় বদলালে পাতা সাথে সাথে নতুন হিসাব দেখায়। কোনো শপের বিস্তারিত দেখতে “Retail” ট্যাবে যান।",
+      mistakes: [
+        "“Total sales”-এ ইআরপির বিক্রি আর শপের বিক্রি নিজে আবার যোগ করা: পাতা আগেই ঠিকভাবে যোগ করেছে।",
+        "“Not complete yet” দেখেও লাভ চূড়ান্ত ধরা: সব খরচ এলে রিটেলের লাভ বদলাতে পারে।",
+        "লাল সতর্কতা না দেখা: কোনো দিনের হিসাব না এলে রিটেলের লাভ সেদিন 0 ধরা থাকে না, বাদ থাকে।",
+      ],
+      shot: { target: "Profit by business" },
+    },
+    {
+      slug: "business-retail",
+      title: "Retail: অনলাইন শপগুলোর হিসাব (E-commerce আর POS)",
+      summary:
+        "সব অনলাইন শপের মোট বিক্রি, লাভ আর লাভের হার, আর প্রতিটা শপ পাশাপাশি। POS ট্যাব শোরুম খুললে কাজে আসবে।",
+      keywords: [
+        "retail",
+        "e-commerce",
+        "ecommerce",
+        "pos",
+        "online stores",
+        "রিটেল",
+        "ই-কমার্স",
+        "অনলাইন শপ",
+        "শোরুম",
+      ],
+      routes: ["/business/retail", "/business/retail/pos"],
+      who: "যাদের ভূমিকায় রিটেল শপ দেখার বা বদলানোর অনুমতি আছে।",
+      what: [
+        "“E-commerce” ট্যাবে সব অনলাইন শপের মোট হিসাব, আগের সময়ের সাথে তুলনা করে।",
+        "নিচে প্রতিটা শপের বিক্রি, লাভ, লাভের হার আর ইআরপির কাছে বাকি, পাশাপাশি।",
+        "শপের নাম চাপলে তার নিজের পাতা খোলে, সেখানে পুরো ড্যাশবোর্ড।",
+        "“POS” ট্যাব এখন খালি: শোরুম খুললে সেখানে তার হিসাব আসবে।",
+      ],
+      why: "ধরুন Extas Retail আর Polo Hub দুইটা অনলাইন শপ। এই মাসে Extas Retail বেচল 3,10,000, লাভ 42,000 (13.5%), আর Polo Hub বেচল 1,20,000, লস 8,000। পাশাপাশি দেখে বোঝেন Polo Hub-এর বিজ্ঞাপন বা ফেরত দেখতে হবে: নাম চাপলে তার ড্যাশবোর্ড খোলে।",
+      steps: [
+        {
+          text: "“Period” থেকে সময় বাছুন। “Show amounts” চাপলে টাকার অঙ্ক দেখায়।",
+        },
+        {
+          text: "ওপরের “Net sales”, “Profit or loss”, “Profit rate” আর “Orders” দেখুন।",
+        },
+        {
+          text: "“Stores side by side”-এ প্রতিটা শপের “Net sales”, “Profit or loss”, “Profit rate” আর “Owes the ERP” দেখুন। শপের নাম চাপলে তার পাতা খোলে।",
+        },
+        {
+          text: "শোরুমের জন্য “POS” ট্যাব। এখন সেখানে লেখা থাকে কোনো শোরুম নেই।",
+        },
+      ],
+      tips: [
+        "লাভে মাসের স্থির খরচ দিনে ভাগ করে বাদ দেওয়া থাকে।",
+        "বন্ধ শপও তালিকায় থাকে, নামের পাশে “closed” লেখা।",
+      ],
+      fields: [
+        { label: "Overview", text: "পুরো ব্যবসা এক নজরে দেখার ট্যাব।" },
+        { label: "Retail", text: "রিটেল শপগুলোর হিসাবের ট্যাব।" },
+        { label: "Retail stores", text: "শপ যোগ আর প্রতিটা শপের পাতার ট্যাব।" },
+        { label: "Returns", text: "শপের ফেরত চেকের ট্যাব।" },
+        { label: "Shop stock", text: "শপের রিজার্ভ আর শুধু রিটেলের জন্য কেনা মালের ট্যাব।" },
+        { label: "E-commerce", text: "অনলাইন শপগুলোর হিসাবের ট্যাব।" },
+        ...PERIOD_FIELDS,
+        { label: "Show amounts", text: "লুকানো সব টাকার অঙ্ক দেখায়।" },
+        { label: "Hide amounts", text: "সব টাকার অঙ্ক আবার লুকায়।" },
+        { label: "POS", text: "শোরুমের ট্যাব, এখন খালি।" },
+        { label: "Net sales", text: "কাস্টমারের হাতে পৌঁছানো মালের বিক্রি, ছাড় আর ফেরত বাদে।" },
+        { label: "Profit or loss", text: "সব খরচ আর স্থির খরচ বাদ দিয়ে লাভ। লস হলে লাল।" },
+        { label: "Profit rate", text: "বিক্রির কত ভাগ লাভ।" },
+        { label: "Orders", text: "এই সময়ে কাস্টমারের অর্ডার কয়টা।" },
+        { label: "Stores side by side", text: "প্রতিটা অনলাইন শপের হিসাব পাশাপাশি।" },
+        { label: "Owes the ERP", text: "আজ এই শপের কাছে ইআরপির পাওনা।" },
+      ],
+      next: "শপের নাম চাপলে তার পাতায় “Store dashboard” খোলে।",
+      mistakes: [
+        "শুধু বিক্রি দেখে শপ ভালো ধরা: “Profit rate” আর লাভ দেখুন।",
+        "স্থির খরচ না আসা মাসে লাভ চূড়ান্ত ধরা: হলুদ লেখা দেখুন।",
+      ],
+      shot: { target: "Stores side by side" },
+    },
+    {
+      slug: "business-store-dashboard",
+      title: "শপের ড্যাশবোর্ড: বিক্রি, খরচ, বিজ্ঞাপন আর গ্রাহক",
+      summary:
+        "একটা শপের মূল সংখ্যা, টাকা কোথায় গেল, বিজ্ঞাপন, গ্রাহক, ডেলিভারি, ইআরপির খাতায় শপ, আর সেরা প্রোডাক্ট ও গ্রাহক।",
+      keywords: [
+        "store dashboard",
+        "roas",
+        "ads",
+        "customers",
+        "best sellers",
+        "শপের ড্যাশবোর্ড",
+        "বিজ্ঞাপন",
+        "গ্রাহক",
+        "সেরা প্রোডাক্ট",
+      ],
+      routes: ["/business/stores/[storeId]"],
+      who: "যাদের রিটেল শপ দেখার অনুমতি আছে। “The store in the ERP's books” অংশ শুধু শপ বদলানোর বা টাকার হিসাব দেখার অনুমতিতে।",
+      what: [
+        "শপের নামের নিচে স্বাস্থ্যের চিহ্ন: সবুজ, হলুদ বা লাল, সাথে এক লাইনে কারণ।",
+        "শপের পাতার ওপরে ড্যাশবোর্ড, নিজের সময় বাছাই আর চোখ বোতাম সহ।",
+        "বিক্রি, খরচ, লাভ বা লস আর লাভের হার, আগের সময়ের সাথে তুলনা।",
+        "কোন খাতে কত খরচ, বিজ্ঞাপনে কত টাকায় কত বিক্রি (ROAS), নতুন গ্রাহক পেতে কত খরচ।",
+        "ডেলিভারি কত সফল, কত ফেরত, COD কত টাকা এখনো আসেনি।",
+        "ইআরপি থেকে শপ কত নিল, কত ফেরত দিল, ফেরতে শপের লস কত, আর এতে ইআরপির লাভ কত।",
+      ],
+      why: "ধরুন Extas Retail এই মাসে বিজ্ঞাপনে 52,000 খরচ করল আর বেচল 3,10,000: ROAS 5.96, মানে বিজ্ঞাপনের প্রতি টাকায় প্রায় 6 টাকার বিক্রি। নতুন গ্রাহক 180 জন, তাই একজন নতুন গ্রাহকে 288.89 টাকা। “Came back” 12% হলে ফেরত বেশি: কোন স্টাইল বেশি ফেরত আসছে দেখুন।",
+      steps: [
+        {
+          text: "“Store dashboard”-এ “Period” থেকে সময় বাছুন। “Show amounts” চাপলে টাকার অঙ্ক দেখায়।",
+        },
+        {
+          text: "“Net sales”, “Costs”, “Profit or loss” আর “Profit rate” কার্ড দেখুন।",
+        },
+        {
+          text: "“Where the money went”-এ খাত ধরে খরচ আর তার ভাগ দেখুন।",
+        },
+        {
+          text: "“Ads spent”, “Sales for each taka of ads (ROAS)” আর “Ads cost of a new customer” দেখুন।",
+        },
+        {
+          text: "“The store in the ERP's books”-এ “Taken from the ERP” আর “The ERP's profit from the store” দেখুন।",
+        },
+        {
+          text: "“Best sellers and best customers” চাপলে সেরা স্টাইল, সেরা গ্রাহক আর পড়ে থাকা স্টাইল খোলে।",
+        },
+      ],
+      tips: [
+        "ROAS 3-এর নিচে হলে বিজ্ঞাপনের খরচ বিক্রির তুলনায় বেশি হতে পারে: বিজ্ঞাপন দেখুন।",
+        "“Styles lying unsold for 30 days”-এর স্টাইল ছাড়ে বা অন্য শপে দিতে পারেন।",
+        "বাজেটের সাথে তুলনা নিচের “Budget” অংশে।",
+      ],
+      fields: [
+        { label: "Store dashboard", text: "শপের নিজের ড্যাশবোর্ড।" },
+        {
+          label: "Health: green",
+          text: "শপ লাভে আছে, হিসাব ঠিক সময়ে আসছে, হোল্ডে নেই।",
+        },
+        {
+          label: "Health: yellow",
+          text: "কোনো দিনের হিসাব আসেনি, বা 15% বা তার বেশি পার্সেল ফেরত এসেছে। কারণ পাশে লেখা।",
+        },
+        {
+          label: "Health: red",
+          text: "শপ দেনার জন্য হোল্ডে, বা এই সময়ে লসে আছে। কারণ পাশে লেখা।",
+        },
+        ...PERIOD_FIELDS,
+        { label: "Show amounts", text: "লুকানো সব টাকার অঙ্ক দেখায়।" },
+        { label: "Hide amounts", text: "সব টাকার অঙ্ক আবার লুকায়।" },
+        { label: "Costs", text: "এই সময়ের সব খরচ, স্থির খরচের দিনের ভাগসহ।" },
+        { label: "Where the money went", text: "খাত ধরে খরচ আর মোট খরচে তার ভাগ।" },
+        { label: "Goods", text: "বিক্রি হওয়া মালের দাম (শপ ইআরপিকে যা দিল)।" },
+        { label: "Return losses", text: "কাস্টমারের ফেরতে শপের লস।" },
+        { label: "Payment fees", text: "অনলাইন পেমেন্টের ফি।" },
+        { label: "Accessories", text: "প্যাকেটের সাথে দেওয়া জিনিস।" },
+        { label: "Ads spent", text: "বিজ্ঞাপনে মোট খরচ, প্ল্যাটফর্ম ধরে।" },
+        {
+          label: "Sales for each taka of ads (ROAS)",
+          text: "বিক্রিকে বিজ্ঞাপনের খরচ দিয়ে ভাগ: প্রতি টাকা বিজ্ঞাপনে কত টাকার বিক্রি।",
+        },
+        { label: "Ads cost of a new customer", text: "বিজ্ঞাপনের খরচকে নতুন গ্রাহক দিয়ে ভাগ।" },
+        { label: "Customers", text: "নতুন গ্রাহক আর যারা আবার কিনল।" },
+        { label: "Bought again", text: "সব গ্রাহকের কত ভাগ আবার কিনল।" },
+        { label: "Money per order", text: "গড়ে একটা অর্ডারে কত টাকার বিক্রি।" },
+        { label: "Delivered", text: "পাঠানো পার্সেলের কত ভাগ কাস্টমার নিল।" },
+        { label: "Came back", text: "পাঠানো পার্সেলের কত ভাগ ফেরত এল।" },
+        { label: "Cash on delivery not in yet", text: "কুরিয়ারের কাছে আটকে থাকা COD টাকা।" },
+        { label: "The store in the ERP's books", text: "ইআরপির খাতায় এই শপের হিসাব।" },
+        { label: "Taken from the ERP", text: "এই সময়ে শপকে বিল হওয়া মালের দাম।" },
+        {
+          label: "Given back to the ERP",
+          text: "Approve হওয়া ফেরত আর এক্সচেঞ্জে শপের হিসাব থেকে কমানো টাকা।",
+        },
+        { label: "The store's loss on returns", text: "Decline হওয়া ফেরত পিসের দাম, শপের লস।" },
+        {
+          label: "The ERP's profit from the store",
+          text: "শপকে বিক্রি থেকে ফেরত বাদ দিয়ে, মালের খরচ বাদ।",
+        },
+        {
+          label: "Best sellers and best customers",
+          text: "চাপলে সেরা স্টাইল আর গ্রাহকের তালিকা খোলে।",
+        },
+        {
+          label: "Best-selling styles",
+          text: "এই সময়ে সবচেয়ে বেশি পিস নেওয়া স্টাইল, আর দিনে কয় পিস।",
+        },
+        { label: "Best customers", text: "এই সময়ে সবচেয়ে বেশি টাকার কেনা গ্রাহক।" },
+        {
+          label: "Styles lying unsold for 30 days",
+          text: "যে স্টাইল শপ 30 দিন নেয়নি অথচ গুদামে মাল আছে।",
+        },
+      ],
+      next: "সময় বদলালে ড্যাশবোর্ড সাথে সাথে নতুন হিসাব দেখায়। নিচে “Daily figures” আর “Budget” অংশ।",
+      mistakes: [
+        "শুধু ROAS দেখে বিজ্ঞাপন বাড়ানো: “Came back” বেশি হলে আসল লাভ কম।",
+        "COD আটকে থাকা টাকাকে হাতের টাকা ধরা: কুরিয়ার দেওয়ার আগ পর্যন্ত সেটা আসেনি।",
+      ],
+      shot: { route: "/business/stores/[storeId]", target: "Store dashboard" },
+    },
     {
       slug: "business-stores",
       title: "রিটেল শপ যোগ করবেন যেভাবে",

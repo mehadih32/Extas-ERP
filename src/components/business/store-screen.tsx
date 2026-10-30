@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import type { StoreAccount } from "@/modules/retail/account.service";
+import type { StoreDashboard as Dashboard } from "@/modules/retail/dashboards.service";
 import type { StoreBooks as Books } from "@/modules/retail/summaries.service";
 import type { StorePage as StoreData } from "@/modules/retail/stores.service";
 import {
@@ -26,15 +27,16 @@ import {
 } from "@/server/actions/retail.actions";
 
 import { StoreBooks } from "./store-books";
+import { StoreDashboard, StoreHealth } from "./store-dashboard";
 import { StoreFormDialog } from "./store-form-dialog";
 
 /*
- * One retail store (plan v6 sec 2 and 4): its details, its price rules, its hand
+ * One retail store (plan v6 sec 2, 4 and 10): its dashboard, its details, its price rules, its hand
  * prices (with a note when the cost changed since), the prices it sees per style,
  * and every price change. Price changes ask for the owner's PIN.
  */
 
-type StorePage = StoreData & { account: StoreAccount; books: Books };
+type StorePage = StoreData & { account: StoreAccount; books: Books; dashboard: Dashboard };
 
 type Dialog =
   | { kind: "edit" }
@@ -72,6 +74,13 @@ export function StoreScreen({ page }: { page: StorePage }) {
               {store.kind === "ONLINE" ? "Online" : "Showroom"}
             </span>
           </div>
+          <div className="mt-2">
+            <StoreHealth
+              d={page.dashboard}
+              onHold={page.account.onHold}
+              missingDays={page.books.missing.length}
+            />
+          </div>
         </div>
         {page.canManage && (
           <div className="flex flex-wrap gap-2">
@@ -85,6 +94,8 @@ export function StoreScreen({ page }: { page: StorePage }) {
           </div>
         )}
       </div>
+
+      <StoreDashboard d={page.dashboard} currency={currency} />
 
       <Panel title="Details" id="store-details">
         <dl className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

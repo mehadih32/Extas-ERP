@@ -10,7 +10,7 @@ import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Retail store" };
 
-/** One retail store: its details, its price rules, hand prices, the prices it sees and their history. */
+/** One retail store: its dashboard, its details, its price rules, hand prices, the prices it sees and their history. */
 export default async function StorePage({
   params,
   searchParams,
@@ -19,10 +19,13 @@ export default async function StorePage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const ctx = await requireCompanyPage();
-  const [{ storeId }, { search }] = await Promise.all([params, searchParams]);
-  const result = await getStoreAction(storeId, {
-    search: typeof search === "string" ? search : undefined,
-  });
+  const [{ storeId }, query] = await Promise.all([params, searchParams]);
+  const one = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const result = await getStoreAction(
+    storeId,
+    { search: one(query.search) },
+    { period: one(query.period), from: one(query.from), to: one(query.to) },
+  );
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
     if (result.error.code === "FORBIDDEN") {

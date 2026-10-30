@@ -3,7 +3,7 @@ import { requireCompanyPage } from "@/server/pages/guards";
 
 /**
  * Business (plan v6): the retail side of the company, under "Dashboard" in the
- * menu. Its pages: Retail stores, Returns and Shop stock.
+ * menu. Its pages: Overview, Retail, Retail stores, Returns and Shop stock.
  */
 export default async function BusinessLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireCompanyPage();
@@ -20,6 +20,8 @@ export default async function BusinessLayout({ children }: { children: React.Rea
         <SectionTabs
           label="Business"
           tabs={[
+            { href: "/business/overview", label: "Overview" },
+            { href: "/business/retail", label: "Retail" },
             { href: "/business/stores", label: "Retail stores" },
             { href: "/business/returns", label: "Returns" },
             { href: "/business/shop-stock", label: "Shop stock" },

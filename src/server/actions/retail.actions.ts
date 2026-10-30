@@ -6,6 +6,7 @@ import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireCompany } from "@/modules/auth/context";
 import * as account from "@/modules/retail/account.service";
+import * as dashboards from "@/modules/retail/dashboards.service";
 import * as returns from "@/modules/retail/returns.service";
 import * as shopStock from "@/modules/retail/shop-stock.service";
 import * as stores from "@/modules/retail/stores.service";
@@ -26,7 +27,7 @@ export async function listStoresAction() {
   return runAction(async () => stores.listStores(await requireCompany()));
 }
 
-export async function getStoreAction(id: string, query: unknown = {}) {
+export async function getStoreAction(id: string, query: unknown = {}, period: unknown = {}) {
   return runAction(async () => {
     const ctx = await requireCompany();
     const page = await stores.getStore(ctx, id, query);
@@ -34,8 +35,19 @@ export async function getStoreAction(id: string, query: unknown = {}) {
       ...page,
       account: await account.storeAccount(ctx, id),
       books: await summaries.storeBooks(ctx, id),
+      dashboard: await dashboards.storeDashboard(ctx, id, period),
     };
   });
+}
+
+/** Business > Overview: needs the right to see the financials. */
+export async function overviewPageAction(period: unknown = {}) {
+  return runAction(async () => dashboards.overviewPage(await requireCompany(), period));
+}
+
+/** Business > Retail > E-commerce. */
+export async function ecommercePageAction(period: unknown = {}) {
+  return runAction(async () => dashboards.ecommercePage(await requireCompany(), period));
 }
 
 export async function releaseHoldAction(id: string, input: unknown) {

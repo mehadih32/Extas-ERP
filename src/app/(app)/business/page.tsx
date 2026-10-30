@@ -1,6 +1,10 @@
 import { redirect } from "next/navigation";
 
-/** Business opens on its first page, Retail stores. */
-export default function BusinessPage() {
-  redirect("/business/stores");
+import { canSeeFinancials } from "@/modules/dashboard/access";
+import { requireCompanyPage } from "@/server/pages/guards";
+
+/** Business opens on the Overview, or on Retail stores for a role without the financials. */
+export default async function BusinessPage() {
+  const ctx = await requireCompanyPage();
+  redirect(canSeeFinancials(ctx) ? "/business/overview" : "/business/stores");
 }

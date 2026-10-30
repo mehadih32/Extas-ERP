@@ -11,6 +11,7 @@ import { POST as returnsRoute } from "@/app/api/v1/ecommerce/returns/route";
 import { POST as adSpendRoute } from "@/app/api/v1/ecommerce/ad-spend/route";
 import { POST as shipmentEventsRoute } from "@/app/api/v1/ecommerce/shipments/[consignmentId]/events/route";
 import { POST as shipmentsRoute } from "@/app/api/v1/ecommerce/shipments/route";
+import { localDay } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import { reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { setPin } from "@/modules/ai/settings.service";
@@ -221,7 +222,8 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     await post(order("WEB-9", [{ sku: navyS(), quantity: 2, unitPrice: 1450 }]));
     await ship("WEB-9", "PTH-9");
     await receivePayment(shop.accounts, { partyId: store.partyId, amount: 1000, method: "CASH" });
-    const today = new Date().toISOString().slice(0, 10);
+    // The company's own day (Asia/Dhaka), as the server counts it: after 18:00 UTC it is tomorrow.
+    const today = localDay(new Date(), "Asia/Dhaka");
     const res = await callShop(shop, accountRoute, {
       path: `/account?from=2026-01-01&to=${today}`,
     });

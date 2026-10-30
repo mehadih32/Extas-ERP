@@ -38,7 +38,8 @@ export type PrintType = (typeof PRINT_TYPES)[number];
  * batch's supplier or factory agreement (production/contract.service.ts), its
  * final CM settlement (production/batch-money.service.ts) and its summary
  * (production/batch-summary.service.ts), and a fabric and trims booking
- * (production/booking-pdf.service.ts), made when asked for and not kept.
+ * (production/booking-pdf.service.ts), and a Business report (retail/downloads.service.ts),
+ * made when asked for and not kept.
  */
 export type RecordPrintType =
   | "SIGNED_TERMS"
@@ -53,7 +54,8 @@ export type RecordPrintType =
   | "BOOKING"
   | "AI_COSTS"
   | "MEASUREMENTS"
-  | "DIGITIZING_BRIEF";
+  | "DIGITIZING_BRIEF"
+  | "RETAIL_REPORT";
 
 /**
  * Bump when the layout changes, so documents printed again get the new look.
@@ -153,7 +155,18 @@ export type Block =
       key?: string;
     }
   /** Address boxes inside the document ("Supplier", "Deliver to"), as at the top. */
-  | { kind: "parties"; parties: Array<{ heading: string; lines: string[] }> };
+  | { kind: "parties"; parties: Array<{ heading: string; lines: string[] }> }
+  /**
+   * A bar chart of one or two series (a business report's profit by month): a
+   * pair of bars per row, losses below the line, the figures in the table that
+   * goes with it.
+   */
+  | {
+      kind: "bars";
+      title: string;
+      series: [string] | [string, string];
+      rows: Array<{ label: string; values: number[] }>;
+    };
 
 /** Which way round an A4 page prints. */
 export type Orientation = "portrait" | "landscape";

@@ -5,6 +5,7 @@ import { Fact, Panel } from "@/components/sales/detail-bits";
 import type { StoreDashboard as Dashboard } from "@/modules/retail/dashboards.service";
 
 import { BigCard, money, More, PeriodPicker } from "./dashboard-bits";
+import { DownloadButton } from "./download-dialog";
 
 /*
  * A store's own dashboard on its page (plan v6 sec 10): the main numbers
@@ -35,7 +36,15 @@ const rate = (v: number | null) => (v === null ? "-" : `${v}%`);
 const diff = (now: string, before: string | undefined) =>
   before === undefined ? null : (Number(now) - Number(before)).toFixed(2);
 
-export function StoreDashboard({ d, currency }: { d: Dashboard; currency: string }) {
+export function StoreDashboard({
+  d,
+  currency,
+  storeId,
+}: {
+  d: Dashboard;
+  currency: string;
+  storeId: string;
+}) {
   const cash = (v: string | null) => (v === null ? "-" : `${currency} ${money(v)}`);
   // How fast pieces go: per day of the period (of the days sent, for Lifetime).
   const days =
@@ -44,7 +53,16 @@ export function StoreDashboard({ d, currency }: { d: Dashboard; currency: string
       : (Date.parse(d.period.to) - Date.parse(d.period.from)) / 86_400_000 + 1;
   return (
     <PrivacyProvider>
-      <Panel title="Store dashboard" id="store-dashboard" action={<PrivacyToggle compact />}>
+      <Panel
+        title="Store dashboard"
+        id="store-dashboard"
+        action={
+          <div className="flex flex-wrap gap-2">
+            <DownloadButton scope="store" storeId={storeId} period={d.period} />
+            <PrivacyToggle compact />
+          </div>
+        }
+      >
         <div className="mt-4 grid gap-4">
           <PeriodPicker period={d.period} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

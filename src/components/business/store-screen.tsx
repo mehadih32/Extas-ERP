@@ -28,6 +28,7 @@ import {
 
 import { StoreBooks } from "./store-books";
 import { StoreDashboard, StoreHealth } from "./store-dashboard";
+import { StorePad } from "./store-pad";
 import { StoreFormDialog } from "./store-form-dialog";
 
 /*
@@ -36,7 +37,12 @@ import { StoreFormDialog } from "./store-form-dialog";
  * and every price change. Price changes ask for the owner's PIN.
  */
 
-type StorePage = StoreData & { account: StoreAccount; books: Books; dashboard: Dashboard };
+type StorePage = StoreData & {
+  account: StoreAccount;
+  books: Books;
+  dashboard: Dashboard;
+  yearReports: Array<{ id: string; year: number }>;
+};
 
 type Dialog =
   | { kind: "edit" }
@@ -95,7 +101,7 @@ export function StoreScreen({ page }: { page: StorePage }) {
         )}
       </div>
 
-      <StoreDashboard d={page.dashboard} currency={currency} />
+      <StoreDashboard d={page.dashboard} currency={currency} storeId={store.id} />
 
       <Panel title="Details" id="store-details">
         <dl className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -124,6 +130,13 @@ export function StoreScreen({ page }: { page: StorePage }) {
           <Fact label="Phone">{store.phone ?? "Not given"}</Fact>
         </dl>
       </Panel>
+
+      <StorePad
+        storeId={store.id}
+        logoId={store.logoId}
+        yearReports={page.yearReports}
+        canManage={page.canManage}
+      />
 
       <AccountPanel page={page} when={when} onLift={() => setDialog({ kind: "hold" })} />
 

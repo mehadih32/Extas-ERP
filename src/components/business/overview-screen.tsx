@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import type { OverviewPage } from "@/modules/retail/dashboards.service";
 
 import { BigCard, money, More, PeriodPicker, ProfitChart } from "./dashboard-bits";
+import { DownloadButton } from "./download-dialog";
 
 /*
  * Business > Overview (plan v6 sec 10): the buying house and the retail stores
@@ -48,9 +49,12 @@ export function OverviewScreen({ page }: { page: OverviewPage }) {
         </HeaderWithEye>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <PeriodPicker period={page.period} />
-          <Button asChild variant="outline">
-            <Link href="/business/returns">Returns</Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href="/business/returns">Returns</Link>
+            </Button>
+            <DownloadButton scope="overview" period={page.period} />
+          </div>
         </div>
 
         {page.missingStores.length > 0 && (

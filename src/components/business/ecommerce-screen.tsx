@@ -7,6 +7,7 @@ import { Panel } from "@/components/sales/detail-bits";
 import type { EcommercePage } from "@/modules/retail/dashboards.service";
 
 import { BigCard, money, PeriodPicker } from "./dashboard-bits";
+import { DownloadButton } from "./download-dialog";
 
 /*
  * Business > Retail > E-commerce (plan v6 sec 10): every online store
@@ -28,7 +29,10 @@ export function EcommerceScreen({ page }: { page: EcommercePage }) {
             What the online stores&apos; sites sent, less each month&apos;s fixed costs.
           </p>
         </HeaderWithEye>
-        <PeriodPicker period={page.period} />
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <PeriodPicker period={page.period} />
+          <DownloadButton scope="ecommerce" period={page.period} />
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <BigCard
             label="Net sales"
@@ -112,7 +116,7 @@ export function EcommerceScreen({ page }: { page: EcommercePage }) {
 /** Business > Retail > POS: showrooms come later (plan v6 sec 11). */
 export function PosScreen() {
   return (
-    <Panel title="POS" id="pos-empty">
+    <Panel title="POS" id="pos-empty" action={<DownloadButton scope="pos" />}>
       <p className="mt-4 text-sm text-muted-foreground">
         No showrooms yet. When a showroom opens, its sales and its own figures show here.
       </p>

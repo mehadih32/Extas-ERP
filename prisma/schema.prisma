@@ -155,6 +155,8 @@ model Company {
   retailFixedCosts       RetailFixedCost[]
   retailBudgets          RetailBudget[]
   retailTargets          RetailTarget[]
+  retailYearReports      RetailYearReport[]
+  retailAlerts           RetailAlert[]
   webhookEvents          WebhookEvent[]
   integrationApiCalls    IntegrationApiCall[]
   integrationIdempotency IntegrationIdempotency[]
@@ -563,9 +565,11 @@ model FileAsset {
   checksum     String?
   createdAt    DateTime @default(now())
 
-  company    Company  @relation("CompanyFiles", fields: [companyId], references: [id], onDelete: Cascade)
-  uploadedBy User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  logoOf     Company? @relation("CompanyLogo")
+  company          Company           @relation("CompanyFiles", fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy       User?             @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  logoOf           Company?          @relation("CompanyLogo")
+  storeLogoOf      RetailStore?      @relation("RetailStoreLogo")
+  retailYearReport RetailYearReport?
 
   stockIntakes        StockIntake[]
   complianceDocuments ComplianceDocument[]
@@ -7353,6 +7357,8 @@ model RetailStore {
   checkDays         Int              @default(5)
   /// An exchange's old piece must come back within this many days of the new parcel's delivery.
   exchangeDays      Int              @default(4)
+  /// The logo on the store's own pad (its reports), PNG or JPG.
+  logoFileId        String?          @unique
   createdById       String?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -7370,6 +7376,9 @@ model RetailStore {
   fixedCosts  RetailFixedCost[]
   budgets     RetailBudget[]
   targets     RetailTarget[]
+  yearReports RetailYearReport[]
+  alerts      RetailAlert[]
+  logoFile    FileAsset?               @relation("RetailStoreLogo", fields: [logoFileId], references: [id], onDelete: SetNull)
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -7864,6 +7873,44 @@ model RetailBudget {
   store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, month])
+}
+
+/// A note the ERP sent about the retail side (plan v6 sec 13): the night summary, an alert
+/// or the weekly analysis, kept so each goes once and can be read again.
+model RetailAlert {
+  id        String   @id @default(cuid())
+  companyId String
+  /// The store it is about; empty for the night summary of every store.
+  storeId   String?
+  /// NIGHT, SALES_FELL, RETURNS_UP, ROAS_FELL, HOLD_SOON, NEW_RETURNS, LYING, WEEKLY
+  kind      String
+  /// What makes it once: the day (and the store).
+  key       String
+  text      String
+  createdAt DateTime @default(now())
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, kind, key])
+  @@index([companyId, createdAt])
+}
+
+/// A store's year-end summary (plan v6 sec 14, point 2): made by itself once the year is over, kept as a PDF.
+model RetailYearReport {
+  id        String   @id @default(cuid())
+  companyId String
+  storeId   String
+  year      Int
+  fileId    String   @unique
+  createdAt DateTime @default(now())
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  file    FileAsset   @relation(fields: [fileId], references: [id])
+
+  @@unique([storeId, year])
+  @@index([companyId])
 }
 
 /// The owner's sales target for a store's month (net sales, as the summaries count them).

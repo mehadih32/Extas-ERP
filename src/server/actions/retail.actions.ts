@@ -5,8 +5,10 @@ import { revalidatePath } from "next/cache";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireCompany } from "@/modules/auth/context";
+import { fileFromForm } from "@/modules/files/file.service";
 import * as account from "@/modules/retail/account.service";
 import * as dashboards from "@/modules/retail/dashboards.service";
+import * as pad from "@/modules/retail/pad.service";
 import * as returns from "@/modules/retail/returns.service";
 import * as shopStock from "@/modules/retail/shop-stock.service";
 import * as stores from "@/modules/retail/stores.service";
@@ -36,6 +38,7 @@ export async function getStoreAction(id: string, query: unknown = {}, period: un
       account: await account.storeAccount(ctx, id),
       books: await summaries.storeBooks(ctx, id),
       dashboard: await dashboards.storeDashboard(ctx, id, period),
+      yearReports: await pad.listYearReports(ctx, id),
     };
   });
 }
@@ -185,6 +188,28 @@ export async function setTargetAction(id: string, input: unknown) {
   return runAction(async () => {
     await summaries.setTarget(await requireCompany(), id, input, await getRequestMeta());
     refresh(id);
+    return null;
+  });
+}
+
+/** The logo on the store's pad (its reports). */
+export async function uploadStoreLogoAction(storeId: string, form: FormData) {
+  return runAction(async () => {
+    await pad.uploadStoreLogo(
+      await requireCompany(),
+      storeId,
+      await fileFromForm(form),
+      await getRequestMeta(),
+    );
+    refresh(storeId);
+    return null;
+  });
+}
+
+export async function removeStoreLogoAction(storeId: string) {
+  return runAction(async () => {
+    await pad.removeStoreLogo(await requireCompany(), storeId, await getRequestMeta());
+    refresh(storeId);
     return null;
   });
 }

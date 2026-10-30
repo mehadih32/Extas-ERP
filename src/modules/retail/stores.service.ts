@@ -666,6 +666,8 @@ export async function getStore(ctx: CompanyContext, storeId: string, raw: unknow
       kind: store.kind,
       address: store.address,
       phone: store.phone,
+      /** The logo on its pad: its file id (a new one when it changes), or null. */
+      logoId: store.logoFileId,
       closedAt: store.closedAt,
       warehouseId: store.warehouseId,
       warehouse: store.warehouse,

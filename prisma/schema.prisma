@@ -7639,6 +7639,8 @@ model RetailReturnPiece {
   note              String?
   /// The piece in the parcel was another of the order's SKUs than expected.
   differentPiece    Boolean              @default(false)
+  /// The line the piece was on before "Piece found" moved it (an undone check puts it back).
+  firstLineId       String?
   salesReturnId     String?
   /// The new order line this unchecked piece was sent on (plan v6 sec 8.5).
   reservedForLineId String?

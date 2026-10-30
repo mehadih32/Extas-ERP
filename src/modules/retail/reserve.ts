@@ -125,21 +125,24 @@ export async function putBackOnReserve(db: Db, companyId: string, lineIds: strin
   return back;
 }
 
-/** An approval undone: a piece that went back on the reserve comes off it again (as far as it can). */
-export async function takeBackFromReserve(db: Db, companyId: string, lineId: string) {
-  const line = await db.retailOrderLine.findUniqueOrThrow({
+/** An approval undone: a piece that went back on the reserve comes off it again, if still there. */
+export async function takeBackFromReserve(tx: Tx, companyId: string, lineId: string) {
+  const line = await tx.retailOrderLine.findUniqueOrThrow({
     where: { id: lineId },
     select: { variantId: true },
   });
-  const reserve = await reserveOf(db, companyId, line.variantId);
-  await db.retailOrderLine.update({
+  const found = await reserveOf(tx, companyId, line.variantId);
+  if (!found) return;
+  await lockRow(tx, "RetailReserve", found.id);
+  const reserve = await tx.retailReserve.findUniqueOrThrow({ where: { id: found.id } });
+  // Taken by a store bill meanwhile: that bill counted it already.
+  if (reserve.quantity <= 0) return;
+  await tx.retailReserve.update({
+    where: { id: reserve.id },
+    data: { quantity: reserve.quantity - 1 },
+  });
+  await tx.retailOrderLine.update({
     where: { id: lineId },
     data: { fromReserve: { increment: 1 } },
   });
-  if (reserve && reserve.quantity > 0) {
-    await db.retailReserve.update({
-      where: { id: reserve.id },
-      data: { quantity: { decrement: 1 } },
-    });
-  }
 }

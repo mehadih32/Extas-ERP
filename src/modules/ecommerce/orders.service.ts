@@ -782,7 +782,8 @@ export async function fillWaitingLines() {
         },
       },
     },
-    take: 200,
+    orderBy: { createdAt: "asc" },
+    take: 1000,
   });
   let filled = 0;
   for (const line of lines) {

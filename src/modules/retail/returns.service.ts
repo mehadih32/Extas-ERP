@@ -512,6 +512,7 @@ export async function checkParcel(
           ...(other
             ? {
                 differentPiece: true,
+                firstLineId: piece.retailOrderLineId,
                 variantId: other.variantId,
                 retailOrderLineId: other.id,
                 price: other.shopPrice,
@@ -528,7 +529,13 @@ export async function checkParcel(
     else if (approving.length > 0) await creditApproved(ctx, parcel, approving, meta);
   } catch (error) {
     // The store was credited already: the pieces stay decided, never credited twice.
-    if (error instanceof CreditedThen) throw error.cause;
+    if (error instanceof CreditedThen) {
+      await piecesDecided(
+        ctx,
+        input.decisions.map((d) => d.pieceId),
+      ).catch(() => undefined);
+      throw error.cause;
+    }
     // Nothing was credited: the pieces wait for the check again.
     await prisma.retailReturnPiece.updateMany({
       where: {
@@ -688,47 +695,74 @@ export async function undoDecision(
       `This piece came back on exchange ${piece.parcel.order.exchange.number}: its money settled through the exchange, so the check cannot be undone.`,
     );
   }
-  if (piece.atPacking || piece.reservedForLineId) {
-    throw new AppError(
-      "CONFLICT",
-      "This piece went out on a new order: its check cannot be undone.",
-    );
-  }
   if (piece.status === "APPROVED" && !canApprove(ctx)) {
     throw new AppError(
       "FORBIDDEN",
       "Undoing an approval takes back the store's credit: it needs Accounts' right to record money too.",
     );
   }
-  await requirePin(ctx, input.pin, "undo a return check");
   // An approval: every piece credited on the same sales return comes back with it.
   const together = piece.salesReturnId
     ? await ctx.db.retailReturnPiece.findMany({ where: { salesReturnId: piece.salesReturnId } })
     : [piece];
-  if (piece.salesReturnId) {
-    await voidSalesReturn(
-      ctx,
-      piece.salesReturnId,
-      { reason: `Retail return check undone: ${input.reason}` },
-      meta,
+  if (together.some((p) => p.atPacking || p.reservedForLineId)) {
+    throw new AppError(
+      "CONFLICT",
+      together.length > 1
+        ? "A piece approved with this one went out on a new order: this check cannot be undone."
+        : "This piece went out on a new order: its check cannot be undone.",
     );
+  }
+  await requirePin(ctx, input.pin, "undo a return check");
+  if (piece.salesReturnId) {
+    const credit = await ctx.db.salesReturn.findUniqueOrThrow({
+      where: { id: piece.salesReturnId },
+      select: { voidedAt: true },
+    });
+    // Voided already by an undo that stopped half way: it goes on from here.
+    if (!credit.voidedAt) {
+      await voidSalesReturn(
+        ctx,
+        piece.salesReturnId,
+        { reason: `Retail return check undone: ${input.reason}` },
+        meta,
+      );
+    }
   }
   await prisma.$transaction(async (tx) => {
     for (const p of together) {
       if (p.reservePutBack) await takeBackFromReserve(tx, ctx.company.id, p.retailOrderLineId);
     }
-    await tx.retailReturnPiece.updateMany({
-      where: { id: { in: together.map((p) => p.id) }, companyId: ctx.company.id },
-      data: {
-        status: "WAITING",
-        reason: null,
-        note: null,
-        decidedById: null,
-        decidedAt: null,
-        salesReturnId: null,
-        reservePutBack: false,
-      },
-    });
+    for (const p of together) {
+      // Each piece once (two undos at the same moment), back on its own line if "Piece found" moved it.
+      const line = p.firstLineId
+        ? await tx.retailOrderLine.findUniqueOrThrow({ where: { id: p.firstLineId } })
+        : null;
+      const claimed = await tx.retailReturnPiece.updateMany({
+        where: { id: p.id, companyId: ctx.company.id, status: { not: "WAITING" } },
+        data: {
+          status: "WAITING",
+          reason: null,
+          note: null,
+          decidedById: null,
+          decidedAt: null,
+          salesReturnId: null,
+          reservePutBack: false,
+          ...(line
+            ? {
+                differentPiece: false,
+                firstLineId: null,
+                retailOrderLineId: line.id,
+                variantId: line.variantId,
+                price: line.shopPrice,
+              }
+            : {}),
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new AppError("CONFLICT", "Someone else undid this check just now.");
+      }
+    }
     await tx.retailReturnParcel.update({
       where: { id: piece.parcelId },
       data: { state: "IN_RETURN_STOCK" },

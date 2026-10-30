@@ -19,6 +19,8 @@ import { shopEventTx } from "./shop-events";
  * shows the same at any time.
  */
 
+const OVERLAP_MS = 10 * 60_000;
+
 export async function retailSiteWatch(now: Date = new Date()) {
   const stores = await prisma.retailStore.findMany({
     where: { integration: { isActive: true, webhookUrl: { not: null } } },
@@ -71,7 +73,8 @@ async function paymentsTold(
     where: {
       companyId: store.companyId,
       sourceType: "PAYMENT",
-      createdAt: { gt: store.paymentToldAt, lte: now },
+      // A little before the place too: a payment saved late is still told (each id once).
+      createdAt: { gt: new Date(store.paymentToldAt.getTime() - OVERLAP_MS), lte: now },
       lines: { some: { partyId: store.partyId } },
     },
     include: { lines: { where: { partyId: store.partyId } } },
@@ -109,7 +112,7 @@ async function paymentsTold(
     }
   }
   const last = entries.at(-1)?.createdAt ?? null;
-  if (last)
+  if (last && last > store.paymentToldAt)
     await prisma.retailStore.update({ where: { id: store.id }, data: { paymentToldAt: last } });
   return told;
 }

@@ -459,5 +459,22 @@ run("Retail store's returns (plan v6, part 2)", () => {
     await expect(undoDecision(shop.owner, a!.id, { reason: "Again", pin: PIN })).resolves.toEqual({
       pieces: 1,
     });
+    // A "Piece found" saved by mistake goes back to the piece's own SKU.
+    const navyM = await prisma.productVariant.findFirstOrThrow({
+      where: { sku: sku("Navy", "M") },
+    });
+    const own = await prisma.retailReturnPiece.findUniqueOrThrow({ where: { id: a!.id } });
+    await checkParcel(shop.owner, parcel.id, {
+      decisions: [{ pieceId: a!.id, decision: "DECLINE", reason: "USED", variantId: navyM.id }],
+    });
+    await undoDecision(shop.owner, a!.id, { reason: "It was the Navy S", pin: PIN });
+    const back = await prisma.retailReturnPiece.findUniqueOrThrow({ where: { id: a!.id } });
+    expect(back).toMatchObject({
+      status: "WAITING",
+      differentPiece: false,
+      firstLineId: null,
+      variantId: own.variantId,
+      retailOrderLineId: own.retailOrderLineId,
+    });
   });
 });

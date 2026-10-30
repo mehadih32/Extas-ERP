@@ -203,13 +203,20 @@ function ParcelCard({
               <span className="min-w-0 break-all">
                 {x.sku}
                 {x.differentPiece ? " (different piece)" : ""}
+                {x.reservedFor && x.status === "WAITING" && (
+                  <span className="block text-xs font-medium text-orange-700 dark:text-orange-400">
+                    Sent on {x.reservedFor}: check before packing
+                  </span>
+                )}
               </span>
               <span className="text-muted-foreground">
                 {page.currency} {x.price},{" "}
                 {x.status === "WAITING"
                   ? "waiting"
                   : x.status === "APPROVED"
-                    ? "approved"
+                    ? x.atPacking
+                      ? "approved at packing"
+                      : "approved"
                     : `declined: ${x.reason}`}
               </span>
             </li>
@@ -425,6 +432,7 @@ function CheckDialog({
               <fieldset key={x.id} className="grid gap-3 rounded-md border p-3">
                 <legend className="px-1 text-sm font-medium break-all">
                   Piece {index + 1}: {x.sku}, {page.currency} {x.price}
+                  {x.reservedFor ? `, sent on ${x.reservedFor}: check before packing` : ""}
                 </legend>
                 <Field id={`decision-${x.id}`} label="Decision" error={fieldError("decisions")}>
                   <NativeSelect

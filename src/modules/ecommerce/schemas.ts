@@ -197,6 +197,8 @@ export type ShopOrder = {
     shopPrice: number;
     customerPrice: number;
     fromReturnStock: boolean;
+    /** Dropped by the site (never billed). */
+    cancelled: boolean;
     /** On an exchange: the line it replaces and what the store paid for that piece. */
     replacesLineId?: string;
     replacedShopPrice?: number;
@@ -404,3 +406,14 @@ export const lateReturnSchema = z.object({
   consignmentId: z.string().trim().min(1).max(100).nullish(),
   note: optionalText(500),
 });
+
+/** PATCH /orders/{externalOrderId}/lines/{lineId}: a line whose Return stock piece failed the packing check. */
+export const lineActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("WAIT") }),
+  z.object({
+    action: z.literal("REPLACE"),
+    sku: skuSchema,
+    grade: z.enum(["A", "B"]).default("A"),
+  }),
+  z.object({ action: z.literal("CANCEL"), reason: text(300) }),
+]);

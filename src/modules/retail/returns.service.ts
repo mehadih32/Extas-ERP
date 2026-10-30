@@ -107,7 +107,11 @@ const parcelInclude = {
     },
   },
   pieces: {
-    include: { variant: { select: { sku: true } }, line: { select: { lineId: true } } },
+    include: {
+      variant: { select: { sku: true } },
+      line: { select: { lineId: true } },
+      reservedFor: { select: { order: { select: { order: { select: { number: true } } } } } },
+    },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   },
 } satisfies Prisma.RetailReturnParcelInclude;
@@ -180,6 +184,9 @@ function parcelView(p: ParcelRow, now: Date, checkDays: number) {
       reason: x.reason ? DECLINE_REASONS[x.reason] : null,
       differentPiece: x.differentPiece,
       decidedAt: x.decidedAt,
+      /** Sent on a new order from Return stock: its check is the packing check. */
+      reservedFor: x.reservedFor?.order.order.number ?? null,
+      atPacking: x.atPacking,
     })),
   };
 }
@@ -453,6 +460,19 @@ export async function checkParcel(
       },
     });
     throw error;
+  }
+  // Pieces sent on a new order from Return stock: this was their packing check.
+  for (const d of input.decisions) {
+    const piece = pieces.get(d.pieceId)!;
+    if (!piece.reservedForLineId) continue;
+    if (d.decision === "APPROVE") {
+      await ctx.db.retailReturnPiece.update({ where: { id: piece.id }, data: { atPacking: true } });
+    } else {
+      await ctx.db.retailOrderLine.update({
+        where: { id: piece.reservedForLineId },
+        data: { waitingStock: true },
+      });
+    }
   }
   const left = await ctx.db.retailReturnPiece.count({
     where: { parcelId: parcel.id, status: "WAITING" },

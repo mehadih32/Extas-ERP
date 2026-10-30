@@ -273,6 +273,56 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /orders/{externalOrderId}/lines/{lineId}:
+    patch:
+      tags: [Orders]
+      summary: A retail store's line whose Return stock piece failed the packing check
+      description: |
+        A line filled from the ERP's Return stock (`fromReturnStock: true`) leaves only after the owner
+        passes its piece at packing (until then shipping answers 409 RETURN_PIECE_NOT_CHECKED). When the
+        piece fails, the line waits (409 LINE_SHORT on shipping) until the site picks: WAIT (it fills when
+        the SKU is in stock again), REPLACE (another SKU at its shop price today, checked for stock) or
+        CANCEL (never billed; the line stays on the order with `cancelled: true`). Only before the order
+        leaves (410 after). 409 CONFLICT for a line that is not waiting.
+      operationId: updateStoreLine
+      parameters:
+        - $ref: "#/components/parameters/ExternalOrderId"
+        - { name: lineId, in: path, required: true, schema: { type: string } }
+        - $ref: "#/components/parameters/OptionalIdempotencyKey"
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [WAIT, REPLACE, CANCEL] }
+                sku: { type: string, description: "REPLACE: the new SKU." }
+                grade: { type: string, enum: [A, B] }
+                reason: { type: string, maxLength: 300, description: "CANCEL: why." }
+      responses:
+        "200":
+          description: The order after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: CONFLICT, INSUFFICIENT_STOCK or NO_SHOP_PRICE.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: GONE (the order left).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /orders/{externalOrderId}/delivery:
     put:
       tags: [Returns]
@@ -1315,6 +1365,7 @@ components:
               shopPrice: { type: number }
               customerPrice: { type: number }
               fromReturnStock: { type: boolean }
+              cancelled: { type: boolean }
               replacesLineId: { type: string }
               replacedShopPrice: { type: number }
         exchangeId: { type: string, examples: [EXG-2026-00031] }

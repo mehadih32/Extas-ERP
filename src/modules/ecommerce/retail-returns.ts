@@ -446,7 +446,7 @@ export async function returnsSince(call: Call, store: ShopStore, query: URLSearc
         pieceId: x.id,
         lineId: x.line.lineId,
         sku: x.variant.sku,
-        status: x.status,
+        status: x.atPacking ? "APPROVED_AT_PACKING" : x.status,
         reason: x.reason,
         differentPiece: x.differentPiece,
         credit: x.status === "APPROVED" ? amount(x.price) : 0,

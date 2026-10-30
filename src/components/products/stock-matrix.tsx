@@ -35,11 +35,13 @@ function CellButton({
   const extras = [
     cell.reserved > 0 ? `${count(cell.reserved)} set aside` : null,
     cell.bGrade > 0 ? `B ${count(cell.bGrade)}` : null,
+    cell.returnStock > 0 ? `${count(cell.returnStock)} to check` : null,
   ].filter(Boolean);
   const described = [
     `${count(cell.available)} available`,
     cell.reserved > 0 ? `${count(cell.reserved)} set aside for orders` : null,
     cell.bGrade > 0 ? `${count(cell.bGrade)} B-grade` : null,
+    cell.returnStock > 0 ? `${count(cell.returnStock)} in Return stock, not checked yet` : null,
     cell.isActive ? null : "not offered for sale",
     cell.lowStock ? "low stock" : null,
   ]

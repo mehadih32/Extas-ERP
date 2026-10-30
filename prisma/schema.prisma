@@ -7432,23 +7432,30 @@ model RetailOrder {
 /// One line of a store's website order as the site sent it (its own lineId):
 /// the shop price fixed for it and the customer's price per piece.
 model RetailOrderLine {
-  id             String               @id @default(cuid())
-  companyId      String
-  retailOrderId  String
-  lineId         String
-  variantId      String
-  grade          RetailGrade          @default(A)
-  quantity       Int
-  shopPrice      Decimal              @db.Decimal(14, 2)
-  customerPrice  Decimal              @db.Decimal(14, 2)
-  comboId        String?
+  id              String               @id @default(cuid())
+  companyId       String
+  retailOrderId   String
+  lineId          String
+  variantId       String
+  grade           RetailGrade          @default(A)
+  quantity        Int
+  shopPrice       Decimal              @db.Decimal(14, 2)
+  customerPrice   Decimal              @db.Decimal(14, 2)
+  comboId         String?
   /// On an exchange order: the line (of the earlier order) whose piece this one replaces.
-  replacesLineId String?
-  exchangeState  RetailExchangeState?
+  replacesLineId  String?
+  exchangeState   RetailExchangeState?
   /// The day the exchange parcel was delivered, and the last day the old piece may come back.
-  deliveredOn    DateTime?            @db.Date
-  deadline       DateTime?            @db.Date
-  createdAt      DateTime             @default(now())
+  deliveredOn     DateTime?            @db.Date
+  deadline        DateTime?            @db.Date
+  /// Pieces of this line taken from Return stock (main stock was out): checked at packing.
+  fromReturnStock Int                  @default(0)
+  /// A Return stock piece failed the packing check: the line waits for stock (or REPLACE, CANCEL).
+  waitingStock    Boolean              @default(false)
+  /// Dropped by the site (PATCH .../lines/{lineId} CANCEL): never billed, kept for the history.
+  cancelledAt     DateTime?
+  cancelReason    String?
+  createdAt       DateTime             @default(now())
 
   company        Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order          RetailOrder           @relation(fields: [retailOrderId], references: [id], onDelete: Cascade)
@@ -7457,6 +7464,7 @@ model RetailOrderLine {
   replaces       RetailOrderLine?      @relation("ExchangeReplaces", fields: [replacesLineId], references: [id])
   replacedBy     RetailOrderLine[]     @relation("ExchangeReplaces")
   exchangeEvents RetailExchangeEvent[]
+  reservedPieces RetailReturnPiece[]   @relation("ReservedPieces")
 
   @@unique([retailOrderId, lineId])
   @@index([companyId, variantId])
@@ -7592,17 +7600,23 @@ model RetailReturnPiece {
   /// The piece in the parcel was another of the order's SKUs than expected.
   differentPiece    Boolean              @default(false)
   salesReturnId     String?
+  /// The new order line this unchecked piece was sent on (plan v6 sec 8.5).
+  reservedForLineId String?
+  /// Approved by the packing check ("Checked, OK"): APPROVED_AT_PACKING for the site.
+  atPacking         Boolean              @default(false)
   decidedById       String?
   decidedAt         DateTime?
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
 
-  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  parcel  RetailReturnParcel @relation(fields: [parcelId], references: [id], onDelete: Cascade)
-  line    RetailOrderLine    @relation(fields: [retailOrderLineId], references: [id])
-  variant ProductVariant     @relation(fields: [variantId], references: [id])
+  company     Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parcel      RetailReturnParcel @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  line        RetailOrderLine    @relation(fields: [retailOrderLineId], references: [id])
+  variant     ProductVariant     @relation(fields: [variantId], references: [id])
+  reservedFor RetailOrderLine?   @relation("ReservedPieces", fields: [reservedForLineId], references: [id])
 
   @@index([parcelId])
+  @@index([reservedForLineId])
   @@index([companyId, status])
 }
 

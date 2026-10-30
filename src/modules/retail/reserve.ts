@@ -102,15 +102,19 @@ export async function takeFromReserveTx(tx: Tx, companyId: string, retailOrderId
   }
 }
 
-/** An approved piece of a line that came off the reserve goes back on it. */
+/**
+ * An approved piece of a line that came off the reserve goes back on it.
+ * Gives, for each line id in order, whether its piece went back.
+ */
 export async function putBackOnReserve(db: Db, companyId: string, lineIds: string[]) {
+  const back: boolean[] = [];
   for (const id of lineIds) {
     const line = await db.retailOrderLine.findUniqueOrThrow({
       where: { id },
       select: { variantId: true, fromReserve: true },
     });
-    if (line.fromReserve <= 0) continue;
-    const reserve = await reserveOf(db, companyId, line.variantId);
+    const reserve = line.fromReserve > 0 ? await reserveOf(db, companyId, line.variantId) : null;
+    back.push(Boolean(reserve));
     if (!reserve) continue;
     await db.retailOrderLine.update({ where: { id }, data: { fromReserve: { decrement: 1 } } });
     await db.retailReserve.update({
@@ -118,4 +122,27 @@ export async function putBackOnReserve(db: Db, companyId: string, lineIds: strin
       data: { quantity: { increment: 1 } },
     });
   }
+  return back;
+}
+
+/** An approval undone: a piece that went back on the reserve comes off it again, if still there. */
+export async function takeBackFromReserve(tx: Tx, companyId: string, lineId: string) {
+  const line = await tx.retailOrderLine.findUniqueOrThrow({
+    where: { id: lineId },
+    select: { variantId: true },
+  });
+  const found = await reserveOf(tx, companyId, line.variantId);
+  if (!found) return;
+  await lockRow(tx, "RetailReserve", found.id);
+  const reserve = await tx.retailReserve.findUniqueOrThrow({ where: { id: found.id } });
+  // Taken by a store bill meanwhile: that bill counted it already.
+  if (reserve.quantity <= 0) return;
+  await tx.retailReserve.update({
+    where: { id: reserve.id },
+    data: { quantity: reserve.quantity - 1 },
+  });
+  await tx.retailOrderLine.update({
+    where: { id: lineId },
+    data: { fromReserve: { increment: 1 } },
+  });
 }

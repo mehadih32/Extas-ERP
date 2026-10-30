@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auditInCompany } from "@/modules/audit/audit.service";
 
 import { EcommerceApiError } from "./errors";
+import { goneForStore, retailStoreOf } from "./retail-mode";
 import { ShopResponse, type ShopCall } from "./route";
 import { adSpendSchema } from "./schemas";
 
@@ -22,6 +23,12 @@ import { adSpendSchema } from "./schemas";
  */
 
 export async function recordAdSpend(call: ShopCall) {
+  if (await retailStoreOf(call)) {
+    throw goneForStore(
+      "POST /ad-spend",
+      "send each day's ads in the daily summary's costs.ads (PUT /daily-summaries/{date}).",
+    );
+  }
   const input = adSpendSchema.parse(call.body);
   const { ctx } = call;
   const companyId = ctx.company.id;

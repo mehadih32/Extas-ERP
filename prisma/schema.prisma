@@ -7355,6 +7355,10 @@ model RetailStore {
   holdReleaseReason String?
   /// Returned pieces are checked within this many days of the courier handing them back.
   checkDays         Int              @default(5)
+  /// The site was last told the store is on hold (account.hold) and not yet released.
+  holdTold          Boolean          @default(false)
+  /// Payments from the store recorded up to this time were told to the site (payment.recorded).
+  paymentToldAt     DateTime?
   /// An exchange's old piece must come back within this many days of the new parcel's delivery.
   exchangeDays      Int              @default(4)
   /// The logo on the store's own pad (its reports), PNG or JPG.
@@ -7594,20 +7598,22 @@ model RetailReturnList {
 
 /// One returned parcel (one order) on a return list.
 model RetailReturnParcel {
-  id            String            @id @default(cuid())
-  companyId     String
-  listId        String
-  retailOrderId String            @unique
-  consignmentId String
+  id              String            @id @default(cuid())
+  companyId       String
+  listId          String
+  retailOrderId   String            @unique
+  consignmentId   String
   /// The site's evidence: how many pieces its staff counted, and what they saw.
-  receivedCount Int?
-  note          String?
-  state         RetailParcelState
-  match         RetailMatch
-  resolvedById  String?
-  resolvedAt    DateTime?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  receivedCount   Int?
+  note            String?
+  state           RetailParcelState
+  match           RetailMatch
+  resolvedById    String?
+  resolvedAt      DateTime?
+  /// The site's return.parcel.resolved event.
+  resolvedEventId String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   company Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   list    RetailReturnList    @relation(fields: [listId], references: [id], onDelete: Cascade)
@@ -7633,11 +7639,18 @@ model RetailReturnPiece {
   note              String?
   /// The piece in the parcel was another of the order's SKUs than expected.
   differentPiece    Boolean              @default(false)
+  /// The line the piece was on before "Piece found" moved it (an undone check puts it back).
+  firstLineId       String?
   salesReturnId     String?
   /// The new order line this unchecked piece was sent on (plan v6 sec 8.5).
   reservedForLineId String?
   /// Approved by the packing check ("Checked, OK"): APPROVED_AT_PACKING for the site.
   atPacking         Boolean              @default(false)
+  /// Approved and put back on the shops' reserve (an undone approval takes it off again).
+  reservePutBack    Boolean              @default(false)
+  /// The site's return.piece.decided event for the latest decision, and the one it reverses.
+  eventId           String?
+  reversesEventId   String?
   decidedById       String?
   decidedAt         DateTime?
   createdAt         DateTime             @default(now())

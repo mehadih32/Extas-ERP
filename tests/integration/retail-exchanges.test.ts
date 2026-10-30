@@ -189,6 +189,16 @@ run("Retail store's exchanges (plan v6 sec 8.9)", () => {
       ["SETTLED", [["exchange.settled", "EXTRA", 75]]],
       ["SETTLED", [["exchange.settled", "EXTRA", 25]]],
     ]);
+    // The site was told the same events, under the same ids.
+    const pushed = await prisma.webhookEvent.findMany({
+      where: { direction: "OUTGOING", eventType: "exchange.settled" },
+    });
+    expect(pushed.map((e) => e.id).sort()).toEqual(
+      pulled.body.items
+        .flatMap((x: { events: Array<{ eventId: string }> }) => x.events.map((e) => e.eventId))
+        .sort(),
+    );
+    expect((pushed[0]!.payload as { data: { amount: number } }).data.amount).toBeGreaterThan(0);
     const period = await callShop(shop, accountRoute, {
       path: "/account?from=2020-01-01&to=2099-12-31",
     });

@@ -12,6 +12,7 @@ import { auditInCompany, recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { receiveAtCostTx } from "@/modules/inventory/stock.service";
 import { putBackOnReserve } from "@/modules/retail/reserve";
+import { type RetailEventType, shopEventTx } from "@/modules/retail/shop-events";
 
 /*
  * A retail store's exchanges (plan v6 sec 8.9, site-changes 2.10). The new
@@ -245,14 +246,12 @@ export async function cancelExchangeTx(
       where: { id: line.id },
       data: { exchangeState: "CANCELLED" },
     });
-    await tx.retailExchangeEvent.create({
-      data: {
-        companyId: ctx.company.id,
-        exchangeId: exchange.id,
-        lineId: line.id,
-        type: "CANCELLED",
-        amount: ZERO,
-      },
+    await exchangeEventTx(tx, {
+      companyId: ctx.company.id,
+      exchangeId: exchange.id,
+      lineId: line.id,
+      type: "CANCELLED",
+      amount: ZERO,
     });
   }
 }
@@ -293,16 +292,14 @@ export async function exchangeParcelTx(
           postedById: ctx.user.id,
         });
       }
-      await tx.retailExchangeEvent.create({
-        data: {
-          companyId: ctx.company.id,
-          exchangeId: args.exchangeId,
-          lineId: line.id,
-          type: "BILLED",
-          kind: "REVERSED",
-          amount: bill.amount.negated(),
-          reversesId: bill.id,
-        },
+      await exchangeEventTx(tx, {
+        companyId: ctx.company.id,
+        exchangeId: args.exchangeId,
+        lineId: line.id,
+        type: "BILLED",
+        kind: "REVERSED",
+        amount: bill.amount.negated(),
+        reversesId: bill.id,
       });
       await tx.retailOrderLine.update({
         where: { id: line.id },
@@ -310,6 +307,61 @@ export async function exchangeParcelTx(
       });
     }
   }
+}
+
+/**
+ * One exchange money event, and the same event to the store's site
+ * (exchange.settled, billed, credited or cancelled; site-changes 2.10): its
+ * eventId is the event's own id, as GET /exchanges shows it.
+ */
+async function exchangeEventTx(tx: Tx, data: Prisma.RetailExchangeEventUncheckedCreateInput) {
+  const event = await tx.retailExchangeEvent.create({
+    data,
+    include: {
+      exchange: { select: { number: true, storeId: true } },
+      line: { select: { lineId: true } },
+    },
+  });
+  const company = await tx.company.findUniqueOrThrow({
+    where: { id: event.companyId },
+    select: { timezone: true },
+  });
+  await shopEventTx(
+    tx,
+    event.exchange.storeId,
+    `exchange.${event.type.toLowerCase()}` as RetailEventType,
+    exchangeEventData(event, event.exchange.number, event.line.lineId, company.timezone),
+    { id: event.id, now: event.createdAt },
+  );
+  return event;
+}
+
+/** An exchange event as the site sees it, pushed and in GET /exchanges alike. */
+export function exchangeEventData(
+  e: {
+    id: string;
+    type: string;
+    kind: string | null;
+    amount: Prisma.Decimal;
+    reversesId: string | null;
+    createdAt: Date;
+  },
+  exchangeNumber: string,
+  lineId: string,
+  timeZone: string,
+) {
+  return {
+    eventId: e.id,
+    type: `exchange.${e.type.toLowerCase()}`,
+    exchangeId: exchangeNumber,
+    lineId,
+    date: localDay(e.createdAt, timeZone),
+    amount: Number(e.amount.toFixed(2)),
+    ...(e.type === "SETTLED" ? { kind: e.kind } : {}),
+    ...(e.type === "BILLED" && e.kind !== "REVERSED" ? { reason: e.kind } : {}),
+    ...(e.type === "CREDITED" ? { reason: e.kind } : {}),
+    ...(e.reversesId ? { reverses: e.reversesId } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -554,16 +606,14 @@ export async function settleExchangePieces(
           description: `${exchangeLabel(event.type, event.kind)} ${exchange.number} — ${piece.variant.sku}`,
           sourceId: exchange.id,
         });
-        await tx.retailExchangeEvent.create({
-          data: {
-            companyId: ctx.company.id,
-            exchangeId: exchange.id,
-            lineId: line.id,
-            type: event.type,
-            kind: event.kind,
-            amount: event.amount,
-            journalEntryId: journal?.id ?? null,
-          },
+        await exchangeEventTx(tx, {
+          companyId: ctx.company.id,
+          exchangeId: exchange.id,
+          lineId: line.id,
+          type: event.type,
+          kind: event.kind,
+          amount: event.amount,
+          journalEntryId: journal?.id ?? null,
         });
         summary.push(`${exchangeLabel(event.type, event.kind)} ${money(event.amount)}`);
       }
@@ -666,16 +716,14 @@ export async function billOverdueExchanges(now: Date = new Date()) {
         description: `Exchange billed in full ${exchange.number} — ${line.variant.sku}: ${what} did not come back by ${deadline}`,
         sourceId: exchange.id,
       });
-      await tx.retailExchangeEvent.create({
-        data: {
-          companyId: line.companyId,
-          exchangeId: exchange.id,
-          lineId: line.id,
-          type: "BILLED",
-          kind: "DEADLINE_PASSED",
-          amount,
-          journalEntryId: journal?.id ?? null,
-        },
+      await exchangeEventTx(tx, {
+        companyId: line.companyId,
+        exchangeId: exchange.id,
+        lineId: line.id,
+        type: "BILLED",
+        kind: "DEADLINE_PASSED",
+        amount,
+        journalEntryId: journal?.id ?? null,
       });
       await recordAudit(
         {

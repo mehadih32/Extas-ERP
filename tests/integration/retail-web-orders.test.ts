@@ -8,6 +8,8 @@ import { PATCH as patchRoute } from "@/app/api/v1/ecommerce/orders/[externalOrde
 import { POST as ordersRoute } from "@/app/api/v1/ecommerce/orders/route";
 import { POST as paymentsRoute } from "@/app/api/v1/ecommerce/payments/route";
 import { POST as returnsRoute } from "@/app/api/v1/ecommerce/returns/route";
+import { POST as adSpendRoute } from "@/app/api/v1/ecommerce/ad-spend/route";
+import { POST as shipmentEventsRoute } from "@/app/api/v1/ecommerce/shipments/[consignmentId]/events/route";
 import { POST as shipmentsRoute } from "@/app/api/v1/ecommerce/shipments/route";
 import { prisma } from "@/lib/prisma";
 import { reverseJournalEntry } from "@/modules/accounts/journal.service";
@@ -104,8 +106,11 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     const billed = await prisma.retailOrder.findUniqueOrThrow({ where: { orderId: saved.id } });
     expect(billed.billedAt).not.toBeNull();
     expect(Number(await getPartyBalance(shop.owner, store.partyId))).toBe(1875);
-    // Another shipment (or a delivered result) never bills it twice.
-    expect((await patch("WEB-1043", { status: "DELIVERED" })).status).toBe(200);
+    // The old status steps are closed: the courier's result has its own call.
+    const old = await patch("WEB-1043", { status: "DELIVERED" });
+    expect(old.status).toBe(410);
+    expect(old.body.error.code).toBe("USE_DELIVERY_RESULT");
+    expect((await patch("WEB-1043", { status: "RETURNED" })).status).toBe(410);
     expect(Number(await getPartyBalance(shop.owner, store.partyId))).toBe(1875);
     // Goods that left come back only through the return lists.
     const cancel = await patch("WEB-1043", { status: "CANCELLED", reason: "changed mind" });
@@ -230,5 +235,22 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     expect(res.body.statement.map((r: { kind: string }) => r.kind)).toEqual(
       expect.arrayContaining(["BILL", "PAYMENT"]),
     );
+  });
+
+  it("closes the old calls a retail store's site no longer uses", async () => {
+    await post(order("WEB-20", [{ sku: navyS(), quantity: 1, unitPrice: 1450 }]));
+    await ship("WEB-20", "PTH-20");
+    const event = await callShop(shop, shipmentEventsRoute, {
+      path: "/shipments/PTH-20/events",
+      params: { consignmentId: "PTH-20" },
+      body: { status: "DELIVERED", at: "2026-11-02T10:00:00+06:00" },
+    });
+    expect(event.status).toBe(410);
+    expect(event.body.error.code).toBe("GONE");
+    const ads = await callShop(shop, adSpendRoute, {
+      path: "/ad-spend",
+      body: { date: "2026-11-01", platform: "facebook", amount: 500 },
+    });
+    expect(ads.status).toBe(410);
   });
 });

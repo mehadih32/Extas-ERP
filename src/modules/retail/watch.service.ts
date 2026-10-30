@@ -16,8 +16,9 @@ import { alarm } from "./summaries.service";
  * The retail side's notes to the owner (plan v6 sec 13). Every night at 22:00
  * one summary of each store's last day, with its alerts: sales fell, more
  * parcels came back, ads brought less (ROAS), the store goes on hold in 5 days
- * unless it pays, new returned parcels, and (on Saturdays) styles lying
- * unsold. These are numbers and alarms: they go to the inbox and Telegram
+ * unless it pays, new returned parcels, returned parcels not checked on days
+ * 5, 7 and 10, what the store owes on the month's last night, and (on
+ * Saturdays) styles lying unsold. These are numbers and alarms: they go to the inbox and Telegram
  * even while the AI is off. Budgets and missing days alarm on their own
  * (summaries.service.ts). On Saturdays, while the AI is on, a short weekly
  * analysis of each store follows: advice only, nothing is changed. Each note
@@ -27,6 +28,8 @@ import { alarm } from "./summaries.service";
 
 const NIGHT_HOUR = 22;
 const SATURDAY = 6;
+/** Reminders for returned parcels not checked: on the store's check day, 2 and 5 days later (5, 7, 10). */
+const CHECK_STEPS = [0, 2, 5];
 
 type Day = { date: string; net: number; profit: number; ads: number; sent: number; back: number };
 
@@ -129,6 +132,16 @@ async function storeNight(ctx: CompanyContext, store: StoreRow, today: string, n
       text: `${store.name} goes on hold on ${hold.holdsOn} unless it pays: it owes ${money(Number(hold.balance))}.`,
     });
   }
+  if (addDays(today, 1).endsWith("-01") && hold.balance.gt(0)) {
+    const waiting = hold.waitingCheck.gt(0)
+      ? `, of which ${money(Number(hold.waitingCheck))} is returns waiting for the check`
+      : "";
+    alerts.push({
+      kind: "MONTH_END",
+      text: `${store.name} owes ${money(Number(hold.balance))} at the end of the month${waiting}.`,
+    });
+  }
+  const late = await checkReminders(ctx, store, today);
   const parcels = await prisma.retailReturnParcel.count({
     where: {
       companyId: ctx.company.id,
@@ -156,7 +169,42 @@ async function storeNight(ctx: CompanyContext, store: StoreRow, today: string, n
     if (await claim(ctx.company.id, store.id, a.kind, `${store.id}:${today}`, a.text))
       fresh.push(a.text);
   }
-  return { lines, alerts: fresh };
+  return { lines, alerts: [...fresh, ...late] };
+}
+
+/**
+ * Returned parcels the owner has not checked yet (plan v6 sec 8.8): one
+ * reminder per parcel on the store's check day (5 by default), 2 days later
+ * and 5 days later, when it turns red. A parcel first seen late gets only its
+ * latest reminder. One line per step for the store.
+ */
+async function checkReminders(ctx: CompanyContext, store: StoreRow, today: string) {
+  const open = await prisma.retailReturnParcel.findMany({
+    where: {
+      companyId: ctx.company.id,
+      state: { in: ["HOLD", "IN_RETURN_STOCK"] },
+      list: { storeId: store.id },
+    },
+    select: { id: true, list: { select: { handedBackAt: true } } },
+  });
+  const due = new Map<number, number>();
+  for (const p of open) {
+    const days = daysBetween(localDay(p.list.handedBackAt, ctx.company.timezone), today);
+    const step = CHECK_STEPS.map((s) => store.checkDays + s)
+      .filter((d) => days >= d)
+      .pop();
+    if (step === undefined) continue;
+    if (await claim(ctx.company.id, store.id, "CHECK_LATE", `${p.id}:${step}`, `${days} days`)) {
+      due.set(step, (due.get(step) ?? 0) + 1);
+    }
+  }
+  const red = store.checkDays + CHECK_STEPS[CHECK_STEPS.length - 1]!;
+  return [...due]
+    .sort(([a], [b]) => a - b)
+    .map(
+      ([step, n]) =>
+        `${store.name}: ${n} returned parcel${n === 1 ? "" : "s"} not checked ${step} days after the courier handed ${n === 1 ? "it" : "them"} back${step >= red ? " (now red)" : ""}: check ${n === 1 ? "it" : "them"} in Business > Returns, the courier's claim window is short.`,
+    );
 }
 
 type StoreRow = {
@@ -166,6 +214,7 @@ type StoreRow = {
   partyId: string;
   holdReleasedUntil: Date | null;
   holdReleaseReason: string | null;
+  checkDays: number;
 };
 
 const ANALYSIS_SYSTEM = (company: string) =>
@@ -225,6 +274,7 @@ export async function retailWatch(now: Date = new Date()) {
       partyId: true,
       holdReleasedUntil: true,
       holdReleaseReason: true,
+      checkDays: true,
     },
   });
   const byCompany = new Map<string, StoreRow[]>();

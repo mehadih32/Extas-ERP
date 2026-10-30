@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { PinField } from "@/components/ai/pin-prompt";
 import { Field } from "@/components/forms/field";
 import { StatusBadge } from "@/components/sales/badges";
 import { FormDialog } from "@/components/sales/dialogs";
@@ -12,7 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import type { ReturnParcel, ReturnsPage } from "@/modules/retail/returns.service";
-import { checkParcelAction, resolveHoldAction } from "@/server/actions/retail.actions";
+import {
+  checkParcelAction,
+  resolveHoldAction,
+  undoDecisionAction,
+} from "@/server/actions/retail.actions";
 
 /*
  * Business > Returns (plan v6 sec 8.8): one page, three tabs. "Hold" needs the
@@ -22,7 +27,9 @@ import { checkParcelAction, resolveHoldAction } from "@/server/actions/retail.ac
  */
 
 type Tab = "hold" | "waiting" | "history";
-type Dialog = { kind: "resolve" | "missing" | "check"; parcel: ReturnParcel };
+type Dialog =
+  | { kind: "resolve" | "missing" | "check"; parcel: ReturnParcel }
+  | { kind: "undo"; parcel: ReturnParcel; piece: ReturnParcel["pieces"][number] };
 
 const MATCH: Record<string, string> = {
   GREEN: "Pieces known",
@@ -89,6 +96,7 @@ export function ReturnsScreen({ page }: { page: ReturnsPage }) {
                 onResolve={() => setDialog({ kind: "resolve", parcel: p })}
                 onMissing={() => setDialog({ kind: "missing", parcel: p })}
                 onCheck={() => setDialog({ kind: "check", parcel: p })}
+                onUndo={(piece) => setDialog({ kind: "undo", parcel: p, piece })}
               />
             </li>
           ))}
@@ -100,6 +108,9 @@ export function ReturnsScreen({ page }: { page: ReturnsPage }) {
       {dialog?.kind === "check" && (
         <CheckDialog page={page} parcel={dialog.parcel} onClose={close} />
       )}
+      {dialog?.kind === "undo" && (
+        <UndoDialog parcel={dialog.parcel} piece={dialog.piece} onClose={close} />
+      )}
     </section>
   );
 }
@@ -110,12 +121,14 @@ function ParcelCard({
   onResolve,
   onMissing,
   onCheck,
+  onUndo,
 }: {
   parcel: ReturnParcel;
   page: ReturnsPage;
   onResolve: () => void;
   onMissing: () => void;
   onCheck: () => void;
+  onUndo: (piece: ReturnParcel["pieces"][number]) => void;
 }) {
   const waiting = p.pieces.filter((x) => x.status === "WAITING").length;
   return (
@@ -218,6 +231,17 @@ function ParcelCard({
                       ? "approved at packing"
                       : "approved"
                     : `declined: ${x.reason}`}
+                {page.canCheck && x.undoable && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="link"
+                    className="h-auto px-1 py-0"
+                    onClick={() => onUndo(x)}
+                  >
+                    Undo the check
+                  </Button>
+                )}
               </span>
             </li>
           ))}
@@ -484,6 +508,52 @@ function CheckDialog({
               </fieldset>
             );
           })}
+        </>
+      )}
+    </FormDialog>
+  );
+}
+
+function UndoDialog({
+  parcel,
+  piece,
+  onClose,
+}: {
+  parcel: ReturnParcel;
+  piece: ReturnParcel["pieces"][number];
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  return (
+    <FormDialog
+      title="Undo the check"
+      description={
+        piece.status === "APPROVED"
+          ? `${piece.sku} (${parcel.consignmentId}) waits for the check again. The store's credit for it is taken back by a reversing entry, with any other piece approved on the same credit, and it leaves main stock again. The store's site is told.`
+          : `${piece.sku} (${parcel.consignmentId}) waits for the check again. No money or stock changes. The store's site is told.`
+      }
+      submitLabel="Undo it"
+      pendingLabel="Saving"
+      destructive
+      errorTitle="The check was not undone"
+      onClose={onClose}
+      onSubmit={async (form) => {
+        const result = await undoDecisionAction(piece.id, {
+          reason: String(form.get("reason") ?? ""),
+          pin: String(form.get("pin") ?? ""),
+        });
+        if (!result.ok) return result.error;
+        router.refresh();
+        onClose();
+        return undefined;
+      }}
+    >
+      {(fieldError) => (
+        <>
+          <Field id="undo-reason" label="Reason" error={fieldError("reason")}>
+            <Input id="undo-reason" name="reason" maxLength={300} autoComplete="off" />
+          </Field>
+          <PinField id="undo-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
         </>
       )}
     </FormDialog>

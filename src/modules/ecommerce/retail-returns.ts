@@ -1,18 +1,20 @@
 import { Prisma } from "@prisma/client";
 
-import { dateColumn, localDay } from "@/lib/dates";
+import { addDays, dateColumn, localDay, toInstant } from "@/lib/dates";
 import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import { byMark, identifyPartial, type Identification, piecesOf } from "@/modules/retail/partial";
 import {
   exchangeDeliveredTx,
+  exchangeEventData,
   exchangeParcelTx,
   exchangesAtRiskOf,
   exchangeStatus,
   OPEN_STATES,
 } from "@/modules/retail/exchanges.service";
-import { stageOf } from "@/modules/retail/returns.service";
+import { pieceEventData, stageOf } from "@/modules/retail/returns.service";
+import { shopEventTx } from "@/modules/retail/shop-events";
 
 import { amount } from "./catalog.service";
 import { EcommerceApiError } from "./errors";
@@ -37,6 +39,8 @@ import {
  *   POST /return-lists         a lot the courier handed back: known parcels'
  *                              pieces go to Return stock, unclear ones on Hold.
  *   GET /returns               every parcel and the owner's decisions since a time.
+ *   GET /returns/summary       one day's counts, for the site's nightly compare.
+ *   GET /returns/claims        missing and damaged pieces, for the courier claim.
  */
 
 type Call = Pick<ShopCall, "ctx" | "integration" | "meta">;
@@ -145,6 +149,19 @@ export async function recordDelivery(call: Call, externalOrderId: string, raw: u
       create: { companyId: ctx.company.id, retailOrderId: retail.id, ...data },
       update: data,
     });
+    const before = retail.delivery;
+    const same =
+      before?.status === input.status &&
+      before.match === found.match &&
+      JSON.stringify(before.returning) === JSON.stringify(returning);
+    if (!same) {
+      await shopEventTx(tx, retail.storeId, "delivery.identified", {
+        externalOrderId,
+        status: input.status,
+        identification: found.match,
+        returningLines: asLines(found.returning),
+      });
+    }
     await auditInCompany(
       ctx,
       meta,
@@ -258,6 +275,12 @@ async function exchangeDelivery(
         match: "GREEN",
         returning,
       },
+    });
+    await shopEventTx(tx, retail.storeId, "delivery.identified", {
+      externalOrderId,
+      status: input.status,
+      identification: "GREEN",
+      returningLines: answer(null).returningLines,
     });
     await auditInCompany(
       ctx,
@@ -427,7 +450,12 @@ export async function returnsSince(call: Call, store: ShopStore, query: URLSearc
     },
     include: {
       list: true,
-      order: { include: { order: { select: { externalOrderId: true } } } },
+      order: {
+        include: {
+          order: { select: { externalOrderId: true } },
+          exchange: { select: { number: true } },
+        },
+      },
       pieces: {
         include: { line: { select: { lineId: true } }, variant: { select: { sku: true } } },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -446,18 +474,151 @@ export async function returnsSince(call: Call, store: ShopStore, query: URLSearc
       stage: stageOf(p),
       state: p.state,
       identification: p.match,
+      resolvedEventId: p.resolvedEventId,
       updatedAt: p.updatedAt.toISOString(),
       pieces: p.pieces.map((x) => ({
-        pieceId: x.id,
-        lineId: x.line.lineId,
-        sku: x.variant.sku,
-        status: x.atPacking ? "APPROVED_AT_PACKING" : x.status,
-        reason: x.reason,
-        differentPiece: x.differentPiece,
-        credit: x.status === "APPROVED" ? amount(x.price) : 0,
-        decidedAt: x.decidedAt?.toISOString() ?? null,
+        ...pieceEventData({ ...x, parcel: p }),
+        ...(p.order.exchange ? { exchangeId: p.order.exchange.number } : {}),
+        eventId: x.eventId,
+        ...(x.reversesEventId ? { reverses: x.reversesEventId } : {}),
       })),
     })),
+  };
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A day, or a span of at most 92 days, from the query (company days; today by default). */
+function daysOf(call: Call, query: URLSearchParams, keys: ["date"] | ["from", "to"]) {
+  const today = localDay(new Date(), call.ctx.company.timezone);
+  const read = (key: string, fallback: string) => {
+    const v = query.get(key) || fallback;
+    if (!DAY.test(v) || !new Date(`${v}T00:00:00Z`).toISOString().startsWith(v)) {
+      throw new EcommerceApiError(422, "VALIDATION", `${key} must be a day as YYYY-MM-DD.`);
+    }
+    return v;
+  };
+  const to = read(keys.length === 1 ? "date" : "to", today);
+  const from = keys.length === 1 ? to : read("from", addDays(to, -29));
+  if (from > to || addDays(from, 92) < to) {
+    throw new EcommerceApiError(422, "VALIDATION", "Ask for at most 92 days, from before to.");
+  }
+  const tz = call.ctx.company.timezone;
+  return { from, to, gte: toInstant(from, tz), lt: toInstant(addDays(to, 1), tz) };
+}
+
+/** Reasons the courier may be to blame for: these pieces carry what a claim needs. */
+const CLAIM_REASONS = ["PARCEL_MISSING", "PIECE_MISSING", "STAIN_OR_DAMAGE"] as const;
+
+/** GET /returns/claims?from=&to=: what to claim from the courier, decided on those days. */
+export async function returnClaims(call: Call, store: ShopStore, query: URLSearchParams) {
+  const span = daysOf(call, query, ["from", "to"]);
+  const decided = { gte: span.gte, lt: span.lt };
+  const [pieces, missing] = await Promise.all([
+    call.ctx.db.retailReturnPiece.findMany({
+      where: {
+        status: "DECLINED",
+        reason: { in: [...CLAIM_REASONS] },
+        decidedAt: decided,
+        parcel: { list: { storeId: store.id } },
+      },
+      include: {
+        line: { select: { lineId: true } },
+        variant: { select: { sku: true } },
+        parcel: {
+          include: {
+            list: true,
+            order: { include: { order: { select: { externalOrderId: true } } } },
+          },
+        },
+      },
+      orderBy: [{ decidedAt: "asc" }, { id: "asc" }],
+    }),
+    call.ctx.db.retailReturnParcel.findMany({
+      where: { state: "MISSING", resolvedAt: decided, list: { storeId: store.id } },
+      include: { list: true, order: { include: { order: { select: { externalOrderId: true } } } } },
+      orderBy: [{ resolvedAt: "asc" }, { id: "asc" }],
+    }),
+  ]);
+  type Parcel = (typeof missing)[number];
+  const where = (p: Parcel) => ({
+    returnListId: p.list.returnListId,
+    consignmentId: p.consignmentId,
+    courier: p.list.courier,
+    handedBackAt: p.list.handedBackAt.toISOString().slice(0, 10),
+    externalOrderId: p.order.order.externalOrderId,
+  });
+  const claims = [
+    ...missing.map((p) => ({
+      ...where(p),
+      reason: "PARCEL_MISSING" as const,
+      pieceId: null,
+      lineId: null,
+      sku: null,
+      eventId: p.resolvedEventId,
+      decidedAt: p.resolvedAt!.toISOString(),
+    })),
+    ...pieces.map((x) => ({
+      ...where(x.parcel),
+      reason: x.reason!,
+      pieceId: x.id,
+      lineId: x.line.lineId,
+      sku: x.variant.sku,
+      eventId: x.eventId,
+      decidedAt: x.decidedAt!.toISOString(),
+    })),
+  ].sort((a, b) => a.decidedAt.localeCompare(b.decidedAt));
+  return { from: span.from, to: span.to, claims };
+}
+
+/**
+ * GET /returns/summary?date=: one day's returns for the site's nightly compare:
+ * parcels and pieces handed back that day (the courier's date), pieces
+ * approved (with the credit) and declined that day, parcels found missing,
+ * and what still waits now (on Hold, in Return stock).
+ */
+export async function returnsSummary(call: Call, store: ShopStore, query: URLSearchParams) {
+  const span = daysOf(call, query, ["date"]);
+  const db = call.ctx.db;
+  const mine = { list: { storeId: store.id } };
+  const decided = { gte: span.gte, lt: span.lt };
+  const handedBack = {
+    gte: new Date(`${span.from}T00:00:00Z`),
+    lt: new Date(`${addDays(span.from, 1)}T00:00:00Z`),
+  };
+  const [parcels, piecesBack, approved, declined, missing, onHold, inReturnStock] =
+    await Promise.all([
+      db.retailReturnParcel.count({
+        where: { list: { storeId: store.id, handedBackAt: handedBack } },
+      }),
+      db.retailReturnPiece.count({
+        where: { parcel: { list: { storeId: store.id, handedBackAt: handedBack } } },
+      }),
+      db.retailReturnPiece.findMany({
+        where: { status: "APPROVED", decidedAt: decided, parcel: mine },
+        select: {
+          price: true,
+          parcel: { select: { order: { select: { exchange: { select: { id: true } } } } } },
+        },
+      }),
+      db.retailReturnPiece.count({
+        where: { status: "DECLINED", decidedAt: decided, parcel: mine },
+      }),
+      db.retailReturnParcel.count({ where: { ...mine, state: "MISSING", resolvedAt: decided } }),
+      db.retailReturnParcel.count({ where: { ...mine, state: "HOLD" } }),
+      db.retailReturnPiece.count({ where: { status: "WAITING", parcel: mine } }),
+    ]);
+  // An exchange's old piece is credited through the exchange.* events, never here.
+  const credit = approved
+    .filter((p) => !p.parcel.order.exchange)
+    .reduce((s, p) => s.plus(p.price), new Prisma.Decimal(0));
+  return {
+    date: span.from,
+    handedBack: { parcels, pieces: piecesBack },
+    approved: { pieces: approved.length, credit: amount(credit) },
+    declined: { pieces: declined },
+    missingParcels: missing,
+    now: { parcelsOnHold: onHold, piecesInReturnStock: inReturnStock },
   };
 }
 
@@ -523,18 +684,9 @@ export async function listExchanges(call: Call, store: ShopStore, query: URLSear
       deliveredAt: day(x.order.lines.find((l) => l.deliveredOn)?.deliveredOn ?? null),
       deadline: day(x.order.lines.find((l) => l.deadline)?.deadline ?? null),
       updatedAt: x.updatedAt.toISOString(),
-      events: x.events.map((e) => ({
-        eventId: e.id,
-        type: `exchange.${e.type.toLowerCase()}`,
-        exchangeId: x.number,
-        lineId: e.line.lineId,
-        date: localDay(e.createdAt, call.ctx.company.timezone),
-        amount: amount(e.amount),
-        ...(e.type === "SETTLED" ? { kind: e.kind } : {}),
-        ...(e.type === "BILLED" && e.kind !== "REVERSED" ? { reason: e.kind } : {}),
-        ...(e.type === "CREDITED" ? { reason: e.kind } : {}),
-        ...(e.reversesId ? { reverses: e.reversesId } : {}),
-      })),
+      events: x.events.map((e) =>
+        exchangeEventData(e, x.number, e.line.lineId, call.ctx.company.timezone),
+      ),
     };
   });
   const totalAtRisk = await exchangesAtRiskOf(call.ctx, store.id);

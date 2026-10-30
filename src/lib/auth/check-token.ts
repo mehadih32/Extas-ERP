@@ -43,6 +43,14 @@ export const CHECK_NEVER_ROUTES: ReadonlyArray<{ route: string; why: string }> =
     why: "The online shops' API: it answers only a shop's own API key, never a session.",
   },
   {
+    route: "/api/v1/ecommerce/returns/claims",
+    why: "The online shops' API: it answers only a shop's own API key, never a session.",
+  },
+  {
+    route: "/api/v1/ecommerce/returns/summary",
+    why: "The online shops' API: it answers only a shop's own API key, never a session.",
+  },
+  {
     route: "/api/v1/ecommerce/daily-summaries",
     why: "The online shops' API: it answers only a shop's own API key, never a session.",
   },

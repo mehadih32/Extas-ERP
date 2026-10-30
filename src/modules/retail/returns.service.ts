@@ -4,11 +4,12 @@ import { z } from "zod";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
+import { runTransaction } from "@/lib/transaction";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { createSalesReturn } from "@/modules/sales/return.service";
 
-import { settleExchangePieces } from "./exchanges.service";
+import { billMissingNewPiecesTx, settleExchangePieces } from "./exchanges.service";
 import { putBackOnReserve } from "./reserve";
 
 /*
@@ -55,25 +56,65 @@ export function stageOf(p: { state: RetailParcelState; resolvedAt: Date | null }
 }
 
 /**
- * What a store's returns waiting for the check are worth at the price it paid:
- * the pieces in Return stock, and every piece of a parcel still on Hold (at
- * most what came back). Left out of the store's 30-day hold.
+ * What approving a store's returns waiting for the check would take off its
+ * account, at the price it paid: each piece in Return stock, and the pieces a
+ * parcel still on Hold should hold (at most as many as came back). An exchange
+ * piece counts only where approving credits money: an old piece whose new
+ * piece was billed in full meanwhile. Left out of the store's 30-day hold.
  */
 export async function waitingCheckOf(ctx: CompanyContext, storeId: string) {
   const [waiting, held] = await Promise.all([
-    ctx.db.retailReturnPiece.aggregate({
+    ctx.db.retailReturnPiece.findMany({
       where: { status: "WAITING", parcel: { list: { storeId } } },
-      _sum: { price: true },
+      select: {
+        price: true,
+        parcel: { select: { order: { select: { exchange: { select: { id: true } } } } } },
+        line: { select: { replacedBy: { select: { exchangeState: true } } } },
+      },
     }),
     ctx.db.retailReturnParcel.findMany({
       where: { state: "HOLD", list: { storeId } },
-      select: { order: { select: { lines: { select: { shopPrice: true, quantity: true } } } } },
+      select: {
+        receivedCount: true,
+        order: {
+          select: {
+            exchange: { select: { id: true } },
+            delivery: { select: { returning: true } },
+            lines: {
+              where: { cancelledAt: null },
+              select: { id: true, shopPrice: true, quantity: true },
+            },
+          },
+        },
+      },
     }),
   ]);
+  const inStock = waiting
+    .filter(
+      (p) =>
+        !p.parcel.order.exchange || p.line.replacedBy.some((l) => l.exchangeState === "BILLED"),
+    )
+    .reduce((sum, p) => sum.plus(p.price), ZERO);
   const onHold = held
-    .flatMap((p) => p.order.lines)
-    .reduce((sum, l) => sum.plus(new Prisma.Decimal(l.shopPrice).times(l.quantity)), ZERO);
-  return new Prisma.Decimal(waiting._sum.price ?? 0).plus(onHold);
+    .filter((p) => !p.order.exchange)
+    .reduce((sum, p) => {
+      const price = new Map(p.order.lines.map((l) => [l.id, l.shopPrice]));
+      const returning = Array.isArray(p.order.delivery?.returning)
+        ? (p.order.delivery!.returning as string[])
+        : [];
+      // Which pieces came back is not known yet: any of the order's pieces may have.
+      const ids = returning.length
+        ? returning
+        : p.order.lines.flatMap((l) => Array.from({ length: l.quantity }, () => l.id));
+      const prices = ids
+        .map((id) => price.get(id))
+        .filter((v): v is Prisma.Decimal => v !== undefined)
+        .sort((a, b) => a.comparedTo(b));
+      const count =
+        p.receivedCount === null ? prices.length : Math.min(p.receivedCount, prices.length);
+      return prices.slice(0, count).reduce((s, v) => s.plus(v), sum);
+    }, ZERO);
+  return inStock.plus(onHold);
 }
 
 const VARIANT = {
@@ -99,6 +140,8 @@ const parcelInclude = {
       delivery: true,
       exchange: { select: { id: true, number: true } },
       lines: {
+        // A line the site cancelled never left, so it cannot come back.
+        where: { cancelledAt: null },
         include: {
           variant: { select: VARIANT },
           replaces: { include: { variant: { select: VARIANT } } },
@@ -297,7 +340,7 @@ export async function resolveHold(
       );
     }
   }
-  await prisma.$transaction(async (tx) => {
+  await runTransaction(async (tx) => {
     const claimed = await tx.retailReturnParcel.updateMany({
       where: { id: parcel.id, companyId: ctx.company.id, state: "HOLD" },
       data: {
@@ -330,6 +373,15 @@ export async function resolveHold(
           data: { exchangeState: "WAITING_RETURN" },
         });
       }
+      // A refused new piece that did not come is the store's loss: billed now.
+      const came = (lineId: string) => pieces.filter((p) => p.lineId === lineId).length;
+      await billMissingNewPiecesTx(tx, ctx, {
+        exchangeId: parcel.order.exchange.id,
+        missing: parcel.order.lines
+          .filter((l) => l.exchangeState === "CANCELLED")
+          .map((l) => ({ lineId: l.id, pieces: l.quantity - came(l.id) })),
+        note: `${parcel.list.returnListId} ${parcel.consignmentId}`,
+      });
     }
     await auditInCompany(
       ctx,
@@ -446,6 +498,8 @@ export async function checkParcel(
     if (exchange) await settleExchangePieces(ctx, parcel.id, input.decisions, meta);
     else if (approving.length > 0) await creditApproved(ctx, parcel, approving, meta);
   } catch (error) {
+    // The store was credited already: the pieces stay decided, never credited twice.
+    if (error instanceof CreditedThen) throw error.cause;
     // Nothing was credited: the pieces wait for the check again.
     await prisma.retailReturnPiece.updateMany({
       where: {
@@ -524,14 +578,25 @@ async function creditApproved(
     },
     meta,
   );
-  await ctx.db.retailReturnPiece.updateMany({
-    where: { id: { in: pieces.map((p) => p.id) } },
-    data: { salesReturnId: credit.id },
-  });
-  // A shop's piece approved back is a shop's piece again (plan v6 sec 3a).
-  await putBackOnReserve(
-    prisma,
-    ctx.company.id,
-    pieces.map((p) => p.retailOrderLineId),
-  );
+  try {
+    await ctx.db.retailReturnPiece.updateMany({
+      where: { id: { in: pieces.map((p) => p.id) } },
+      data: { salesReturnId: credit.id },
+    });
+    // A shop's piece approved back is a shop's piece again (plan v6 sec 3a).
+    await putBackOnReserve(
+      prisma,
+      ctx.company.id,
+      pieces.map((p) => p.retailOrderLineId),
+    );
+  } catch (error) {
+    throw new CreditedThen(error);
+  }
+}
+
+/** A step after the store's credit failed: the credit stands, so nothing is undone. */
+class CreditedThen extends Error {
+  constructor(override readonly cause: unknown) {
+    super("The store was credited, then a later step failed.");
+  }
 }

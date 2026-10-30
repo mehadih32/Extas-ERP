@@ -39,6 +39,9 @@ async function paymentDays(ctx: CompanyContext, partyId: string) {
       where: {
         companyId: ctx.company.id,
         sourceType,
+        // A payment reversed later (a bounced cheque, a wrong entry) never counts.
+        isReversed: false,
+        reversalOfId: null,
         lines: { some: { partyId, [side]: { gt: 0 } } },
       },
       orderBy: { date: sourceType === "PAYMENT" ? "desc" : "asc" },
@@ -190,7 +193,8 @@ export async function accountOf(ctx: CompanyContext, store: Store, raw: unknown 
         kind,
         number: line.number,
         description: line.description,
-        amount: money(kind === "EXCHANGE" ? net : net.abs()),
+        // Exchanges and other entries keep their sign: a charge adds, a credit takes off.
+        amount: money(kind === "EXCHANGE" || kind === "OTHER" ? net : net.abs()),
       };
     });
     period = {

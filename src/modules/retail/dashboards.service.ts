@@ -18,7 +18,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { canSeeFinancials } from "@/modules/dashboard/access";
 import { balancesFor } from "@/modules/parties/ledger.service";
 
-import { assertCanSeeStores } from "./stores.service";
+import { assertCanSeeStores, canSeeStoreCosts } from "./stores.service";
 
 /*
  * Business dashboards (plan v6 sec 10)
@@ -177,8 +177,28 @@ export async function storesBooks(storeIds: string[], from: string, to: string, 
   books.days = new Set([...latest.values()].map((r) => dateOnly(r.date))).size;
   books.incomplete = [...incomplete];
 
-  // Fixed costs: each month's amount shared evenly over its days.
-  const firstDay = rows.length ? dateOnly(rows[0]!.date) : from;
+  // Fixed costs: each month's amount shared evenly over its days, from each
+  // store's first day sent (or, before any, its first month of fixed costs).
+  const [firstSummaries, firstFixed] = await Promise.all([
+    prisma.retailDailySummary.groupBy({
+      by: ["storeId"],
+      where: { storeId: { in: storeIds } },
+      _min: { date: true },
+    }),
+    prisma.retailFixedCost.groupBy({
+      by: ["storeId"],
+      where: { storeId: { in: storeIds } },
+      _min: { month: true },
+    }),
+  ]);
+  const startOf = new Map<string, string>();
+  for (const r of firstSummaries) if (r._min.date) startOf.set(r.storeId, dateOnly(r._min.date));
+  for (const r of firstFixed) {
+    const day = r._min.month ? `${r._min.month}-01` : null;
+    if (day && !startOf.has(r.storeId)) startOf.set(r.storeId, day);
+  }
+  const starts = [...startOf.values()].sort();
+  const firstDay = starts[0] ?? addDays(last, 1);
   const fixedFrom = from < firstDay ? firstDay : from;
   const months = new Set<string>();
   for (let d = fixedFrom; d <= last; d = addDays(d, 1)) months.add(d.slice(0, 7));
@@ -191,6 +211,8 @@ export async function storesBooks(storeIds: string[], from: string, to: string, 
   for (let d = fixedFrom; d <= last; d = addDays(d, 1)) {
     const month = d.slice(0, 7);
     for (const id of storeIds) {
+      const start = startOf.get(id);
+      if (!start || d < start) continue;
       const total = fixed.get(`${id}|${month}`);
       if (total === undefined) {
         missing.add(month);
@@ -455,6 +477,11 @@ async function storeFigures(ctx: CompanyContext, store: { id: string; partyId: s
     where: { parcel: { order: { storeId: store.id } } },
     select: { id: true, salesReturnId: true, status: true, price: true, decidedAt: true },
   });
+  // Approved pieces go back through a sales return: its stock comes in per return item.
+  const returnItems = await ctx.db.salesReturnItem.findMany({
+    where: { returnId: { in: [...new Set(pieces.flatMap((p) => p.salesReturnId ?? []))] } },
+    select: { id: true },
+  });
   const [out, back] = await Promise.all([
     ctx.db.stockMovement.findMany({
       where: {
@@ -471,12 +498,7 @@ async function storeFigures(ctx: CompanyContext, store: { id: string; partyId: s
         createdAt: { gte: s.start, lt: s.end },
         OR: [
           { referenceType: "RetailReturnPiece", referenceId: { in: pieces.map((p) => p.id) } },
-          {
-            referenceType: "SalesReturn",
-            referenceId: {
-              in: pieces.flatMap((p) => (p.salesReturnId ? [p.salesReturnId] : [])),
-            },
-          },
+          { referenceType: "SalesReturnItem", referenceId: { in: returnItems.map((i) => i.id) } },
         ],
       },
       select: { quantity: true, unitCost: true },
@@ -567,7 +589,7 @@ export async function storeDashboard(ctx: CompanyContext, storeId: string, raw: 
     storeFigures(ctx, store, period),
     period.previous ? storeFigures(ctx, store, period.previous) : null,
   ]);
-  const costs = ctx.can("retail.manage") || canSeeFinancials(ctx);
+  const costs = canSeeStoreCosts(ctx);
   const v = view(now);
   return {
     period: { key: period.key, from: period.from, to: period.to },

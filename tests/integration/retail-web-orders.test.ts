@@ -10,6 +10,7 @@ import { POST as paymentsRoute } from "@/app/api/v1/ecommerce/payments/route";
 import { POST as returnsRoute } from "@/app/api/v1/ecommerce/returns/route";
 import { POST as shipmentsRoute } from "@/app/api/v1/ecommerce/shipments/route";
 import { prisma } from "@/lib/prisma";
+import { reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { setPin } from "@/modules/ai/settings.service";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { releaseHold } from "@/modules/retail/account.service";
@@ -201,6 +202,14 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     expect(
       (await post(order("WEB-8", [{ sku: navyM(), quantity: 1, unitPrice: 1450 }]))).status,
     ).toBe(201);
+
+    // A payment reversed later (a bounced cheque) never restarts the count.
+    const paid = await prisma.journalEntry.findFirstOrThrow({
+      where: { companyId: shop.company.id, sourceType: "PAYMENT" },
+    });
+    await reverseJournalEntry(prisma, paid.id, { description: "Cheque bounced" });
+    account = await callShop(shop, accountRoute, { path: "/account" });
+    expect(account.body.hold).toMatchObject({ onHold: true, lastPaymentAt: null });
   });
 
   it("gives the store's bills and payments for a period", async () => {

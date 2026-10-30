@@ -12,9 +12,11 @@ import { assertMayWrite } from "@/lib/read-only";
 import type { CompanyContext } from "@/modules/auth/context";
 import { DeferJob, enqueueJobs, retryDelayMs } from "@/modules/jobs/queue";
 
-import { catalogVariantOf, stockRowOf } from "./catalog.service";
+import { pricesOfStore } from "@/modules/retail/stores.service";
+
+import { catalogVariantOf, stockRowOf, storeCatalogVariantOf } from "./catalog.service";
 import { assertCanManageShops, privateAddress } from "./integration.service";
-import type { CatalogVariant, StockRow } from "./schemas";
+import type { CatalogVariant, StockRow, StoreCatalogVariant } from "./schemas";
 import {
   SIGNATURE_HEADER,
   signatureMatches,
@@ -73,7 +75,8 @@ export type EventType = (typeof EVENT_TYPES)[number];
 export type WebhookBody<T = unknown> = { id: string; type: EventType; createdAt: string; data: T };
 
 /** variant.changed's data: the variant as the catalog shows it, and whether it is new. */
-export type VariantChanged = CatalogVariant & { isNew: boolean };
+type ShopVariant = CatalogVariant | StoreCatalogVariant;
+export type VariantChanged = ShopVariant & { isNew: boolean };
 
 // ---------------------------------------------------------------------------
 // What is sent
@@ -167,15 +170,54 @@ async function stockChanges(shop: Shop, since: Date, now: Date): Promise<Planned
 
 async function variantChanges(shop: Shop, since: Date, now: Date): Promise<Planned[]> {
   const window = { gt: since, lte: now };
+  // A retail store's site hears only its own buying prices (plan v6): a
+  // change of the store's prices or rules is a change too, and the ERP's cost
+  // and price list are never sent.
+  const store = await prisma.retailStore.findFirst({
+    where: { companyId: shop.companyId, integrationId: shop.id },
+  });
+  const storeChanged = store ? store.updatedAt > since && store.updatedAt <= now : false;
   const variants = await prisma.productVariant.findMany({
     where: {
       companyId: shop.companyId,
-      OR: [{ updatedAt: window }, { style: { updatedAt: window } }],
+      ...(storeChanged
+        ? {}
+        : {
+            OR: [
+              { updatedAt: window },
+              { style: { updatedAt: window } },
+              ...(store
+                ? [
+                    {
+                      style: {
+                        retailPrices: {
+                          some: {
+                            storeId: store.id,
+                            OR: [{ setAt: window }, { removedAt: window }],
+                          },
+                        },
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          }),
     },
     include: { style: true, color: true, size: true },
     orderBy: { updatedAt: "asc" },
   });
-  const rows = variants.map((variant) => ({ variant, row: catalogVariantOf(variant) }));
+  const prices = store
+    ? await pricesOfStore(
+        store,
+        variants.map((v) => v.id),
+        "A",
+      )
+    : null;
+  const rows = variants.flatMap((variant) => {
+    if (!prices) return [{ variant, row: catalogVariantOf(variant) as ShopVariant }];
+    const price = prices.get(variant.id);
+    return price ? [{ variant, row: storeCatalogVariantOf(variant, price) as ShopVariant }] : [];
+  });
   const sent = await lastSent(
     shop,
     "variant.changed",

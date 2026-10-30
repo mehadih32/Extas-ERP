@@ -5,6 +5,7 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 import { GET as accountRoute } from "@/app/api/v1/ecommerce/account/route";
 import { GET as exchangesRoute } from "@/app/api/v1/ecommerce/exchanges/route";
 import { PUT as deliveryRoute } from "@/app/api/v1/ecommerce/orders/[externalOrderId]/delivery/route";
+import { PATCH as lineRoute } from "@/app/api/v1/ecommerce/orders/[externalOrderId]/lines/[lineId]/route";
 import { POST as ordersRoute } from "@/app/api/v1/ecommerce/orders/route";
 import { POST as returnListsRoute } from "@/app/api/v1/ecommerce/return-lists/route";
 import { POST as shipmentsRoute } from "@/app/api/v1/ecommerce/shipments/route";
@@ -268,5 +269,115 @@ run("Retail store's exchanges (plan v6 sec 8.9)", () => {
     await handBack("RL-171", "WEB-7-X2");
     await check("DECLINE");
     expect(await balance()).toBe(1250);
+  });
+
+  it("settles each new line when two pieces of one old line are swapped for two SKUs", async () => {
+    const placed = await order({
+      externalOrderId: "WEB-20",
+      items: [{ sku: sku("Navy", "M"), quantity: 2, unitPrice: 1190, lineId: "WEB-20-1" }],
+    });
+    expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+    await ship("WEB-20");
+    await deliver("WEB-20");
+    expect(await balance()).toBe(1250);
+    await priceAt("40");
+    const swapped = await order({
+      externalOrderId: "WEB-20-X1",
+      exchange: { ofExternalOrderId: "WEB-20", note: "one L, one S" },
+      items: [
+        {
+          lineId: "X1-1",
+          replacesLineId: "WEB-20-1",
+          sku: sku("Navy", "L"),
+          quantity: 1,
+          unitPrice: 0,
+          customerPrice: 0,
+        },
+        {
+          lineId: "X1-2",
+          replacesLineId: "WEB-20-1",
+          sku: sku("Navy", "S"),
+          quantity: 1,
+          unitPrice: 0,
+          customerPrice: 0,
+        },
+      ],
+    });
+    expect(swapped.status, JSON.stringify(swapped.body)).toBe(201);
+    await ship("WEB-20-X1");
+    await deliver("WEB-20-X1");
+    await handBack("RL-200", "WEB-20-X1");
+    await check("APPROVE");
+    expect(await balance()).toBe(1400); // 1250 + 75 + 75
+    const lines = await prisma.retailOrderLine.findMany({
+      where: { lineId: { in: ["X1-1", "X1-2"] } },
+      select: { exchangeState: true },
+    });
+    expect(lines.map((l) => l.exchangeState)).toEqual(["SETTLED", "SETTLED"]);
+    const pulled = await callShop(shop, exchangesRoute, { path: "/exchanges?status=all" });
+    expect(pulled.body.totalAtRisk).toBe(0);
+  });
+
+  it("never bills an exchange line the site cancelled before the parcel left", async () => {
+    const placed = await order({
+      externalOrderId: "WEB-30",
+      items: [
+        { sku: sku("Navy", "S"), quantity: 1, unitPrice: 850, lineId: "WEB-30-1" },
+        { sku: sku("Navy", "M"), quantity: 1, unitPrice: 1190, lineId: "WEB-30-2" },
+      ],
+    });
+    expect(placed.status).toBe(201);
+    await ship("WEB-30");
+    await deliver("WEB-30");
+    const swapped = await order({
+      externalOrderId: "WEB-30-X1",
+      exchange: { ofExternalOrderId: "WEB-30", note: "two sizes" },
+      items: [
+        {
+          lineId: "X3-1",
+          replacesLineId: "WEB-30-1",
+          sku: sku("Navy", "L"),
+          quantity: 1,
+          unitPrice: 0,
+          customerPrice: 0,
+        },
+        {
+          lineId: "X3-2",
+          replacesLineId: "WEB-30-2",
+          sku: sku("White", "L"),
+          quantity: 1,
+          unitPrice: 0,
+          customerPrice: 0,
+        },
+      ],
+    });
+    expect(swapped.status, JSON.stringify(swapped.body)).toBe(201);
+    // The second new piece failed its packing check; the site cancels that line.
+    await prisma.retailOrderLine.updateMany({
+      where: { lineId: "X3-2" },
+      data: { waitingStock: true },
+    });
+    const cancelled = await callShop(shop, lineRoute, {
+      method: "PATCH",
+      path: "/orders/WEB-30-X1/lines/X3-2",
+      params: { externalOrderId: "WEB-30-X1", lineId: "X3-2" },
+      body: { action: "CANCEL", reason: "Piece failed the packing check" },
+    });
+    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
+    await ship("WEB-30-X1");
+    const result = await deliver("WEB-30-X1");
+    expect(result.body.returningLines).toEqual([{ lineId: "WEB-30-1", quantity: 1 }]);
+    // Past every deadline: only the kept line's old piece is billed.
+    expect(await billOverdueExchanges(new Date("2026-11-20T21:00:00Z"))).toBe(1);
+    expect(await balance()).toBe(1250 + 625);
+    const states = await prisma.retailOrderLine.findMany({
+      where: { lineId: { in: ["X3-1", "X3-2"] } },
+      orderBy: { lineId: "asc" },
+      select: { exchangeState: true },
+    });
+    expect(states.map((l) => l.exchangeState)).toEqual(["BILLED", "CANCELLED"]);
+    // The old line of the cancelled piece can be exchanged again.
+    const again = await exchange("WEB-30-X2", "WEB-30", "WEB-30-2", sku("White", "M"));
+    expect(again.status, JSON.stringify(again.body)).toBe(201);
   });
 });

@@ -50,7 +50,8 @@ function withCustomer(
   }>,
 ) {
   const delivery = line.order.delivery;
-  if (!delivery) return 0;
+  // A line the site cancelled never left.
+  if (!delivery || line.cancelledAt) return 0;
   // An exchange's own new piece is with the customer once its parcel was kept.
   if (line.exchangeState === "WAITING_DELIVERY" || line.exchangeState === "CANCELLED") return 0;
   const returning = Array.isArray(delivery.returning) ? (delivery.returning as string[]) : [];
@@ -145,6 +146,8 @@ export async function createExchangeTx(
   args: { storeId: string; retailOrderId: string; ofRetailOrderId: string; note: string | null },
 ) {
   await lockRow(tx, "RetailStore", args.storeId);
+  // Numbers run company-wide: one exchange numbered at a time across every store.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`retail-exchange-number:${ctx.company.id}`}))`;
   const year = localDay(new Date(), ctx.company.timezone).slice(0, 4);
   const count = await tx.retailExchange.count({
     where: { companyId: ctx.company.id, number: { startsWith: `EXG-${year}-` } },
@@ -212,8 +215,17 @@ export async function exchangeDeliveredTx(
   return returning;
 }
 
-/** Cancels the exchange lines of an order cancelled before it left. */
-export async function cancelExchangeTx(tx: Tx, ctx: CompanyContext, retailOrderId: string) {
+/**
+ * Cancels the exchange lines of an order cancelled before it left (or only
+ * the named lines, when the site cancels a line): nothing is billed for them
+ * and their old piece stays with the customer.
+ */
+export async function cancelExchangeTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  retailOrderId: string,
+  lineIds?: readonly string[],
+) {
   const exchange = await tx.retailExchange.findUnique({
     where: { retailOrderId },
     include: { order: { include: { lines: true } } },
@@ -222,6 +234,7 @@ export async function cancelExchangeTx(tx: Tx, ctx: CompanyContext, retailOrderI
   await touch(tx, exchange.id);
   for (const line of exchange.order.lines) {
     if (line.exchangeState !== "WAITING_DELIVERY") continue;
+    if (lineIds && !lineIds.includes(line.id)) continue;
     await tx.retailOrderLine.update({
       where: { id: line.id },
       data: { exchangeState: "CANCELLED" },
@@ -448,11 +461,31 @@ export async function settleExchangePieces(
     await touch(tx, exchange.id);
     const store = parcel.order.store;
     const warehouseId = parcel.order.order.warehouseId!;
+    // An old line swapped for several new lines: each old piece settles
+    // against a new line that still has a piece to settle, never all on the first.
+    const settled = new Map<string, number>();
+    for (const e of await tx.retailExchangeEvent.findMany({
+      where: {
+        exchangeId: exchange.id,
+        kind: { in: ["EXTRA", "ADJUSTMENT", "EVEN", "LATE_RETURN", "OLD_PIECE_DECLINED"] },
+      },
+      select: { lineId: true },
+    })) {
+      settled.set(e.lineId, (settled.get(e.lineId) ?? 0) + 1);
+    }
+    const newLineOf = (oldLineId: string) => {
+      const candidates = parcel.order.lines.filter(
+        (l) => l.replacesLineId === oldLineId && l.exchangeState !== "CANCELLED",
+      );
+      const line = candidates.find((l) => (settled.get(l.id) ?? 0) < l.quantity) ?? candidates[0]!;
+      settled.set(line.id, (settled.get(line.id) ?? 0) + 1);
+      return line;
+    };
     for (const d of decisions) {
       const piece = parcel.pieces.find((p) => p.id === d.pieceId)!;
       const line =
         parcel.order.lines.find((l) => l.id === piece.retailOrderLineId) ??
-        parcel.order.lines.find((l) => l.replacesLineId === piece.retailOrderLineId)!;
+        newLineOf(piece.retailOrderLineId);
       const fresh = await tx.retailOrderLine.findUniqueOrThrow({ where: { id: line.id } });
       const newPrice = line.shopPrice;
       const oldPrice = piece.price;
@@ -550,6 +583,53 @@ export async function settleExchangePieces(
       tx,
     );
   });
+}
+
+/**
+ * Refused exchange pieces that never came back (the parcel did not come, or
+ * the owner ticked fewer on Hold): the store's loss, billed at its price for
+ * the new piece (plan v6 owner notes). Once per line.
+ */
+export async function billMissingNewPiecesTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  args: { exchangeId: string; missing: Array<{ lineId: string; pieces: number }>; note: string },
+) {
+  const exchange = await tx.retailExchange.findUniqueOrThrow({
+    where: { id: args.exchangeId },
+    include: { store: true },
+  });
+  await lockRow(tx, "RetailExchange", exchange.id);
+  for (const m of args.missing) {
+    if (m.pieces <= 0) continue;
+    const line = await tx.retailOrderLine.findUniqueOrThrow({
+      where: { id: m.lineId },
+      include: { variant: { select: { sku: true } } },
+    });
+    if (line.exchangeState !== "CANCELLED" || line.cancelledAt) continue;
+    const amount = line.shopPrice.times(m.pieces);
+    const journal = await postExchangeTx(tx, {
+      companyId: ctx.company.id,
+      userId: ctx.user.id,
+      partyId: exchange.store.partyId,
+      amount,
+      description: `Exchange billed in full ${exchange.number} — ${line.variant.sku}: refused piece did not come back (${args.note})`,
+      sourceId: exchange.id,
+    });
+    await tx.retailExchangeEvent.create({
+      data: {
+        companyId: ctx.company.id,
+        exchangeId: exchange.id,
+        lineId: line.id,
+        type: "BILLED",
+        kind: "NEW_PIECE_MISSING",
+        amount,
+        journalEntryId: journal?.id ?? null,
+      },
+    });
+    await tx.retailOrderLine.update({ where: { id: line.id }, data: { exchangeState: "BILLED" } });
+  }
+  await touch(tx, exchange.id);
 }
 
 const exchangeLabel = (type: string, kind: string | null) =>

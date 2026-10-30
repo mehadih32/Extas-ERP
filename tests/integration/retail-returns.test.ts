@@ -9,6 +9,7 @@ import { POST as returnListsRoute } from "@/app/api/v1/ecommerce/return-lists/ro
 import { GET as returnsRoute } from "@/app/api/v1/ecommerce/returns/route";
 import { POST as shipmentsRoute } from "@/app/api/v1/ecommerce/shipments/route";
 import { prisma } from "@/lib/prisma";
+import { storeDashboard } from "@/modules/retail/dashboards.service";
 import { setPin } from "@/modules/ai/settings.service";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { checkParcel, resolveHold, returnsPage } from "@/modules/retail/returns.service";
@@ -141,6 +142,12 @@ run("Retail store's returns (plan v6, part 2)", () => {
     });
     expect(await balance()).toBe(1250);
     expect((await navyS()).quantity).toBe(before + 1);
+    // The ERP's side: 3 pieces billed (1,875) at a cost of 500 each, one credited
+    // back (625) with its cost back in stock. A store with no figures yet asks for
+    // no fixed costs, even over its lifetime.
+    const dash = await storeDashboard(shop.owner, store.id, { period: "all" });
+    expect(dash.erp).toMatchObject({ taken: "1875.00", givenBack: "625.00", erpProfit: "250.00" });
+    expect(dash.fixedMissing).toEqual([]);
     const parcel = await prisma.retailReturnParcel.findFirstOrThrow({});
     expect(parcel.state).toBe("CHECKED");
     // A piece is decided once.

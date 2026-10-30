@@ -11,11 +11,12 @@ import { prisma } from "@/lib/prisma";
 import { unzipSync } from "fflate";
 import * as downloads from "@/modules/retail/downloads.service";
 import * as pad from "@/modules/retail/pad.service";
+import { createRole } from "@/modules/rbac/role.service";
 import * as stores from "@/modules/retail/stores.service";
 
 import { png } from "../fixtures/images";
 import { callShop, type Shop, setupShop } from "./ecommerce-helpers";
-import { resetDb } from "./helpers";
+import { addToCompany, contextFor, makeUser, resetDb } from "./helpers";
 
 const run = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -107,10 +108,14 @@ run("Business downloads (plan v6 sec 12)", () => {
     const logged = await prisma.auditLog.findMany({
       where: { action: "EXPORT", entityId: store.id },
     });
-    expect(logged.map((l) => l.summary)).toEqual([
-      expect.stringContaining("(PDF)"),
-      expect.stringContaining("(Excel)"),
-    ]);
+    // Both logged (in either order: they can share a moment).
+    expect(logged).toHaveLength(2);
+    expect(logged.map((l) => l.summary)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("(PDF)"),
+        expect.stringContaining("(Excel)"),
+      ]),
+    );
     // Every day's rows are Excel only: a PDF of them alone is refused.
     await expect(
       downloads.businessReportFile(shop.owner, {
@@ -156,5 +161,21 @@ run("Business downloads (plan v6 sec 12)", () => {
     expect(kept).toMatchObject({ year: 2026 });
     const file = await pad.yearReportFile(shop.owner, kept!.id);
     expect(file.bytes.toString("latin1").startsWith("%PDF")).toBe(true);
+
+    // It carries the ERP's books: someone who only looks at the stores never gets it,
+    // and sees no costs beside the store's hand prices either.
+    const role = await createRole(shop.owner, {
+      name: "Store watcher",
+      permissions: ["dashboard.view", "retail.view"],
+    });
+    const user = await makeUser("watcher@extas.test");
+    await addToCompany(user.id, shop.company.id, role.id);
+    const watcher = await contextFor(user.id, shop.company.id);
+    expect(await pad.listYearReports(watcher, store.id)).toEqual([]);
+    await expect(pad.yearReportFile(watcher, kept!.id)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    const page = await stores.getStore(watcher, store.id);
+    for (const h of page.handPrices) expect([h.costWhenSet, h.costNow]).toEqual([null, null]);
   });
 });

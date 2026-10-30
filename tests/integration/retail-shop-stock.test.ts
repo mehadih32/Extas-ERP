@@ -8,6 +8,8 @@ import { POST as returnListsRoute } from "@/app/api/v1/ecommerce/return-lists/ro
 import { POST as shipmentsRoute } from "@/app/api/v1/ecommerce/shipments/route";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { runTransaction } from "@/lib/transaction";
+import { billStoreOrderTx } from "@/modules/ecommerce/orders.service";
 import { setPin } from "@/modules/ai/settings.service";
 import * as parties from "@/modules/parties/party.service";
 import { checkParcel, returnsPage } from "@/modules/retail/returns.service";
@@ -141,6 +143,25 @@ run("Shop stock: the shops' reserve and ready stock bought for them (plan v6 sec
     });
     expect(await reserveOf("Navy")).toBe(25);
 
+    // Billed twice at the same moment (a retry with the shipment): the reserve is taken once.
+    const second = await callShop(shop, ordersRoute, {
+      path: "/orders",
+      body: {
+        externalOrderId: "WEB-2",
+        customer: { name: "Karim", phone: "01711000001" },
+        shippingAddress: "Mirpur, Dhaka",
+        paymentMethod: "cod",
+        items: [{ sku, quantity: 2, unitPrice: 850, lineId: "WEB-2-1" }],
+      },
+    });
+    expect(second.status, JSON.stringify(second.body)).toBe(201);
+    const so = await prisma.salesOrder.findFirstOrThrow({ where: { externalOrderId: "WEB-2" } });
+    const billed = await Promise.all(
+      [1, 2].map(() => runTransaction((tx) => billStoreOrderTx(tx, shop.owner, so.id))),
+    );
+    expect(billed.sort()).toEqual([false, true]);
+    expect(await reserveOf("Navy")).toBe(23);
+
     // 60 days untouched: one reminder, then quiet for the next 60 days.
     await prisma.retailReserve.updateMany({
       data: { activeAt: new Date(Date.now() - 61 * 24 * 3600 * 1000) },
@@ -151,15 +172,15 @@ run("Shop stock: the shops' reserve and ready stock bought for them (plan v6 sec
       await prisma.notificationLog.count({ where: { entityType: "RetailReserve" } }),
     ).toBeGreaterThan(0);
     const page = await shopStock.shopStockPage(shop.owner);
-    expect(page.reserves[0]).toMatchObject({ colour: "Navy", quantity: 25, idle: true });
+    expect(page.reserves[0]).toMatchObject({ colour: "Navy", quantity: 23, idle: true });
 
-    // 0 takes it off: wholesale may sell the rest of Navy S (10 less the 5 sold).
+    // 0 takes it off: wholesale may sell the rest of Navy S (10 less the 5 sold and 2 to WEB-2).
     await shopStock.setReserve(shop.owner, {
       styleId: shop.polo.id,
       colorId: colourId("Navy"),
       quantity: 0,
     });
-    await wholesale(5);
+    await wholesale(3);
   });
 
   it("buys ready stock on the supplier's bill, at cost with the transport shared, and holds it for the shops", async () => {

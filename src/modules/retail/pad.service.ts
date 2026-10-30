@@ -16,7 +16,7 @@ import {
 } from "@/modules/files/file.service";
 
 import { buildBusinessReport, REPORT_PARTS, reportPdf } from "./downloads.service";
-import { assertCanManageStores, assertCanSeeStores } from "./stores.service";
+import { assertCanManageStores, assertCanSeeStores, canSeeStoreCosts } from "./stores.service";
 
 /*
  * A store's own pad (plan v6 sec 12): its logo, checked like the company's,
@@ -122,6 +122,8 @@ export async function storeLogoImage(ctx: CompanyContext, storeId: string) {
 /** The store's kept year-end summaries, newest first. */
 export async function listYearReports(ctx: CompanyContext, storeId: string) {
   assertCanSeeStores(ctx);
+  // A year-end summary carries the ERP's own books on the store.
+  if (!canSeeStoreCosts(ctx)) return [];
   const rows = await ctx.db.retailYearReport.findMany({
     where: { storeId },
     orderBy: { year: "desc" },
@@ -133,6 +135,9 @@ export async function listYearReports(ctx: CompanyContext, storeId: string) {
 /** One kept year-end summary as a file (logged). */
 export async function yearReportFile(ctx: CompanyContext, id: string, meta?: RequestMeta) {
   assertCanSeeStores(ctx);
+  if (!canSeeStoreCosts(ctx)) {
+    throw new AppError("FORBIDDEN", "Year-end summaries are for those who see the stores' costs.");
+  }
   const row = await ctx.db.retailYearReport.findUnique({
     where: { id },
     include: { file: true, store: { select: { name: true } } },

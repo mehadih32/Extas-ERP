@@ -340,7 +340,7 @@ async function buildReport(
         },
       });
     }
-    parts.push(...(await retailParts(ctx, p, want, m, cur)));
+    parts.push(...(await retailParts(ctx, p, want, m, cur, "ONLINE")));
     return {
       title: "E-commerce report",
       subtitle: range,
@@ -609,8 +609,11 @@ async function retailParts(
   want: Set<ReportPart>,
   m: (v: string | number) => string,
   cur: string,
+  /** Only the online stores (the E-commerce page), or every store. */
+  kind?: "ONLINE",
 ): Promise<Part[]> {
   const stores = await ctx.db.retailStore.findMany({
+    where: kind ? { kind } : {},
     select: { id: true, name: true, partyId: true },
     orderBy: { name: "asc" },
   });

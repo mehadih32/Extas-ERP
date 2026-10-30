@@ -95,6 +95,26 @@ export function catalogVariantOf(v: VariantRow): CatalogVariant {
   };
 }
 
+/** A SKU as a retail store's site sees it: its own buying price, never the ERP's cost or prices. */
+export function storeCatalogVariantOf(
+  v: VariantRow,
+  price: Prisma.Decimal | number,
+): StoreCatalogVariant {
+  const updatedAt = v.updatedAt > v.style.updatedAt ? v.updatedAt : v.style.updatedAt;
+  return {
+    sku: v.sku,
+    barcode: v.barcode,
+    styleCode: v.style.code,
+    styleName: v.style.name,
+    color: v.color.name,
+    size: v.size.name,
+    grade: "A",
+    shopPrice: amount(price),
+    active: variantActive(v),
+    updatedAt: updatedAt.toISOString(),
+  };
+}
+
 /** GET /catalog/variants: every SKU of the company, inactive ones too (active: false). */
 export async function listCatalogVariants(
   ctx: CompanyContext,
@@ -163,22 +183,7 @@ export async function listStoreCatalog(
   );
   const data = kept.flatMap((v): StoreCatalogVariant[] => {
     const price = prices.get(v.id);
-    if (!price) return [];
-    const updatedAt = v.updatedAt > v.style.updatedAt ? v.updatedAt : v.style.updatedAt;
-    return [
-      {
-        sku: v.sku,
-        barcode: v.barcode,
-        styleCode: v.style.code,
-        styleName: v.style.name,
-        color: v.color.name,
-        size: v.size.name,
-        grade: "A",
-        shopPrice: amount(price),
-        active: variantActive(v),
-        updatedAt: updatedAt.toISOString(),
-      },
-    ];
+    return price ? [storeCatalogVariantOf(v, price)] : [];
   });
   return { data, nextCursor: more ? encodeCursor(kept[kept.length - 1]!.id) : null };
 }

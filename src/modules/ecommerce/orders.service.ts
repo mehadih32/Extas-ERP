@@ -755,6 +755,9 @@ export async function billStoreOrderTx(
   orderId: string,
   meta?: RequestMeta,
 ) {
+  // The order's lock first, so a retried or simultaneous bill waits and then
+  // finds it billed: the stock and the shops' reserve go out once.
+  await lockRow(tx, "SalesOrder", orderId);
   const retail = await tx.retailOrder.findUnique({ where: { orderId } });
   if (!retail || retail.billedAt) return false;
   await assertLinesReadyTx(tx, ctx, retail.id);
@@ -1309,6 +1312,10 @@ export async function updateStoreLine(
               fromReturnStock: 0,
             },
     });
+    // A cancelled exchange line is a cancelled exchange of that piece: never billed.
+    if (retail.exchange && input.action === "CANCEL") {
+      await cancelExchangeTx(tx, ctx, retail.id, active.length === 0 ? undefined : [line.id]);
+    }
     const lines = await tx.retailOrderLine.findMany({
       where: { retailOrderId: retail.id, cancelledAt: null },
     });

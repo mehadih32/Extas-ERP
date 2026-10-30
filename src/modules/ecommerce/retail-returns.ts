@@ -48,7 +48,12 @@ async function retailOrderOf(call: Call, externalOrderId: string) {
   const retail = await call.ctx.db.retailOrder.findUnique({
     where: { orderId: order.id },
     include: {
-      lines: { include: { replaces: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+      // A line the site cancelled never left: it is neither kept nor coming back.
+      lines: {
+        where: { cancelledAt: null },
+        include: { replaces: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      },
       parcel: true,
       delivery: true,
       exchange: true,

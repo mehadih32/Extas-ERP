@@ -1,11 +1,13 @@
-import { Prisma, type RetailGrade } from "@prisma/client";
+import { Prisma, type RetailGrade, type RetailStore } from "@prisma/client";
 import { z } from "zod";
 
 import { AppError } from "@/lib/errors";
+import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { PIN_CHECKED, requirePin } from "@/modules/ai/settings.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { canSeeFinancials } from "@/modules/dashboard/access";
 import { createParty } from "@/modules/parties/party.service";
 
 import { costMoved, type HandPrice, ruleText, scopeCost, scopeKeyOf, storePriceOf } from "./prices";
@@ -460,7 +462,12 @@ const money2 = (value: Prisma.Decimal.Value | null) =>
   value === null ? null : new Prisma.Decimal(value).toFixed(2);
 
 /** The hand prices of stores whose cost moved since they were set. */
+/** The ERP's cost and its books on a store: for those who run the stores or see the financials. */
+export const canSeeStoreCosts = (ctx: CompanyContext) =>
+  ctx.can("retail.manage") || canSeeFinancials(ctx);
+
 async function handPricesWithCosts(ctx: CompanyContext, storeIds: string[]) {
+  const costs = canSeeStoreCosts(ctx);
   const rows = await ctx.db.retailPrice.findMany({
     where: { storeId: { in: storeIds }, removedAt: null },
     include: {
@@ -504,9 +511,9 @@ async function handPricesWithCosts(ctx: CompanyContext, storeIds: string[]) {
       color: colorName,
       sku: row.variant?.sku ?? null,
       price: money2(row.price)!,
-      costWhenSet: money2(row.costWhenSet)!,
-      costNow: money2(costNow)!,
-      costChanged: costMoved(row.costWhenSet, costNow),
+      costWhenSet: costs ? money2(row.costWhenSet)! : null,
+      costNow: costs ? money2(costNow)! : null,
+      costChanged: costs && costMoved(row.costWhenSet, costNow),
       setAt: row.setAt,
     };
   });
@@ -735,12 +742,25 @@ export async function storePrices(
   grade: RetailGrade,
 ) {
   const store = await storeOrThrow(ctx, storeId);
-  const variants = await ctx.db.productVariant.findMany({
-    where: { id: { in: variantIds } },
+  return pricesOfStore(store, variantIds, grade);
+}
+
+/**
+ * The same prices without a signed-in user (the webhooks to the store's own
+ * site): read straight from the store's company, never another's.
+ */
+export async function pricesOfStore(
+  store: Pick<RetailStore, "id" | "companyId" | "aRule" | "aValue" | "bRule" | "bValue">,
+  variantIds: string[],
+  grade: RetailGrade,
+) {
+  const variants = await prisma.productVariant.findMany({
+    where: { companyId: store.companyId, id: { in: variantIds } },
     select: { id: true, styleId: true, colorId: true, avgCost: true, bGradeAvgCost: true },
   });
-  const live = await ctx.db.retailPrice.findMany({
+  const live = await prisma.retailPrice.findMany({
     where: {
+      companyId: store.companyId,
       storeId: store.id,
       removedAt: null,
       styleId: { in: [...new Set(variants.map((v) => v.styleId))] },

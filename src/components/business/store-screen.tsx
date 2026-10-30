@@ -201,8 +201,9 @@ export function StoreScreen({ page }: { page: StorePage }) {
                       <span className="text-muted-foreground">({h.styleName})</span>
                     </p>
                     <p className="text-muted-foreground">
-                      {currency} {h.price} · Cost then {currency} {h.costWhenSet}, now {currency}{" "}
-                      {h.costNow}
+                      {currency} {h.price}
+                      {h.costNow !== null &&
+                        ` · Cost then ${currency} ${h.costWhenSet}, now ${currency} ${h.costNow}`}
                     </p>
                     {h.costChanged && (
                       <p className="mt-1 flex items-start gap-1.5 text-destructive">

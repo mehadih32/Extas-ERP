@@ -112,6 +112,7 @@ import {
   WEBHOOK_MAX_ATTEMPTS,
 } from "@/modules/ecommerce/webhooks";
 import { runHousekeeping } from "@/modules/housekeeping/scheduler";
+import * as stores from "@/modules/retail/stores.service";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as styles from "@/modules/inventory/style.service";
 import { enqueueJob, retryDelayMs } from "@/modules/jobs/queue";
@@ -265,6 +266,37 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
       WHERE "variantId" = ${variant.id} AND "warehouseId" = ${shop.warehouse.id}`;
     expect((await scanShopChanges()).events).toBe(1);
     expect(await reservedSent()).toEqual([0, 4, 5]);
+  });
+
+  it("sends a retail store's site only its own buying price, never the ERP's cost or prices", async () => {
+    await setPin(shop.owner, { pin: PIN });
+    const store = await stores.createStore(shop.owner, {
+      name: "Extas Retail",
+      kind: "ONLINE",
+      warehouseId: shop.warehouse.id,
+      integrationId: shop.integration.id,
+    });
+    await later();
+    // The store's own price rule changes: every SKU it can buy is sent again.
+    await stores.setPriceRules(shop.owner, store.id, { aRule: "PERCENT", aValue: "25", pin: PIN });
+    expect((await scanShopChanges()).events).toBeGreaterThan(0);
+    const sent = await outgoing(shop, { eventType: "variant.changed" });
+    const polo = sent.find((e) => e.externalId === navyS)!;
+    const data = (polo.payload as { data: Record<string, unknown> }).data;
+    expect(data).toMatchObject({ sku: navyS, grade: "A", shopPrice: 625, isNew: false });
+    expect(data).not.toHaveProperty("avgCost");
+    expect(data).not.toHaveProperty("retailPrice");
+    for (const e of sent) {
+      expect(JSON.stringify(e.payload)).not.toMatch(/avgCost|retailPrice/);
+    }
+
+    // The ERP's own price list changes: the store's site hears nothing new of it.
+    await later();
+    await styles.updateStyle(shop.owner, shop.polo.id, { retailPrice: 1550 });
+    await scanShopChanges();
+    for (const e of await outgoing(shop, { eventType: "variant.changed" })) {
+      expect(JSON.stringify(e.payload)).not.toMatch(/avgCost|retailPrice|1550/);
+    }
   });
 
   it("sends variant.changed for a price change, and isNew for a new variant", async () => {

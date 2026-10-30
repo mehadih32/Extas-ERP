@@ -39,6 +39,11 @@ services:
       - work_mem=16MB
       - -c
       - max_connections=50
+      # A restore puts the whole database back in one transaction (lib.sh: restore_database):
+      # dropping and making every table, index and key in it needs more locks than the
+      # default 64 per connection once the ERP has its 2026-10 retail tables.
+      - -c
+      - max_locks_per_transaction=512
       - -c
       - random_page_cost=1.1
       - -c
@@ -204,6 +209,8 @@ services:
       - effective_cache_size=512MB
       - -c
       - max_connections=30
+      - -c
+      - max_locks_per_transaction=512
       - -c
       - idle_in_transaction_session_timeout=10min
     volumes:

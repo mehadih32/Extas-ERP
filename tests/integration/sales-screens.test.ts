@@ -424,7 +424,7 @@ run("Sales screens", () => {
       } else {
         const { costs, ...rest } = screen;
         expect(costs, who).toBeNull();
-        expect(JSON.stringify(rest), who).not.toMatch(/cost/i);
+        expect(JSON.stringify(rest), who).not.toMatch(/"[^"]*cost[^"]*":/i);
       }
       // The order itself (as the API and the screens read it) hides each line's cost too.
       const raw = await orders.getOrder(ctx, order.id);

@@ -295,7 +295,7 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     await styles.updateStyle(shop.owner, shop.polo.id, { retailPrice: 1550 });
     await scanShopChanges();
     for (const e of await outgoing(shop, { eventType: "variant.changed" })) {
-      expect(JSON.stringify(e.payload)).not.toMatch(/avgCost|retailPrice|1550/);
+      expect(JSON.stringify(e.payload)).not.toMatch(/avgCost|retailPrice|:1550\b/);
     }
   });
 

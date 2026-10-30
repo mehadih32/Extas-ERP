@@ -191,8 +191,8 @@ overwrites a stored total or figure.
 ## 8. Backups and restore (v6.4)
 
 - Schedule set by the owner (every N hours, every N days, or chosen weekdays at chosen times); default twice a
-  day. The newest 4 stay on the server (owner picks 3 to 7); all go to the owner's Google Drive (scope `drive.file`
-  only) for as long as the owner sets.
+  day. The newest 4 stay on the server (owner picks 3 to 7); each goes to the owner's Google Drive (scope
+  `drive.file` only), which keeps the newest 3: a new one, once checked in Drive, replaces the oldest (2026-10-30).
 - Every backup is complete: database, every uploaded and generated file, the settings (`.env` and every secret),
   and the code at that version (git bundle), with a manifest of every table's row count and every file's
   checksum. A restore needs nothing else: no old server and no GitHub login.
@@ -208,6 +208,11 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-30 (Drive keeps 3): Google Drive keeps the newest 3 checked backups (and the newest 3 update safety
+  copies); each new backup, once Google's copy is checked, replaces the oldest, so a backup in Drive is never
+  removed before a newer one is safe there. The "Keep in Google Drive for (days)" setting is gone (its column
+  stays, unused). "Back up now" finishes and reaches Drive whatever the page does: the backup clock never sends a
+  backup again while the run that made it is still sending it.
 - 2026-10-30 (no PuTTY, updates by themselves): the owner no longer uses PuTTY or Azure's Run command, not even
   after a restore on a new server, a new IP or a new web address. Claude merges its own PRs once every check is
   green (this replaces "only the owner merges" below; the rulesets stay as they are). The server pulls each merge

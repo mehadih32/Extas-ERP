@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import {
   alertOwner,
   backupLock,
+  DRIVE_BACKUPS_KEPT,
   backupRoot,
   driveRoot,
   driveToken,
@@ -33,21 +34,23 @@ export { type DriveBackup, type FetchedBackup, fetchBackup } from "@/modules/bac
  * Google Drive's copies. Each backup goes to its own folder inside "Extas ERP
  * Backups"; every file Google keeps is checked against the server's (its size
  * and MD5), and only then is the folder labelled "checked". The server keeps
- * its own copy too, of the newest `serverKeep` backups (G2); Drive keeps each
- * backup for `driveKeepDays` days (or for ever), and never deletes the newest.
+ * its own copy too, of the newest `serverKeep` backups (G2); Drive keeps the
+ * newest 3 checked backups: each new one, once checked, replaces the oldest.
  * A backup that did not reach Drive stays on the server and is sent again
  * within the hour. Update safety copies (deploy.sh, kept on the server for 24
- * hours) are locked and sent too; Drive keeps the newest 10 of them. The keys
+ * hours) are locked and sent too; Drive keeps the newest 3 of them. The keys
  * file sits beside the backups in Drive, so the recovery key alone opens them.
  */
 
 /** Safety copies kept in Drive. */
-const SAFETY_COPIES_KEPT = 10;
+const SAFETY_COPIES_KEPT = DRIVE_BACKUPS_KEPT;
 /** A run not sent is tried again after this long. */
 const RETRY_MS = 60 * 60 * 1000;
 /** A safety copy is sent once deploy.sh has finished writing it. */
 const SETTLED_MS = 2 * 60 * 1000;
 const lastTry = new Map<string, number>();
+/** Tests only: the tries this part of the server knows of. */
+export const lastTryForTests = () => lastTry;
 
 /** Sends a finished run's files to Drive and checks Google's copy; returns the run as recorded. */
 export async function sendToDrive(runId: string): Promise<BackupRun> {
@@ -239,6 +242,10 @@ export async function sendUnsent(now = Date.now()): Promise<number> {
   });
   let sent = 0;
   for (const run of waiting) {
+    // Just made: the run that made it is still sending it, maybe from another part of
+    // the server (a Back up now runs apart from this clock, with its own lastTry).
+    // Two sends at once would delete each other's folder in Drive.
+    if (run.finishedAt && now - run.finishedAt.getTime() < RETRY_MS) continue;
     if (now - (lastTry.get(run.id) ?? 0) < RETRY_MS) continue;
     if ((await sendToDrive(run.id)).checkedAt) sent += 1;
   }
@@ -353,9 +360,9 @@ export async function ensureKeysFile(config: BackupConfig, token: string, rootId
  * The owner's keeping rules (G2). On the server: the newest `serverKeep`
  * backups (a backup is kept until a newer one is made, even when it is not in
  * Drive yet); a safety copy's locked copy is kept for the retention period
- * while it waits for Drive. In Drive: each checked backup for `driveKeepDays`
- * days (null: for ever), never the newest; the newest 10 safety copies; a copy
- * never checked goes after a day. A copy on standby after a restore shares the
+ * while it waits for Drive. In Drive: the newest 3 checked backups and the newest
+ * 3 safety copies, so a backup goes only once 3 newer ones are checked there; a
+ * copy never checked goes after a day. A copy on standby after a restore shares the
  * Drive folder with the ERP in use: it removes only its own standby backups
  * there, by the same rules, never the ERP in use's backups or safety copies.
  */
@@ -371,13 +378,12 @@ export async function pruneBackups(config: BackupConfig, now = new Date()) {
     const dayAgo = new Date(now.getTime() - 86_400_000).toISOString();
     const checked = folders.filter((f) => f.checked);
     const backups = checked.filter((f) => f.kind === "BACKUP");
-    const cutoff =
-      config.driveKeepDays === null
-        ? null
-        : new Date(now.getTime() - config.driveKeepDays * 86_400_000).toISOString();
+    // Counted apart: a copy on standby's backups never push out the ERP in use's.
+    const newest = (standbyOnes: boolean) =>
+      backups.filter((f) => Boolean(f.standby) === standbyOnes).slice(0, DRIVE_BACKUPS_KEPT);
     const keep = new Set([
-      ...backups.slice(0, 1).map((f) => f.id),
-      ...backups.filter((f) => cutoff === null || f.createdAt >= cutoff).map((f) => f.id),
+      ...newest(false).map((f) => f.id),
+      ...newest(true).map((f) => f.id),
       ...checked
         .filter((f) => f.kind === "SAFETY_COPY")
         .slice(0, SAFETY_COPIES_KEPT)

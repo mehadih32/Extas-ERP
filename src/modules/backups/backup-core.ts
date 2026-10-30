@@ -31,6 +31,12 @@ export type Actor = { userId: string };
 
 /** The folder in the owner's Drive that holds every backup, and its label. */
 export const DRIVE_FOLDER_NAME = "Extas ERP Backups";
+/**
+ * Backups (and, apart, safety copies) kept in Google Drive: the newest 3, so each
+ * new one, once Google's copy is checked, replaces the oldest (the owner's
+ * decision, 2026-10-30).
+ */
+export const DRIVE_BACKUPS_KEPT = 3;
 export { ROOT_LABEL };
 
 /**

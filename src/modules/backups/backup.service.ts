@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
+  DRIVE_BACKUPS_KEPT,
   type Actor,
   alertOwner,
   audit,
@@ -84,8 +85,8 @@ export {
  * recovery key, a backup made with v6.3's generated key is locked with that one
  * (format 2), and with no key at all it stays on the server, unlocked, without
  * the settings (format 1). Locked backups go to the owner's Google Drive
- * (drive-copies.ts). The server keeps the newest few (serverKeep), Drive keeps
- * them for driveKeepDays. Only one backup job runs at a time. Platform owner only.
+ * (drive-copies.ts). The server keeps the newest few (serverKeep), Drive the
+ * newest 3 (DRIVE_BACKUPS_KEPT). Only one backup job runs at a time. Platform owner only.
  */
 
 const exec = promisify(execFile);
@@ -136,8 +137,8 @@ export function presentConfig(config: BackupConfig, now = new Date()) {
     nextRunAt: next,
     /** Backups kept on the server (3 to 7). */
     serverKeep: config.serverKeep,
-    /** Days each backup stays in Google Drive; null: kept for ever. */
-    driveKeepDays: config.driveKeepDays,
+    /** Backups kept in Google Drive: the newest 3, each new one replaces the oldest. */
+    driveKeep: DRIVE_BACKUPS_KEPT,
     drill: {
       enabled: config.testRestoreEnabled,
       day: config.drillDay,
@@ -356,14 +357,7 @@ export async function updateBackupConfig(who: Owner, raw: unknown, meta?: Reques
   const config = await getBackupConfig();
   const actor = actorOf(who);
   const switchingOff = input.isEnabled === false && config.isEnabled;
-  const fewerDays =
-    input.driveKeepDays !== undefined &&
-    input.driveKeepDays !== null &&
-    (config.driveKeepDays === null || input.driveKeepDays < config.driveKeepDays);
-  await lessSafe(who, input.pin, [
-    ...(switchingOff ? ["switch backups off"] : []),
-    ...(fewerDays ? ["keep backups in Google Drive for fewer days"] : []),
-  ]);
+  await lessSafe(who, input.pin, [...(switchingOff ? ["switch backups off"] : [])]);
   const data: Prisma.BackupConfigUpdateInput = {};
   const said: string[] = [];
   if (input.schedule) {
@@ -396,14 +390,6 @@ export async function updateBackupConfig(who: Owner, raw: unknown, meta?: Reques
     data.serverKeep = input.serverKeep;
     said.push(`keep ${input.serverKeep} on the server`);
   }
-  if (input.driveKeepDays !== undefined) {
-    data.driveKeepDays = input.driveKeepDays;
-    said.push(
-      input.driveKeepDays === null
-        ? "keep in Google Drive for ever"
-        : `keep in Google Drive for ${input.driveKeepDays} days`,
-    );
-  }
   if (input.drillEnabled !== undefined) {
     data.testRestoreEnabled = input.drillEnabled;
     said.push(input.drillEnabled ? "monthly drill on" : "monthly drill off");
@@ -435,14 +421,7 @@ export async function updateBackupConfig(who: Owner, raw: unknown, meta?: Reques
     entityId: config.id,
     summary: `Changed backup settings: ${said.join(", ") || "nothing"}`,
   });
-  await tellLessSafe(who, [
-    ...(switchingOff ? ["switched backups off"] : []),
-    ...(fewerDays
-      ? [
-          `kept backups in Google Drive for ${input.driveKeepDays} days instead of ${config.driveKeepDays === null ? "for ever" : `${config.driveKeepDays} days`}`,
-        ]
-      : []),
-  ]);
+  await tellLessSafe(who, [...(switchingOff ? ["switched backups off"] : [])]);
   return presentConfig(updated);
 }
 

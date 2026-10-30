@@ -21,10 +21,11 @@ places disagree, the newer instruction wins.
 5. Ask the owner only when something is unsafe, would delete or overwrite data, would change live money or stock
    figures, or clashes with the blueprint in a way the owner would notice. Otherwise pick the safe default, say which,
    and keep going.
-6. Delivery: stacked part PRs, then ONE Release PR into `main` that the owner merges once. Before asking to merge,
-   send screenshots, sample PDFs, a plain-English list of what is inside and the steps only the owner can do. Merging
-   to `main` deploys automatically (`.github/workflows/deploy.yml`); after the merge, check the Deploy run and
-   report in plain words.
+6. Delivery: stacked part PRs, then ONE Release PR into `main`. Once every check is green, Claude merges it itself
+   (the owner's decision, 2026-10-30); if GitHub refuses, say so plainly and the owner merges. Before merging, send
+   screenshots, sample PDFs, a plain-English list of what is inside and the steps only the owner can do. The server
+   installs each merge into `main` by itself once "Tests and build" passed on it (`deploy/self-update.sh`, every 5
+   minutes); after the merge, check that the live site runs the new version and report in plain words.
 7. Write to the owner in short, plain sentences. No code words, no ids. Lead with what the owner needs to do, if
    anything.
 8. Every release ends with a readiness report in plain English: a table of every area (Orders and bookings,
@@ -172,7 +173,8 @@ places disagree, the newer instruction wins.
 - Checks and crawls on the live site never change data. Anything that writes is tested on the demo site or a
   copy.
 - Nothing is ever sent to a buyer or supplier, no money moves, no permission changes and nothing is merged or
-  deployed without the owner.
+  deployed without the owner. The one exception (the owner's decision, 2026-10-30): Claude merges its own PRs once
+  every check is green, and the server then installs them by itself.
 
 ## 7. Bug Guard (v6.4)
 
@@ -190,8 +192,8 @@ overwrites a stored total or figure.
 ## 8. Backups and restore (v6.4)
 
 - Schedule set by the owner (every N hours, every N days, or chosen weekdays at chosen times); default twice a
-  day. The newest 4 stay on the server (owner picks 3 to 7); all go to the owner's Google Drive (scope `drive.file`
-  only) for as long as the owner sets.
+  day. The newest 4 stay on the server (owner picks 3 to 7); each goes to the owner's Google Drive (scope
+  `drive.file` only), which keeps the newest 3: a new one, once checked in Drive, replaces the oldest (2026-10-30).
 - Every backup is complete: database, every uploaded and generated file, the settings (`.env` and every secret),
   and the code at that version (git bundle), with a manifest of every table's row count and every file's
   checksum. A restore needs nothing else: no old server and no GitHub login.
@@ -207,6 +209,23 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-30 (Drive keeps 3): Google Drive keeps the newest 3 checked backups (and the newest 3 update safety
+  copies); each new backup, once Google's copy is checked, replaces the oldest, so a backup in Drive is never
+  removed before a newer one is safe there. The "Keep in Google Drive for (days)" setting is gone (its column
+  stays, unused). "Back up now" finishes and reaches Drive whatever the page does: the backup clock never sends a
+  backup again while the run that made it is still sending it.
+- 2026-10-30 (no PuTTY, updates by themselves): the owner no longer uses PuTTY or Azure's Run command, not even
+  after a restore on a new server, a new IP or a new web address. Claude merges its own PRs once every check is
+  green (this replaces "only the owner merges" below; the rulesets stay as they are). The server pulls each merge
+  into `main` itself (`deploy/self-update.sh`, cron `/etc/cron.d/extras-erp-self-update`, read-only from the public
+  repository, only a commit whose "Tests and build" passed; never on a drill, standby or unfinished restore;
+  `AUTO_UPDATE=off` in `deploy/.env` stops it); the Deploy workflow signs in over SSH only when the GitHub variable
+  `DEPLOY_OVER_SSH` is `true`. The restore command in the guide PDF (download and Drive copy) carries the Google
+  client and, when kept in Drive, the recovery key, so nothing is typed (it stays out of the shell history); it
+  shows the server against the minimum (2 CPUs, 8 GB memory, Azure B2ms) and goes on by itself, goes on from the
+  step that stopped when pasted again, and takes `--domain` for a new web address. The build fits 8 GB (no type
+  check in the image build, a 4 GB heap, swap up to 16 GB with memory); CI still type-checks. The owner approved
+  these changes to the restore files.
 - 2026-10-30 (retail leftovers): the website never sent real orders to the live ERP through the old link, so the
   switch-over steps (moving old website orders, `GET /cost-of-goods`) are not built. B-grade order lines for the shops
   come in a separate release with full checks of wholesale sales, because they change how every sale takes stock and
@@ -275,7 +294,7 @@ overwrites a stored total or figure.
 - 2026-10-18 (v6.4.2): a change to trims, collar or cuff after the tech pack is approved needs that part approved
   again by someone who approves tech packs; trims, collar and cuff bookings for that style wait for it, fabric
   bookings do not (section 3).
-- 2026-10-18 (v6.4.2): only the owner merges into `main`. Two rulesets on `main`, both active: "Protect main"
+- 2026-10-18 (v6.4.2, merging by Claude changed on 2026-10-30, see above): only the owner merges into `main`. Two rulesets on `main`, both active: "Protect main"
   with an empty Bypass list (pull request, the "Tests and build" check, no force pushes, no deletion) and
   "Restrict updates" in a ruleset of its own whose Bypass list holds only Repository admin (the owner). The ERP's
   Merge (the owner's token, with the PIN) and the owner on GitHub can merge; Claude Code's GitHub App and every

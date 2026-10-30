@@ -735,33 +735,66 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       expect((await backups.getBackupRun(made[4]!.id)).files.database).toBe(true);
     });
 
-    it("keeps backups in Drive for the days chosen, never the newest, or for ever", async () => {
+    it("keeps the newest 3 backups in Drive: each new one, once checked, replaces the oldest (2026-10-30)", async () => {
       await connectDrive();
       await setKey();
-      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
-      const a = await backUpNow();
-      const b = await backUpNow();
-      // a is 40 days old in Drive.
-      for (const f of google.files.values()) {
-        if (f.name === a.name)
-          f.appProperties.createdAt = new Date(Date.now() - 40 * 86_400_000).toISOString();
-      }
-      await backups.updateBackupConfig(owner, { driveKeepDays: null });
-      await backUpNow();
-      expect((await listDriveBackups()).items.map((x) => x.name)).toContain(a.name);
-      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
-      const c = await backUpNow();
-      const names = (await listDriveBackups()).items.map((x) => x.name);
-      expect(names).not.toContain(a.name);
-      expect(names).toEqual(expect.arrayContaining([b.name, c.name]));
-      // Even when every backup is old, the newest stays.
-      for (const f of google.files.values()) {
-        if (f.appProperties.extas === "backup")
-          f.appProperties.createdAt = new Date(Date.now() - 400 * 86_400_000).toISOString();
-      }
+      const made = [];
+      for (let i = 0; i < 3; i += 1) made.push(await backUpNow());
+      expect((await listDriveBackups()).items).toHaveLength(3);
+      // Not checked in Drive yet: the oldest stays until the new one is.
       const { pruneBackups } = await import("@/modules/backups/drive-copies");
+      const d = await backUpNow();
+      let names = (await listDriveBackups()).items.map((x) => x.name);
+      expect(names).toHaveLength(3);
+      expect(names).not.toContain(made[0]!.name);
+      expect(names).toEqual(expect.arrayContaining([made[1]!.name, made[2]!.name, d.name]));
+      for (const f of google.files.values()) {
+        if (f.name === d.name) delete f.appProperties.checked;
+      }
       await pruneBackups(await backups.getBackupConfig());
-      expect((await listDriveBackups()).items).toHaveLength(1);
+      names = (await listDriveBackups()).items.map((x) => x.name);
+      expect(names).toEqual(expect.arrayContaining([made[1]!.name, made[2]!.name]));
+      // However old they are, the newest 3 stay.
+      for (const f of google.files.values()) {
+        if (f.appProperties.extas === "backup") {
+          f.appProperties.checked = "yes";
+          f.appProperties.createdAt = new Date(Date.now() - 400 * 86_400_000).toISOString();
+        }
+      }
+      await pruneBackups(await backups.getBackupConfig());
+      expect((await listDriveBackups()).items).toHaveLength(3);
+    });
+
+    it("never lets another ERP at a new address push this one's backups out of Drive (review 2026-10-30)", async () => {
+      await connectDrive();
+      await setKey();
+      const before = process.env.APP_URL;
+      try {
+        // An ERP restored at a new address (--domain) while this one still runs.
+        process.env.APP_URL = "https://erp.newcompany.com";
+        const theirs = [];
+        for (let i = 0; i < 4; i += 1) theirs.push(await backUpNow());
+        process.env.APP_URL = "https://erp.extasbd.com";
+        const ours = [await backUpNow()];
+        let names = (await listDriveBackups()).items.map((x) => x.name);
+        // Each keeps its own newest 3: theirs never push ours out, nor ours theirs.
+        expect(names).toEqual(
+          expect.arrayContaining([...theirs.slice(1), ...ours].map((r) => r.name)),
+        );
+        expect(names).not.toContain(theirs[0]!.name);
+        for (let i = 0; i < 2; i += 1) ours.push(await backUpNow());
+        // That ERP made none for 30 days, and this one has its 3: theirs go.
+        for (const f of google.files.values()) {
+          if (f.appProperties.site === "erp.newcompany.com")
+            f.appProperties.createdAt = new Date(Date.now() - 31 * 86_400_000).toISOString();
+        }
+        const { pruneBackups } = await import("@/modules/backups/drive-copies");
+        await pruneBackups(await backups.getBackupConfig());
+        names = (await listDriveBackups()).items.map((x) => x.name);
+        expect(names.sort()).toEqual(ours.map((r) => r.name).sort());
+      } finally {
+        process.env.APP_URL = before;
+      }
     });
   });
 
@@ -797,36 +830,27 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
     it("removes only its own standby backups from Drive, never the ERP in use's", async () => {
       await connectDrive();
       await setKey();
-      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
-      const age = (name: string, days: number) => {
-        for (const f of google.files.values()) {
-          if (f.name === name)
-            f.appProperties.createdAt = new Date(Date.now() - days * 86_400_000).toISOString();
-        }
-      };
-      // The ERP in use: an old backup (kept by its own rules until it makes a newer one) and a new one.
+      // The ERP in use: two backups.
       const a = await backUpNow();
       const b = await backUpNow();
-      age(a.name!, 20);
       // A restored copy on standby backs up into the same Drive folder.
       await writeFile(path.join(backupDir, STANDBY_MARK), "3f9a0c1d2e4b5a69");
-      const s1 = await backUpNow();
-      expect(s1.name).toMatch(/_standby$/);
-      age(a.name!, 40);
-      age(b.name!, 40);
-      age(s1.name!, 40);
-      const s2 = await backUpNow();
+      const standby = [];
+      for (let i = 0; i < 4; i += 1) standby.push(await backUpNow());
+      expect(standby[0]!.name).toMatch(/_standby$/);
       const names = (await listDriveBackups()).items.map((x) => x.name);
-      // Its own old one goes by its keep rules; the ERP in use's stay, however old.
-      expect(names).toEqual(expect.arrayContaining([a.name, b.name, s2.name]));
-      expect(names).not.toContain(s1.name);
+      // Its own newest 3 stay; the ERP in use's are never counted with them, nor removed.
+      expect(names).toEqual(
+        expect.arrayContaining([a.name, b.name, ...standby.slice(1).map((r) => r.name)]),
+      );
+      expect(names).not.toContain(standby[0]!.name);
     });
   });
 
   describe("making the backups less safe needs the PIN and tells the owner (R-BAK G12)", () => {
     const told = async () => (await inbox()).filter((s) => s === "Backups made less safe");
 
-    it("switching backups off, and keeping them in Drive for fewer days", async () => {
+    it("switching backups off", async () => {
       // No PIN yet: the screen shows "set your PIN first".
       const noPin = await expectAppError(
         backups.updateBackupConfig(ctx, { isEnabled: false }),
@@ -861,23 +885,16 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       expect(alert.body).not.toContain(PIN);
 
       // Safer changes, and other settings, need no PIN and tell no one.
-      await backups.updateBackupConfig(owner, { isEnabled: true, driveKeepDays: 365 });
-      await backups.updateBackupConfig(owner, { driveKeepDays: null });
+      await backups.updateBackupConfig(owner, { isEnabled: true });
       await backups.updateBackupConfig(owner, {
         schedule: { mode: "DAYS", every: 1, times: ["03:00"] },
         serverKeep: 5,
       });
       expect(await told()).toHaveLength(1);
 
-      // For ever -> 30 days is fewer days.
-      const shorter = await expectAppError(
-        backups.updateBackupConfig(ctx, { driveKeepDays: 30 }),
-        "VALIDATION",
-      );
-      expect(shorter.message).toBe("Give your PIN to keep backups in Google Drive for fewer days.");
-      await backups.updateBackupConfig(ctx, { driveKeepDays: 30, pin: PIN });
-      await backups.updateBackupConfig(ctx, { driveKeepDays: 60 });
-      expect(await told()).toHaveLength(2);
+      // Days in Drive are no longer a setting (Drive keeps the newest 3): ignored, no PIN.
+      await backups.updateBackupConfig(ctx, { driveKeepDays: 7 } as never);
+      expect(await told()).toHaveLength(1);
       const audit = await prisma.auditLog.findMany({ where: { entityType: "BackupConfig" } });
       expect(JSON.stringify(audit)).not.toContain(PIN);
     });

@@ -6,6 +6,10 @@ const nextConfig = {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
+  // The server's own build (Dockerfile) skips the type check: every commit it builds
+  // passed it on GitHub first ("Tests and build"), and it is the build's largest use of
+  // memory, which an 8 GB server (B2ms) does not have to spare.
+  typescript: { ignoreBuildErrors: process.env.SKIP_BUILD_TYPECHECK === "1" },
   // Prisma's query engine must stay outside the server bundle, and so do the PDF
   // writer (it loads its fonts and colour profile from its own package at run time)
   // and HarfBuzz, which shapes Bengali text and loads its WebAssembly file the same way.

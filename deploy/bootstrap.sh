@@ -446,7 +446,8 @@ forget_opened() {
   fi
   [ -d "$WORK" ] || return 0
   [ ! -d "$WORK/download" ] || still_locked "$WORK/download" || rm -rf "$WORK/download"
-  find "$WORK" -mindepth 1 -maxdepth 1 ! -name download -exec rm -rf {} +
+  # done/ only says which slow steps an earlier try finished (no data, no secret).
+  find "$WORK" -mindepth 1 -maxdepth 1 ! -name download ! -name "done" -exec rm -rf {} +
 }
 
 # The boot unit's script and unit, into the folder $1: forget_opened when the server
@@ -511,7 +512,7 @@ own_steps() {
     want=FETCH_HEAD
   fi
   mkdir -p "$at"
-  git -c tar.umask=0022 -C "$repo" archive "$want" deploy/lib.sh deploy/restore.sh deploy/setup-server.sh 2>/dev/null |
+  git -c tar.umask=0022 -C "$repo" archive "$want" deploy/lib.sh deploy/restore.sh deploy/setup-server.sh deploy/self-update.sh 2>/dev/null |
     tar -x -C "$at" 2>/dev/null || return 1
   grep -q 'EXTRAS_DEPLOY_DIR' "$at/deploy/lib.sh" || return 1
   STEPS="$at/deploy"
@@ -599,6 +600,30 @@ fi
 # version $4 for the program folder $2 (work folder $3); and a restore over the ERP in
 # the program folder $2 that did not finish, back to its version $3 ($4: 1 when the
 # backup's code was installed).
+# --keys: the Google client and the recovery key come with the command (the guide in
+# Google Drive prints them inside it, sealed as one block), so nothing is typed. They
+# are read from the command's input, never from its words (no process list or shell
+# history shows them), and kept only in memory (/run) for this run, readable by root
+# only; they are deleted when the command ends. read_keys FILE: the block on the
+# input, opened into FILE as the restore tool's answers (RESTORE_ANSWERS).
+KEYS_FILE=""
+forget_keys() { [ -z "$KEYS_FILE" ] || rm -f "$KEYS_FILE"; }
+read_keys() {
+  [ ! -t 0 ] || fail R32 "the keys are missing after --keys. Copy the whole command from the newest guide in Google Drive again: it ends with the keys."
+  # The block ends with end=ok: a block cut short anywhere is never taken for a whole one.
+  if ! (umask 077 && tr -d '[:space:]' | head -c 20000 | base64 -d >"$1" 2>/dev/null) ||
+    [ "$(tail -n 1 "$1")" != end=ok ] || ! sed -i '$d' "$1" || [ ! -s "$1" ] ||
+    grep -qvE '^(google_client_id|google_client_secret|recovery_key|pick)=' "$1"; then
+    rm -f "$1"
+    fail R32 "the keys at the end of the command are damaged (part of them was not copied). Copy the whole command from the newest guide in Google Drive again."
+  fi
+}
+# Tests only: read_keys into the folder $2 (as the command's --keys does into /run).
+if [ "${1:-}" = --read-keys ]; then
+  read_keys "${2:?}/answers"
+  echo "KEYS ${2}/answers"
+  exit 0
+fi
 if [ "${1:-}" = --forget-opened ]; then
   WORK="${2:?}"
   forget_opened
@@ -635,11 +660,36 @@ commit="${1:-}"
   fail R24 "\"$commit\" after restore.sh is not a version (40 letters and digits). Copy the whole command from the guide again."
 ref="${commit:-main}"
 drill=""
-case "${2:-}" in
-  "") ;;
-  --drill) drill=1 ;;
-  *) fail R24 "\"$2\" after the version is not --drill. Copy the whole command from the guide again." ;;
-esac
+keys=""
+new_domain=""
+if [ $# -gt 0 ]; then shift; fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --drill) drill=1 ;;
+    --keys) keys=1 ;;
+    --domain)
+      new_domain="$(plain_domain "${2:-}")"
+      [[ "$new_domain" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]] ||
+        fail R32 "\"${2:-}\" after --domain is not a web address like erp.yourcompany.com. Type the new address after --domain, then paste the command again."
+      if [ $# -gt 1 ]; then shift; fi
+      ;;
+    *) fail R24 "\"$1\" after the version is not --drill, --keys or --domain. Copy the whole command from the guide again." ;;
+  esac
+  shift
+done
+[ -z "$drill" ] || [ -z "$new_domain" ] ||
+  fail R32 "a drill always asks for its own test address: leave --domain out of the drill command."
+
+# The keys that came with the command (read_keys), for this run only.
+if [ -n "$keys" ]; then
+  [ -z "${RESTORE_ANSWERS:-}" ] || fail R32 "--keys cannot be used with an answers file."
+  # Left by a try that was killed (out of memory, kill -9): never kept past an hour.
+  find /run -maxdepth 1 -name 'extras-erp-restore-answers.*' -mmin +60 -delete 2>/dev/null || true
+  KEYS_FILE="/run/extras-erp-restore-answers.$$"
+  trap forget_keys EXIT
+  read_keys "$KEYS_FILE"
+  export RESTORE_ANSWERS="$KEYS_FILE"
+fi
 
 # shellcheck source=/dev/null
 . /etc/os-release
@@ -685,22 +735,33 @@ cleanup() {
     note "The restore did NOT finish: the error is above."
   fi
   forget_opened
+  forget_keys
   if [ "$restored" = 1 ]; then
     rm -rf "$WORK"
   elif [ -d "$WORK/download" ]; then
-    note "The backup downloaded from Drive (still locked) is kept for the next try in $WORK (only root can read it). Nothing opened and no Google sign-in stays on the disk: the next try asks for a new Google code."
+    note "The backup downloaded from Drive (still locked) is kept for the next try in $WORK (only root can read it). Nothing opened and no Google sign-in stays on the disk: the next try asks for a new Google code, then goes on from the step that stopped."
   fi
 }
 forget_opened
 
 step "Checking this server"
+# What this server has, beside what the ERP needs; the restore goes on by itself when
+# it is enough. Building the ERP needs the memory most (B2ms: 2 CPUs, 8 GB).
 memory_kb="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)"
 free_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
-[ "${memory_kb:-0}" -ge 3400000 ] ||
-  fail R03 "this server has $((memory_kb / 1024)) MB of memory; the ERP needs 4 GB. Make the VM again with size B2s or larger (step A7 in the guide)."
+cpus="$(nproc 2>/dev/null || echo 1)"
+gb() { awk -v kb="${1:-0}" 'BEGIN { printf "%.1f", kb / 1024 / 1024 }'; }
+note "This server:   $cpus CPU(s), $(gb "$memory_kb") GB memory, $(gb "$free_kb") GB free disk, Ubuntu ${VERSION_ID}"
+note "The ERP needs: 2 CPUs, 8 GB memory (Azure size B2ms), ${MIN_FREE_GB} GB free disk, Ubuntu 22.04 or newer"
+[ "${memory_kb:-0}" -ge 7000000 ] ||
+  fail R03 "this server has $(gb "$memory_kb") GB of memory; the ERP needs 8 GB. In Azure, change the VM's size to B2ms (Size, then Resize), then paste the command again."
 [ "${free_kb:-0}" -ge $((MIN_FREE_GB * 1024 * 1024)) ] ||
-  fail R03 "this server has $((free_kb / 1024 / 1024)) GB free on its disk; the ERP needs at least 20 GB. Make the VM again with a 64 GB disk (step A10 in the guide)."
-note "Ubuntu ${VERSION_ID}, $((memory_kb / 1024)) MB memory, $((free_kb / 1024 / 1024)) GB free disk: fine."
+  fail R03 "this server has $(gb "$free_kb") GB free on its disk; the ERP needs at least 20 GB. Make the VM again with a 64 GB disk (step A10 in the guide)."
+[ "$cpus" -ge 2 ] ||
+  warn W15 "this server has 1 CPU: the restore works, but slowly. B2ms (2 CPUs) is the size to use."
+note "Enough: the restore goes on by itself."
+[ -z "$KEYS_FILE" ] || note "The Google client and the recovery key come from the command: nothing to type, nothing kept on the disk."
+[ -z "$new_domain" ] || note "New web address for this ERP: $new_domain"
 
 step "Looking for an Extas ERP already on this server"
 detect_installs
@@ -810,6 +871,14 @@ if [ -z "$drill" ] && [ -f "$DATA/backups/.drill" ]; then
   note "This server holds a restore drill copy, so this run is a drill too (test mode)."
 fi
 [ -z "$drill" ] || drill_settings "$env_file" "$DATA" "$(tool fact --work "$WORK" appDomain)"
+# A new web address (--domain): the ERP comes up there instead of the backup's (its
+# demo site at demo.<the new domain>). Its DNS must point to this server.
+if [ -n "$new_domain" ] && [ "$new_domain" != "$APP_DOMAIN" ]; then
+  sed -i -e '/^APP_DOMAIN=/d' -e '/^DEMO_DOMAIN=/d' "$env_file"
+  printf 'APP_DOMAIN=%s\n' "$new_domain" >>"$env_file"
+  note "The backup's web address was $APP_DOMAIN; this ERP's is $new_domain."
+  APP_DOMAIN="$new_domain"
+fi
 note "Web address: $APP_DOMAIN; data folder: $DATA"
 # A new server: marked until the backup is in, so the command run again here goes on.
 if [ "${replacing:-0}" = 0 ]; then
@@ -817,12 +886,42 @@ if [ "${replacing:-0}" = 0 ]; then
   : >"$DATA/backups/$UNFINISHED"
 fi
 
+# The slow steps an earlier try on this new server finished (WORK/done) are not done
+# again: the command pasted again goes on from where it stopped. Never over an ERP in
+# use (A6), which always gets every step.
+done_dir="$WORK/done"
+mkdir -p "$done_dir"
+[ "${replacing:-0}" = 0 ] || rm -rf "${done_dir:?}"/*
+code_now="$(git -C "$DIR" rev-parse -q --verify HEAD 2>/dev/null || true)"
+erp_up() {
+  (
+    cd "$DIR"
+    # shellcheck source=/dev/null
+    source deploy/lib.sh
+    load_settings
+    [ -n "$(compose ps --status running -q app 2>/dev/null)" ]
+  ) >/dev/null 2>&1
+}
+
 step "Preparing the server (system updates, Docker, firewall: about 5 minutes)"
-EXTAS_RESTORE=1 EXTRAS_DEPLOY_DIR="$DIR/deploy" "$STEPS/setup-server.sh" || fail R17 "the server could not be prepared; the lines above say why. Paste the command again."
+if [ -f "$done_dir/prepared" ] && systemctl is-active -q docker 2>/dev/null; then
+  note "Done in the earlier try: not done again."
+else
+  EXTAS_RESTORE=1 EXTRAS_DEPLOY_DIR="$DIR/deploy" "$STEPS/setup-server.sh" || fail R17 "the server could not be prepared; the lines above say why. Paste the command again."
+  : >"$done_dir/prepared"
+fi
 
 step "Installing the ERP (building it takes about 10 to 20 minutes)"
 deployed=1
-"$DIR/deploy/deploy.sh" || fail R18 "the ERP could not be installed; the lines above say why. Paste the command again: it picks up where it stopped."
+# The code and the web address: a try with another address (--domain) installs again.
+[ -z "$code_now" ] || code_now="$code_now $(sed -n 's/^APP_DOMAIN=//p' "$env_file" | tail -n 1)"
+if [ -n "$code_now" ] && [ "$(cat "$done_dir/installed" 2>/dev/null)" = "$code_now" ] && erp_up; then
+  note "Installed in the earlier try (version ${code_now:0:7}): not built again."
+else
+  rm -f "$done_dir/installed"
+  "$DIR/deploy/deploy.sh" || fail R18 "the ERP could not be installed; the lines above say why. If they end with \"npm run build\" that did not complete, the server ran out of memory: in Azure change the VM's size to B4ms (16 GB) for the restore and back to B2ms after it. Then paste the command again: it goes on from where it stopped."
+  [ -z "$code_now" ] || printf '%s' "$code_now" >"$done_dir/installed"
+fi
 
 step "Restoring the database and the files"
 mkdir -p "$DATA/backups/restores"
@@ -1002,11 +1101,11 @@ fi
 if [ "$demo_note" = running ]; then note "The demo site is running too."; fi
 note "Checks: $checks_note; ${screen_problems} problem(s) found."
 note "The full log of this restore: sudo less $LOG"
-# GitHub's updates go to the ERP in use only: on standby, after go-live.sh (F6), never before.
+# New versions go to the ERP in use only (self-update.sh): on standby, after go-live.sh (F6).
 if [ -z "$drill" ] && [ "$standby" = 1 ]; then
-  note "Next (part F of the guide): once this ERP is live (go-live.sh, step F6), let GitHub update it: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+  note "New versions from GitHub install by themselves once this ERP is live (go-live.sh, step F6)."
 elif [ -z "$drill" ]; then
-  note "Next (part F of the guide): let GitHub update this server again: cd $DIR && sudo ./deploy/setup-auto-deploy.sh"
+  note "New versions from GitHub install by themselves (step F5): nothing to set up."
 fi
 if [ -z "$drill" ] && [ "$standby" = 1 ]; then
   # Never on standby without a word: the last thing on the screen.

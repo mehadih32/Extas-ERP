@@ -118,7 +118,7 @@ describe("the restore steps of the command's own version (v6.4.2)", () => {
     const source = path.join(root, "source");
     await mkdir(path.join(source, "deploy"), { recursive: true });
     await git(root, "init", "-q", source);
-    for (const file of ["lib.sh", "restore.sh", "setup-server.sh"]) {
+    for (const file of ["lib.sh", "restore.sh", "self-update.sh", "setup-server.sh"]) {
       await writeFile(
         path.join(source, "deploy", file),
         readFileSync(path.join(process.cwd(), "deploy", file)),
@@ -159,7 +159,12 @@ describe("the restore steps of the command's own version (v6.4.2)", () => {
       `STEPS ${path.join(root, "work/steps/deploy")}`,
     );
     const steps = path.join(root, "work/steps/deploy");
-    expect((await readdir(steps)).sort()).toEqual(["lib.sh", "restore.sh", "setup-server.sh"]);
+    expect((await readdir(steps)).sort()).toEqual([
+      "lib.sh",
+      "restore.sh",
+      "self-update.sh",
+      "setup-server.sh",
+    ]);
     // That version exactly, not the newest.
     expect(await readFile(path.join(steps, "setup-server.sh"), "utf8")).toBe(
       readFileSync(path.join(process.cwd(), "deploy", "setup-server.sh"), "utf8"),

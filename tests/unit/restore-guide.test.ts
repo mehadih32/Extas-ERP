@@ -326,23 +326,13 @@ describe("the owner's items for the guide (v6.4.1)", () => {
         expect(text.en, st.id).not.toMatch(/whoever looks after|helper|developer|technician/i);
       }
     }
-    // F5 is the owner's own: the command, then GitHub's settings page.
+    // F5 asks nothing: new versions install by themselves (self-update.sh), with no keys.
     const f5 = step("F5");
-    expect(f5.text.en).toContain("sudo ./deploy/setup-auto-deploy.sh");
-    expect(quotedLabels(f5.text.en)).toEqual(
-      expect.arrayContaining(["Settings", "Secrets and variables", "Actions", "Update secret"]),
-    );
-    // Every secret setup-auto-deploy.sh prints is named, and nothing else.
-    const printed = [
-      ...read("deploy/setup-auto-deploy.sh").matchAll(
-        /^(USERNAME|SSH_HOST_KEY|SSH_PRIVATE_KEY[^\n]*|SERVER_IP)$/gm,
-      ),
-    ].map((m) => m[1]!.split(" ")[0]!);
-    expect(printed).toEqual(["USERNAME", "SSH_HOST_KEY", "SSH_PRIVATE_KEY", "SERVER_IP"]);
-    for (const name of printed) expect(f5.text.en).toContain(name);
-    const deploy = read(".github/workflows/deploy.yml");
-    for (const name of printed) expect(deploy).toContain(`secrets.${name}`);
-    // F5 works only on a server signed in to with a key, which is how part A makes it.
+    expect(f5.text.en).toMatch(/Nothing to do here/);
+    expect(f5.text.en).not.toMatch(/setup-auto-deploy|Secrets and variables/);
+    expect(read("deploy/lib.sh")).toContain("/etc/cron.d/extras-erp-self-update");
+    expect(read(".github/workflows/deploy.yml")).toContain("vars.DEPLOY_OVER_SSH == 'true'");
+    // The older SSH way still needs a server signed in to with a key, which is how part A makes it.
     expect(read("deploy/setup-auto-deploy.sh")).toMatch(/still accepts passwords over SSH/);
     expect(quotedLabels(step("A8").text.en)).toEqual(
       expect.arrayContaining(["SSH public key", "Generate new key pair"]),
@@ -392,7 +382,7 @@ describe("the owner's items for the guide (v6.4.1)", () => {
     );
     expect(en).toContain("--drill");
     expect(en).toMatch(/Never the real ERP's or the demo site's address/);
-    expect(en).toMatch(/Do not do F5 in a drill/);
+    expect(en).toMatch(/A drill copy never takes updates/);
     expect(en).toMatch(/open only the extas-drill resource group/);
     // The drill command is the one command with --drill at its end.
     expect(drillCommandLines(["c=abc &&", "sudo bash restore.sh $c"])).toEqual([
@@ -492,10 +482,10 @@ describe("the guide and the restore command's own words (v6.4.1 restore)", () =>
     expect(error("W13").todo.en).toMatch(/lines just above \(like R20 or W05\)/);
     // On standby, GitHub's updates come after go-live.sh; the script refuses before.
     expect(code).toMatch(
-      /if \[ -z "\$drill" \] && \[ "\$standby" = 1 \]; then\n\s*note "Next \(part F of the guide\): once this ERP is live \(go-live\.sh, step F6\), let GitHub update it/,
+      /if \[ -z "\$drill" \] && \[ "\$standby" = 1 \]; then\n\s*note "New versions from GitHub install by themselves once this ERP is live \(go-live\.sh, step F6\)/,
     );
     expect(code).toMatch(
-      /elif \[ -z "\$drill" \]; then\n\s*note "Next \(part F of the guide\): let GitHub update this server again/,
+      /elif \[ -z "\$drill" \]; then\n\s*note "New versions from GitHub install by themselves \(step F5\)/,
     );
     const autoDeploy = read("deploy/setup-auto-deploy.sh");
     expect(autoDeploy).toMatch(

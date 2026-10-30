@@ -514,17 +514,28 @@ earlier version for a while, turn them off first (below).
 
 ## Updating by itself after each merge
 
-Once this is set up, GitHub installs each new version by itself: after every merge into
-`main`, it signs in to the server and runs `deploy/auto-deploy.sh`, which gets the code
+The server installs each new version by itself, with nothing to set up: every 5 minutes
+`deploy/self-update.sh` (copied to `/usr/local/sbin/extras-erp-self-update`, run by
+`/etc/cron.d/extras-erp-self-update`) asks GitHub which commit is newest on `main`. Once
+GitHub's **Tests and build** check passed on exactly that commit (the **Deploy** workflow
+runs the Checks after every merge), it installs it with `deploy/auto-deploy.sh`, which keeps
+the running version and its safety copy and goes back by itself if anything fails. A commit
+whose checks failed is never installed; a failed install is tried again after an hour, three
+times at most. It needs no key or secret (the repository is public; the server only reads
+from it), and nothing changes when the server or its IP address changes: `deploy.sh` and the
+restore command set it up. It does nothing on a restore drill copy, on an ERP on standby,
+during a restore, or while the code is put back to an earlier version by hand (not on
+`main`). `AUTO_UPDATE=off` in `deploy/.env` turns it off. What it did:
+`/srv/extras-erp/deploy-logs/self-update.log`, and each update's own log beside it.
+
+### The older way: GitHub signs in over SSH
+
+Only when the repository variable `DEPLOY_OVER_SSH` is `true`. After every merge into
+`main`, GitHub signs in to the server and runs `deploy/auto-deploy.sh`, which gets the code
 and runs `deploy.sh`. GitHub sends the exact commit its Checks passed on, and the server
-installs that commit, never a newer one that has not been checked (if the server already
-has newer code, nothing is installed and the run says so). Before it touches the server, the **Deploy** workflow runs the
-**Checks** on the merged code (types, lint, formatting, every test with a throwaway
-database, and the production build); when one fails, the server is not touched and the
-run shows a red cross at **Checks**. The same Checks run on every pull request. The
-**Deploy** workflow in the repository's **Actions** tab shows each update and its steps. The full log stays on the server, in
-`/srv/extras-erp/deploy-logs/`, because anyone can read the Actions logs while the
-repository is public.
+installs that commit, never a newer one that has not been checked. The full log stays on
+the server, in `/srv/extras-erp/deploy-logs/`, because anyone can read the Actions logs
+while the repository is public.
 
 Set it up once:
 

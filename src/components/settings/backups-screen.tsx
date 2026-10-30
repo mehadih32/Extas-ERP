@@ -537,15 +537,9 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
   const [times, setTimes] = useState(s.times.length ? s.times : ["02:00"]);
   const [weekdays, setWeekdays] = useState<number[]>(s.weekdays);
   const [dates, setDates] = useState<string[]>(s.dates.length ? s.dates : [""]);
-  const [forever, setForever] = useState(config.driveKeepDays === null);
   const [enabled, setEnabled] = useState(config.isEnabled);
-  const [days, setDays] = useState(String(config.driveKeepDays ?? 90));
-  // Switching backups off, or fewer days in Drive, needs the PIN (G12).
-  const fewerDays =
-    !forever &&
-    Number(days) > 0 &&
-    (config.driveKeepDays === null || Number(days) < config.driveKeepDays);
-  const lessSafe = (config.isEnabled && !enabled) || fewerDays;
+  // Switching backups off needs the PIN (G12).
+  const lessSafe = config.isEnabled && !enabled;
 
   const schedule = () => {
     if (mode === "HOURS") return { mode, every: Number(every), times: times.slice(0, 1) };
@@ -568,7 +562,6 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
               schedule: schedule(),
               isEnabled: enabled,
               serverKeep: Number(form.get("serverKeep")),
-              driveKeepDays: forever ? null : Number(days),
               drillEnabled: form.get("drillEnabled") === "on",
               drillDay: Number(form.get("drillDay")),
               drillTime: String(form.get("drillTime") ?? ""),
@@ -706,33 +699,10 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
               ))}
             </select>
           </Field>
-          <div className="grid gap-2">
-            <Field
-              id="backup-drive-days"
-              label="Keep in Google Drive for (days)"
-              hint="The newest one always stays"
-              error={errors.driveKeepDays?.[0]}
-            >
-              <Input
-                id="backup-drive-days"
-                name="driveKeepDays"
-                type="number"
-                min={7}
-                max={3650}
-                disabled={forever}
-                value={days}
-                onChange={(e) => setDays(e.target.value)}
-              />
-            </Field>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={forever}
-                onChange={(e) => setForever(e.target.checked)}
-              />
-              Keep for ever
-            </label>
-          </div>
+          <p className="self-end text-muted-foreground">
+            Google Drive keeps the newest {config.driveKeep} backups: each new one, once checked in
+            Drive, replaces the oldest.
+          </p>
         </div>
 
         <div className="grid gap-3 rounded-md border p-3">
@@ -770,7 +740,7 @@ function SchedulePanel({ config, setMessage }: PanelProps) {
           <div className="grid gap-2 sm:max-w-xs">
             <PinField
               id="schedule-pin"
-              hint="Needed to switch backups off or keep them in Google Drive for fewer days. You are told on Telegram too."
+              hint="Needed to switch backups off. You are told on Telegram too."
               error={fieldError("pin") ?? fieldError("pinNotSet")}
             />
           </div>

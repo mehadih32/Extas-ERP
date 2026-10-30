@@ -1,8 +1,10 @@
-# Installs the newest code on the server after every merge into main, and from
-# the Actions tab with "Run workflow". It first runs the Checks (every test and the
-# production build) on that code, and touches the server only when they pass. It
-# signs in over SSH with a key that can only run deploy/auto-deploy.sh. Setting it
-# up: deploy/README.md, "Updating by itself after each merge".
+# Runs the Checks (every test and the production build) on every merge into main,
+# and from the Actions tab with "Run workflow". The server installs the merged code
+# by itself once these pass on it (deploy/self-update.sh, every 5 minutes: the
+# owner's decision, 2026-10-30), so GitHub needs no key or secret for the server.
+# The older way, GitHub signing in over SSH with a key that can only run
+# deploy/auto-deploy.sh, runs only when the repository variable DEPLOY_OVER_SSH is
+# "true" (deploy/README.md, "Updating by itself after each merge").
 name: Deploy
 
 on:
@@ -30,6 +32,7 @@ jobs:
   deploy:
     name: Update the server
     needs: checks
+    if: vars.DEPLOY_OVER_SSH == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:

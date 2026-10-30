@@ -806,33 +806,32 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "51735e6ae80761f9",
+    "screen": "4cd2fb6fc55657b8",
     "guide": "284e480596e7ffe7",
     "taken": "2026-10-30"
   },
   "backups-drive-key": {
     "src": "/help/shots/backups-drive-key.webp",
     "width": 1280,
-    "height": 1600,
-    "marks": [1, 3, 5, 6, 7, 8, 11, 12],
+    "height": 1574,
+    "marks": [1, 3, 5, 6, 7, 8, 11],
     "labels": {
       "1": "Backups",
       "3": "Set your recovery key",
-      "5": "Connect Google Drive",
+      "5": "Google Drive",
       "6": "Add a time",
       "7": "Save",
       "8": "Back up now",
-      "11": "Recovery key",
-      "12": "Google Drive"
+      "11": "Recovery key"
     },
     "clip": {
-      "y": 189,
-      "height": 1600,
+      "y": 217,
+      "height": 1574,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "51735e6ae80761f9",
-    "guide": "9897a7a3e0e09020",
+    "screen": "4cd2fb6fc55657b8",
+    "guide": "8ce0629bbedfb5f0",
     "taken": "2026-10-30"
   },
   "backups-github-alert": {
@@ -849,7 +848,7 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "51735e6ae80761f9",
+    "screen": "4cd2fb6fc55657b8",
     "guide": "0167dbb5b93d51c8",
     "taken": "2026-10-30"
   },
@@ -863,12 +862,12 @@
       "4": "Save the Google client"
     },
     "clip": {
-      "y": 1498,
+      "y": 1489,
       "height": 800,
       "target": "dialog"
     },
     "route": "/settings/backups",
-    "screen": "51735e6ae80761f9",
+    "screen": "4cd2fb6fc55657b8",
     "guide": "ab148c67cbc46a72",
     "taken": "2026-10-30"
   },
@@ -876,28 +875,27 @@
     "src": "/help/shots/backups-new-server.webp",
     "width": 1280,
     "height": 1600,
-    "marks": [1, 17, 31, 37, 38],
+    "marks": [1, 17, 31, 37],
     "labels": {
       "1": "Download the restore guide",
       "17": "Save",
       "31": "Recovery key",
-      "37": "Back up now",
-      "38": "Connect Google Drive"
+      "37": "Back up now"
     },
     "clip": {
-      "y": 189,
+      "y": 0,
       "height": 1600,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "51735e6ae80761f9",
-    "guide": "2abc5dddeca1e918",
+    "screen": "4cd2fb6fc55657b8",
+    "guide": "3dc0e28cf2a95202",
     "taken": "2026-10-30"
   },
   "backups-restore": {
     "src": "/help/shots/backups-restore.webp",
     "width": 1280,
-    "height": 1574,
+    "height": 1569,
     "marks": [1, 2, 4, 5, 6, 7],
     "labels": {
       "1": "Backups in Google Drive",
@@ -908,19 +906,19 @@
       "7": "Restore on a new server"
     },
     "clip": {
-      "y": 1170,
-      "height": 1574,
+      "y": 1166,
+      "height": 1569,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "51735e6ae80761f9",
+    "screen": "4cd2fb6fc55657b8",
     "guide": "d23f987fb10aefe1",
     "taken": "2026-10-30"
   },
   "backups-server-drill": {
     "src": "/help/shots/backups-server-drill.webp",
     "width": 1280,
-    "height": 1523,
+    "height": 1519,
     "marks": [6, 9, 11],
     "labels": {
       "6": "Save",
@@ -929,12 +927,12 @@
     },
     "clip": {
       "y": 0,
-      "height": 1523,
+      "height": 1519,
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "51735e6ae80761f9",
-    "guide": "77076a5dc5a13c45",
+    "screen": "4cd2fb6fc55657b8",
+    "guide": "f4e7baa4ce96c993",
     "taken": "2026-10-30"
   },
   "business-downloads": {

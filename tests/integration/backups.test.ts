@@ -201,7 +201,7 @@ run("daily backups", () => {
         scheduleText: "Every day at 02:00 and 14:00",
         timezone: "Asia/Dhaka",
         serverKeep: 4,
-        driveKeepDays: 90,
+        driveKeep: 3,
         isEnabled: true,
         googleDrive: { available: true, connected: false, account: null, folderId: null },
       });
@@ -747,6 +747,22 @@ run("daily backups", () => {
       expect(sent).toMatchObject({ onGoogleDrive: true, driveError: null });
       expect(sent.checkedAt).not.toBeNull();
       expect(backupFolders()).toHaveLength(1);
+    });
+
+    it("never sends a just-made backup again while Back up now is still sending it (2026-10-30)", async () => {
+      await readyToSend();
+      google.options.quotaFull = true;
+      const run = await backUpNow();
+      google.options.quotaFull = false;
+      // The clock keeps its own list of tries (a Back up now runs apart from it, so its
+      // list is empty): a run that finished within the hour is still the maker's to send.
+      const { lastTryForTests } = await import("@/modules/backups/drive-copies");
+      lastTryForTests().clear();
+      expect(await sendUnsent(Date.now())).toBe(0);
+      expect(await sendUnsent(Date.now() + 30 * 60_000)).toBe(0);
+      expect(backupFolders()).toEqual([]);
+      expect(await sendUnsent(Date.now() + 61 * 60_000)).toBe(1);
+      expect((await backups.getBackupRun(run.id)).onGoogleDrive).toBe(true);
     });
 
     it("throws away a Drive copy that arrived damaged, and keeps the server's", async () => {

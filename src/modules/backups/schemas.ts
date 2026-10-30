@@ -34,19 +34,12 @@ export const backupConfigSchema = z
       }, "Unknown timezone (use a name like Asia/Dhaka)"),
     /** Backups kept on the server (G2). */
     serverKeep: z.number().int().min(3, "Keep at least 3").max(7, "Keep at most 7"),
-    /** Days each backup stays in Google Drive; null: for ever. */
-    driveKeepDays: z
-      .number()
-      .int()
-      .min(7, "Keep them at least 7 days")
-      .max(3650, "At most 3650 days (10 years)")
-      .nullable(),
     isEnabled: z.boolean(),
     /** The monthly restore drill into a temporary database. */
     drillEnabled: z.boolean(),
     drillDay: z.number().int().min(1).max(28, "Pick a day from 1 to 28"),
     drillTime: time,
-    /** The owner's PIN: needed to switch backups off or keep them in Drive for fewer days (G12). */
+    /** The owner's PIN: needed to switch backups off (G12). */
     pin: z.string().trim().max(20),
   })
   .partial();

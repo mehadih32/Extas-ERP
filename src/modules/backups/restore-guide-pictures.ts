@@ -634,7 +634,7 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     createVm(s, "Basics");
     section(s, 76, "Instance details");
     row(s, 92, "Image *", "Ubuntu Server 24.04 LTS - x64 Gen2", { dropdown: true });
-    row(s, 120, "Size *", "Standard_B2s - 2 vcpus, 4 GiB memory", {
+    row(s, 120, "Size *", "Standard_B2ms - 2 vcpus, 8 GiB memory", {
       dropdown: true,
       mark: true,
       link: "See all sizes",
@@ -690,7 +690,7 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     s.circle(32, 83, 5, { fill: GREEN });
     s.text("Validation passed", 42, 79, { size: 8, bold: true });
     section(s, 102, "Price");
-    s.text("1 X Standard B2s by Microsoft", 28, 118, { size: 7.5 });
+    s.text("1 X Standard B2ms by Microsoft", 28, 118, { size: 7.5 });
     azureFooter(s, "Next >", { create: true });
     // The window Azure opens after "Create": the key, once.
     s.rect(0, 20, 600, 230, { fill: "#000000", opacity: 0.35 });
@@ -741,7 +741,7 @@ const DRAW: Record<GuidePicture, (s: Scene) => void> = {
     ];
     const right = [
       ["Operating system", "Linux (ubuntu 24.04)"],
-      ["Size", "Standard B2s (2 vcpus, 4 GiB memory)"],
+      ["Size", "Standard B2ms (2 vcpus, 8 GiB memory)"],
       ["Public IP address", EXAMPLE_IP],
       ["Virtual network/subnet", "extas-erp-vnet/default"],
     ];
@@ -1332,7 +1332,7 @@ export const SCREENSHOT_SLOTS: Record<GuidePicture, string> = {
     "Tab “Basics”: “Virtual machine name” extas-erp and “Region” “(Asia Pacific) Central India”.",
   "azure-image": "Tab “Basics”: “Image” set to “Ubuntu Server 24.04 LTS - x64 Gen2”.",
   "azure-size":
-    "Tab “Basics”: “Size” showing “Standard_B2s - 2 vcpus, 4 GiB memory”, with “See all sizes” under it.",
+    "Tab “Basics”: “Size” showing “Standard_B2ms - 2 vcpus, 8 GiB memory”, with “See all sizes” under it.",
   "azure-admin":
     "Tab “Basics”, “Administrator account”: “SSH public key”, “Username” erpadmin, “SSH public key source” “Generate new key pair”, “Key pair name” extas-erp-key.",
   "azure-ports":

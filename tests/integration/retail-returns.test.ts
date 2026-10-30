@@ -10,6 +10,7 @@ import { GET as claimsRoute } from "@/app/api/v1/ecommerce/returns/claims/route"
 import { GET as returnsRoute } from "@/app/api/v1/ecommerce/returns/route";
 import { GET as summaryRoute } from "@/app/api/v1/ecommerce/returns/summary/route";
 import { POST as shipmentsRoute } from "@/app/api/v1/ecommerce/shipments/route";
+import { localDay } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import { storeDashboard } from "@/modules/retail/dashboards.service";
 import { reverseJournalEntry } from "@/modules/accounts/journal.service";
@@ -331,7 +332,8 @@ run("Retail store's returns (plan v6, part 2)", () => {
       decided.map((e) => e.id),
     );
 
-    const today = new Date().toISOString().slice(0, 10);
+    // The company's own day (Asia/Dhaka), as the server counts it: after 18:00 UTC it is tomorrow.
+    const today = localDay(new Date(), "Asia/Dhaka");
     const claims = await callShop(shop, claimsRoute, { path: "/returns/claims" });
     expect(claims.status, JSON.stringify(claims.body)).toBe(200);
     expect(claims.body.claims).toEqual([

@@ -14,6 +14,7 @@ import { setPin } from "@/modules/ai/settings.service";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { checkParcel, resolveHold, returnsPage } from "@/modules/retail/returns.service";
 import * as stores from "@/modules/retail/stores.service";
+import { retailWatch } from "@/modules/retail/watch.service";
 
 import { callShop, type Shop, setupShop } from "./ecommerce-helpers";
 import { resetDb } from "./helpers";
@@ -229,5 +230,44 @@ run("Retail store's returns (plan v6, part 2)", () => {
       "ALREADY_HANDED_BACK",
       "NOT_OUR_ORDER",
     ]);
+  });
+
+  it("reminds on days 5, 7 and 10 while a parcel waits for the check, and owes at the month's end", async () => {
+    // The night watch speaks as the owner.
+    await prisma.user.update({ where: { id: shop.owner.user.id }, data: { isSuperAdmin: true } });
+    await place("WEB-6");
+    await place("WEB-7");
+    await delivery("WEB-6", { status: "RETURNED" });
+    await delivery("WEB-7", { status: "RETURNED" });
+    await handBack("RL-6", [
+      { consignmentId: "PTH-WEB-6", externalOrderId: "WEB-6" },
+      { consignmentId: "PTH-WEB-7", externalOrderId: "WEB-7" },
+    ]);
+    // 22:05 in Dhaka on the given day.
+    const night = async (day: string) => {
+      await retailWatch(new Date(`${day}T16:05:00Z`));
+      const note = await prisma.retailAlert.findFirst({ where: { kind: "NIGHT", key: day } });
+      return note?.text ?? "";
+    };
+    expect(await night("2026-11-09")).not.toContain("not checked");
+    expect(await night("2026-11-10")).toContain(
+      "Extas Retail: 2 returned parcels not checked 5 days after the courier handed them back",
+    );
+    expect(await night("2026-11-11")).not.toContain("not checked");
+    // One parcel is checked: only the other is reminded.
+    const page = await returnsPage(shop.owner);
+    const one = page.waiting[0]!;
+    await checkParcel(shop.owner, one.id, {
+      decisions: one.pieces.map((x) => ({ pieceId: x.id, decision: "APPROVE" as const })),
+    });
+    expect(await night("2026-11-12")).toContain("1 returned parcel not checked 7 days after");
+    const red = await night("2026-11-15");
+    expect(red).toContain("not checked 10 days after the courier handed it back (now red)");
+    expect(await night("2026-11-16")).not.toContain("not checked");
+    // The month's last night: what the store owes, and how much of it waits for the check.
+    const owes = await balance();
+    expect(await night("2026-11-30")).toContain(
+      `Extas Retail owes BDT ${owes.toLocaleString("en-IN", { minimumFractionDigits: 2 })} at the end of the month, of which BDT 1,875.00 is returns waiting for the check.`,
+    );
   });
 });

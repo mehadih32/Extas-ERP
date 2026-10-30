@@ -108,6 +108,15 @@ export const COMPLIANCE_KEYS: readonly PermissionKey[] = ["compliance.view", "co
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboardIcon, anyOf: [] },
   {
+    // The retail side (plan v6 sec 0): right under Dashboard. Retail stores and
+    // their prices.
+    href: "/business",
+    label: "Business",
+    icon: StoreIcon,
+    anyOf: ["retail.view", "retail.manage"],
+    phoneMore: true,
+  },
+  {
     // Orders, quotations, proforma invoices, invoices and payments
     // (components/sales/tabs.ts).
     href: "/sales",
@@ -154,14 +163,6 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Accounts",
     icon: LandmarkIcon,
     anyOf: ACCOUNTS_KEYS,
-  },
-  {
-    // The retail side (plan v6): retail stores and their prices.
-    href: "/business",
-    label: "Business",
-    icon: StoreIcon,
-    anyOf: ["retail.view", "retail.manage"],
-    phoneMore: true,
   },
   {
     // Styles and their stock matrix, stock counts, bad stock and the catalogue setup

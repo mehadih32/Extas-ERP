@@ -169,10 +169,15 @@ const money2 = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v).toFixed(2);
  * exchange the old piece of each kept line (the new one when it was refused).
  */
 function returnableLines(p: ParcelRow) {
-  return p.order.lines.map((l) => {
+  // Two new lines that replace one old line: one row for that old line, with both pieces.
+  type Line = ParcelRow["order"]["lines"][number];
+  const rows = new Map<string, Omit<Line, "replaces"> & { quantity: number }>();
+  for (const l of p.order.lines) {
     const line = p.order.exchange && l.replaces && l.exchangeState !== "CANCELLED" ? l.replaces : l;
-    return { ...line, quantity: l.quantity };
-  });
+    const seen = rows.get(line.id);
+    rows.set(line.id, { ...line, quantity: (seen?.quantity ?? 0) + l.quantity });
+  }
+  return [...rows.values()];
 }
 
 function parcelView(p: ParcelRow, now: Date, checkDays: number) {
@@ -364,10 +369,17 @@ export async function resolveHold(
     }
     if (parcel.order.exchange) {
       // An old piece that did not come waits again (billed in full once its deadline passes).
-      const ticked = new Set(pieces.map((p) => p.lineId));
+      // Each ticked old piece covers one new line's piece; a new line not covered waits again.
+      const left = new Map<string, number>();
+      for (const p of pieces) left.set(p.lineId, (left.get(p.lineId) ?? 0) + 1);
       for (const l of parcel.order.lines) {
-        if (l.exchangeState !== "RETURNED_WAITING_CHECK" || ticked.has(l.replacesLineId ?? l.id))
+        if (l.exchangeState !== "RETURNED_WAITING_CHECK") continue;
+        const old = l.replacesLineId ?? l.id;
+        const came = left.get(old) ?? 0;
+        if (came >= l.quantity) {
+          left.set(old, came - l.quantity);
           continue;
+        }
         await tx.retailOrderLine.update({
           where: { id: l.id },
           data: { exchangeState: "WAITING_RETURN" },

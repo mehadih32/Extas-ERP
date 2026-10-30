@@ -499,6 +499,8 @@ async function storeFigures(ctx: CompanyContext, store: { id: string; partyId: s
         OR: [
           { referenceType: "RetailReturnPiece", referenceId: { in: pieces.map((p) => p.id) } },
           { referenceType: "SalesReturnItem", referenceId: { in: returnItems.map((i) => i.id) } },
+          // A delivered store order cancelled in the ERP puts its pieces back too.
+          { referenceType: "SalesOrder", referenceId: { in: orders.map((o) => o.orderId) } },
         ],
       },
       select: { quantity: true, unitCost: true },

@@ -17,6 +17,7 @@ import { canSeeFinancials } from "@/modules/dashboard/access";
 import { hiddenMetricsFor } from "@/modules/dashboard/preferences.service";
 import { salesTotals } from "@/modules/dashboard/sales-figures";
 import type { MetricCardKey } from "@/modules/dashboard/schemas";
+import { installmentsComing } from "@/modules/accounts/loans.service";
 import { stockOnHand } from "@/modules/dashboard/stock-figures";
 
 /*
@@ -60,6 +61,7 @@ export async function getMetricCards(ctx: CompanyContext, now: Date = new Date()
     hidden,
     badStock,
     badStockThisMonth,
+    coming,
   ] = await Promise.all([
     accountTotals(companyId),
     accountTotals(companyId, { start: dayStart, end: dayEnd }),
@@ -80,6 +82,7 @@ export async function getMetricCards(ctx: CompanyContext, now: Date = new Date()
       where: { companyId, voidedAt: null, createdAt: { gte: at(monthFrom), lt: dayEnd } },
       _sum: { quantity: true, lossValue: true },
     }),
+    installmentsComing(ctx, 31, 1, now),
   ]);
 
   const sum = (
@@ -127,9 +130,15 @@ export async function getMetricCards(ctx: CompanyContext, now: Date = new Date()
         /** Assets in the register that are not disposed of. */
         assetCount: assets,
       }),
-      card("LIABILITIES", "Liabilities (loans / investors)", loans.plus(investors), {
+      card("LIABILITIES", "Loans & capital owed", loans.plus(investors), {
         loans: loans.toFixed(2),
         investors: investors.toFixed(2),
+        /** The next installment or a person's profit date within a month (late ones first). */
+        next: coming.items[0] ?? null,
+        /** Installments already late. */
+        late: coming.late,
+        /** May open the Loans & capital page. */
+        open: ctx.can("accounts.view"),
       }),
       card("TODAY_SALES", "Today's sales", todaySales, {
         /** Net of discounts, without delivery charges or VAT (the Sales account). */

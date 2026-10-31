@@ -209,6 +209,12 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-31 (where loans show): Home's money card is "Loans & capital owed" (with the next installment and a link
+  to the page), Home's Action Zone has a "Loan installments" card (late or due within 7 days; owner and Accounts),
+  and Business > Overview has a "Left after installments" card. The nightly clock tells everyone who records
+  payments (inbox and Telegram) when an installment or a fixed cost could not be recorded by itself, and once, 7 days
+  before, when a person's term ends. Interest or profit paid before the ERP is shown on the lender's profile only,
+  never posted.
 - 2026-10-31 (loans, capital and fixed costs): a new "Loans & capital" tab in Accounts. Every bank, NGO or person
   who lends money has a profile with every loan or term, running, renewed or closed; closed ones stay for good and
   nothing is deleted (corrections by reversal). A bank or NGO loan is repaid by a fixed monthly installment; its

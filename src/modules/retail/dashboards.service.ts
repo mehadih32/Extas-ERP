@@ -13,7 +13,12 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { accountTotals } from "@/modules/accounts/balances";
 import { addDays, monthStart } from "@/modules/accounts/periods";
-import { loadAccounts, natural, netProfitFor } from "@/modules/accounts/reports.service";
+import {
+  keptLoanRepayments,
+  loadAccounts,
+  natural,
+  netProfitFor,
+} from "@/modules/accounts/reports.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSeeFinancials } from "@/modules/dashboard/access";
 import { balancesFor } from "@/modules/parties/ledger.service";
@@ -372,15 +377,23 @@ export async function overviewPage(ctx: CompanyContext, raw: unknown = {}) {
   });
   const ids = stores.map((s) => s.id);
   const parties = stores.map((s) => s.partyId);
-  const [now, before, accounts, totals, owed, changes, missingStores] = await Promise.all([
-    overviewFigures(ctx, period, ids, parties),
-    period.previous ? overviewFigures(ctx, period.previous, ids, parties) : null,
-    loadAccounts(ctx.company.id),
-    accountTotals(ctx.company.id),
-    balancesFor(ctx.company.id, parties),
-    profitChanges(ctx.company.id, period),
-    ctx.can("retail.view") || ctx.can("retail.manage") ? missingDayStores(ctx, stores) : [],
-  ]);
+  const [now, before, accounts, totals, owed, changes, missingStores, kept, keptBefore] =
+    await Promise.all([
+      overviewFigures(ctx, period, ids, parties),
+      period.previous ? overviewFigures(ctx, period.previous, ids, parties) : null,
+      loadAccounts(ctx.company.id),
+      accountTotals(ctx.company.id),
+      balancesFor(ctx.company.id, parties),
+      profitChanges(ctx.company.id, period),
+      ctx.can("retail.view") || ctx.can("retail.manage") ? missingDayStores(ctx, stores) : [],
+      keptLoanRepayments(ctx.company.id, { start: period.start, end: period.end }),
+      period.previous
+        ? keptLoanRepayments(ctx.company.id, {
+            start: period.previous.start,
+            end: period.previous.end,
+          })
+        : null,
+    ]);
   const cash = accounts
     .filter((a) => ["CASH", "BANK", "MOBILE_WALLET"].includes(a.subType))
     .reduce((t, a) => t.plus(natural(a, totals)), ZERO);
@@ -428,7 +441,16 @@ export async function overviewPage(ctx: CompanyContext, raw: unknown = {}) {
       card("retail", "Retail profit", now.retailProfit, before?.retailProfit),
       card("cash", "Cash", Number(cash)),
       card("owed", "Shops owe", Number(shopsOwe)),
+      // Loans kept in capital are repaid out of profit (Profit and loss shows the same line).
+      card(
+        "afterInstallments",
+        "Left after installments",
+        now.totalProfit - Number(kept.total),
+        before && keptBefore ? before.totalProfit - Number(keptBefore.total) : null,
+      ),
     ],
+    /** Repaid this period on loans kept in capital (the gap between the two profit cards). */
+    installmentsPaid: kept.total.toFixed(2),
     fixedMissing: now.books.fixedMissing,
     incomplete: now.books.incomplete,
     chart,

@@ -2,6 +2,8 @@
 
 import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 
+import Link from "next/link";
+
 import { Amount, ScopeEye, usePrivacy } from "@/components/accounts/privacy";
 import { formatCount, formatDay, groupAmount } from "@/lib/display";
 import { cn } from "@/lib/utils";
@@ -42,6 +44,17 @@ function detailRows(card: MetricCard, currency: string): Row[] {
       return [
         { label: "Loans", value: money(d.loans) },
         { label: "Investors", value: money(d.investors) },
+        ...(d.next
+          ? [
+              {
+                label: d.next.overdue
+                  ? `Late since ${formatDay(d.next.dueDate)}`
+                  : `Next due ${formatDay(d.next.dueDate)}`,
+                value: money(d.next.amount),
+                strong: d.next.overdue,
+              },
+            ]
+          : []),
       ];
     }
     case "TODAY_SALES": {
@@ -88,7 +101,11 @@ function Caption({ card }: { card: MetricCard }) {
     case "FIXED_ASSETS":
       return quiet("Book value: cost less depreciation");
     case "LIABILITIES":
-      return quiet("Owed to lenders and investors");
+      return quiet(
+        card.details.late > 0
+          ? `${card.details.late} installment${card.details.late === 1 ? "" : "s"} late`
+          : "Owed to lenders and investors",
+      );
     case "NET_PROFIT":
       return quiet(`Since ${formatDay(card.details.monthFrom)}`);
     case "BAD_STOCK_VALUE":
@@ -155,6 +172,14 @@ function MetricCardView({ card, currency }: { card: MetricCard; currency: string
           </div>
         ))}
       </dl>
+      {card.key === "LIABILITIES" && card.details.open && (
+        <Link
+          href="/accounts/loans"
+          className="mt-4 text-[0.8125rem] text-primary underline-offset-4 hover:underline"
+        >
+          Open Loans &amp; capital
+        </Link>
+      )}
     </article>
   );
 }

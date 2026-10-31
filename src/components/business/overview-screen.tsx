@@ -86,7 +86,9 @@ export function OverviewScreen({ page }: { page: OverviewPage }) {
                   ? "Cash, bank and mobile wallets today"
                   : c.key === "owed"
                     ? "What the stores owe the ERP today"
-                    : undefined
+                    : c.key === "afterInstallments"
+                      ? "Total profit less the repayments on loans kept in capital"
+                      : undefined
               }
             />
           ))}

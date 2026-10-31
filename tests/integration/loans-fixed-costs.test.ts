@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { localDay } from "@/lib/dates";
+import { addDays, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { rawBalance } from "@/modules/accounts/balances";
 import * as bank from "@/modules/accounts/bank.service";
+import * as capital from "@/modules/accounts/capital.service";
+import { remindTermsEnding } from "@/modules/accounts/loan-alerts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import * as loans from "@/modules/accounts/loans.service";
 import * as moneyInOut from "@/modules/accounts/money-in-out.service";
@@ -12,7 +14,10 @@ import { addMonths } from "@/modules/accounts/periods";
 import * as reports from "@/modules/accounts/reports.service";
 import { setPin } from "@/modules/ai/settings.service";
 import * as expenses from "@/modules/expenses/expense.service";
+import { getActionZone } from "@/modules/dashboard/action-zone.service";
+import { getMetricCards } from "@/modules/dashboard/cards.service";
 import * as fixedCosts from "@/modules/expenses/recurring.service";
+import { overviewPage } from "@/modules/retail/dashboards.service";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -164,7 +169,7 @@ run("Loans & capital page and monthly fixed costs", () => {
     const pl = await reports.getProfitAndLoss(env.owner.ctx, { from: t, to: t });
     expect(pl.netProfit).toBe("-16666.66");
     expect(pl.keptLoans).toEqual({
-      lines: [{ name: "BRAC Bank", amount: "83333.34" }],
+      lines: [{ name: "BRAC Bank", lenderId: brac.lenderId, amount: "83333.34" }],
       total: "83333.34",
       leftAfter: "-100000.00",
     });
@@ -205,6 +210,13 @@ run("Loans & capital page and monthly fixed costs", () => {
     expect(source.autoPay).toBe(false);
     const profile = await loans.getLenderProfile(env.owner.ctx, ngo.lenderId);
     expect(profile.loans[0]!.paid.count).toBe(0);
+    // The people who pay money are told in the inbox (the owner still can).
+    const told = await prisma.notificationLog.findMany({
+      where: { companyId: env.company.id, entityType: "CapitalSource" },
+    });
+    expect(told.map((n) => n.userId)).toContain(env.owner.user.id);
+    expect(told[0]!.subject).toBe("A loan installment did not pay by itself");
+    expect(told[0]!.body).toContain("ASA: stopped paying by itself");
   });
 
   it("renews, partly returns and returns a person's term, and keeps the closed term", async () => {
@@ -507,5 +519,95 @@ run("Loans: the reviewer's cases", () => {
     const made = await fixedCosts.createFixedCost(env.owner.ctx, { ...cost, dayOfMonth: 1 });
     const row = await prisma.recurringExpense.findUniqueOrThrow({ where: { id: made.id } });
     expect(row.startMonth).toBe(day > 1 ? addMonths(`${month}-01`, 1).slice(0, 7) : month);
+  });
+
+  it("reminds once a week before a person's term ends, and keeps profit paid before the ERP off the books", async () => {
+    const t = today(env);
+    // Running before the ERP: its term ends in 5 days, 120,000 of profit already paid.
+    const near = await loans.addLoan(env.owner.ctx, {
+      lenderKind: "PERSON",
+      lenderName: "Rafiq",
+      amount: 800000,
+      takenOn: addMonths(t, -6),
+      before: { owedNow: 800000, interestPaid: 120000 },
+      periodMonths: 6,
+      profitPerPeriod: 40000,
+      nextDueDate: addDays(t, 5),
+    });
+    // Its term ends in 20 days: not yet.
+    await loans.addLoan(env.owner.ctx, {
+      lenderKind: "PERSON",
+      lenderName: "Karim",
+      amount: 300000,
+      takenOn: addMonths(t, -3),
+      before: { owedNow: 300000 },
+      periodMonths: 3,
+      profitPerPeriod: 9000,
+      nextDueDate: addDays(t, 20),
+    });
+    const profile = await loans.getLenderProfile(env.owner.ctx, near.lenderId);
+    expect(profile.totals).toMatchObject({ interestPaid: "0.00", interestPaidBefore: "120000.00" });
+    expect(profile.loans[0]!.interestPaidBefore).toBe("120000.00");
+    // Nothing moved in the books for the profit paid before.
+    const pl = await reports.getProfitAndLoss(env.owner.ctx, { period: "ONE_YEAR" });
+    expect(pl.netProfit).toBe("0.00");
+
+    expect(await remindTermsEnding(new Date())).toBe(1);
+    expect(await remindTermsEnding(new Date())).toBe(0);
+    const told = await prisma.notificationLog.findMany({
+      where: { companyId: env.company.id, entityType: "CapitalLender" },
+    });
+    expect(new Set(told.map((n) => n.userId))).toEqual(
+      new Set([env.owner.user.id, env.accounts.user.id]),
+    );
+    expect(told[0]).toMatchObject({
+      subject: `Rafiq: the term ends on ${addDays(t, 5)}`,
+      entityId: near.lenderId,
+    });
+
+    // Home: what falls due within a week, and the money card's next date.
+    const coming = await loans.installmentsComing(env.owner.ctx, 7);
+    expect(coming).toMatchObject({ count: 1, late: 0, total: "40000.00" });
+    expect(coming.items[0]).toMatchObject({ name: "Rafiq", isTerm: true, overdue: false });
+    const zone = await getActionZone(env.owner.ctx);
+    expect(zone.installments?.count).toBe(1);
+    expect((await getActionZone(env.sales.ctx)).installments).toBeNull();
+    const cards = await getMetricCards(env.owner.ctx);
+    const owed = cards.cards.find((c) => c.key === "LIABILITIES")!;
+    expect(owed.label).toBe("Loans & capital owed");
+    expect(owed.details).toMatchObject({ late: 0, open: true, next: { name: "Rafiq" } });
+  });
+
+  it("opens each kept loan's lender from Profit and loss, and shows what is left after installments", async () => {
+    const t = today(env);
+    const bankLoan = await loans.addLoan(env.owner.ctx, {
+      lenderKind: "BANK",
+      lenderName: "BRAC Bank",
+      amount: 1000000,
+      takenOn: t,
+      method: "BANK_TRANSFER",
+      accountId: env.city.ledgerAccountId,
+      keepInCapital: true,
+      installmentAmount: 100000,
+      installmentsLeft: 12,
+      nextDueDate: t,
+    });
+    const profile = await loans.getLenderProfile(env.owner.ctx, bankLoan.lenderId);
+    await capital.payInstallment(env.owner.ctx, profile.loans[0]!.next!.id, {
+      date: t,
+      method: "BANK_TRANSFER",
+      accountId: env.city.ledgerAccountId,
+    });
+    const pl = await reports.getProfitAndLoss(env.owner.ctx, {});
+    expect(pl.keptLoans.lines).toEqual([
+      expect.objectContaining({ name: "BRAC Bank", lenderId: bankLoan.lenderId }),
+    ]);
+    const overview = await overviewPage(env.owner.ctx, {});
+    const card = (k: string) => overview.cards.find((c) => c.key === k)!;
+    expect(overview.installmentsPaid).toBe(pl.keptLoans.total);
+    expect(Number(card("afterInstallments").value)).toBeCloseTo(
+      Number(card("profit").value) - Number(pl.keptLoans.total),
+      2,
+    );
   });
 });

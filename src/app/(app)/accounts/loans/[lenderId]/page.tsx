@@ -114,7 +114,16 @@ export default async function LenderPage({ params }: { params: Promise<{ lenderI
             label={person ? "Profit paid" : "Interest paid"}
             value={m(p.totals.interestPaid)}
             scope={SCOPE}
-            hint="A cost in Profit and loss"
+            hint={
+              isZero(p.totals.interestPaidBefore) ? (
+                "A cost in Profit and loss"
+              ) : (
+                <>
+                  Before the ERP also:{" "}
+                  <Amount scope={SCOPE}>{m(p.totals.interestPaidBefore)}</Amount>
+                </>
+              )
+            }
           />
         </dl>
 
@@ -150,6 +159,13 @@ export default async function LenderPage({ params }: { params: Promise<{ lenderI
                 {!isZero(l.repaidBefore) && (
                   <Detail label="Repaid before the ERP">
                     <Amount scope={SCOPE}>{m(l.repaidBefore)}</Amount>
+                  </Detail>
+                )}
+                {!isZero(l.interestPaidBefore) && (
+                  <Detail
+                    label={l.isTerm ? "Profit paid before the ERP" : "Interest paid before the ERP"}
+                  >
+                    <Amount scope={SCOPE}>{m(l.interestPaidBefore)}</Amount>
                   </Detail>
                 )}
                 <Detail label={`Paid (${l.paid.count})`}>

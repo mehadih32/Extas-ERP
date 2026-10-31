@@ -5,7 +5,7 @@ import {
   Prisma,
 } from "@prisma/client";
 
-import { localDay, nextDay, toInstant } from "@/lib/dates";
+import { addDays, localDay, nextDay, toInstant } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
@@ -24,6 +24,7 @@ import {
   assertCanPayMoney,
   assertCanViewAccounts,
 } from "@/modules/accounts/money-guards";
+import { NightProblems, reasonOf } from "@/modules/accounts/loan-alerts";
 import { addMonths } from "@/modules/accounts/periods";
 import { listMoneyAccounts } from "@/modules/accounts/screens.service";
 import {
@@ -108,6 +109,8 @@ function presentLoan(
     taken: taken.toFixed(2),
     /** Repaid before the ERP (a running loan entered at what was owed then). */
     repaidBefore: taken.minus(s.principal).toFixed(2),
+    /** Interest or profit paid before the ERP (shown only; it was never in these books). */
+    interestPaidBefore: (s.interestPaidBefore ?? ZERO).toFixed(2),
     owedNow: s.outstanding.toFixed(2),
     interestRate: s.interestRate?.toFixed(2) ?? null,
     keepInCapital: s.keepInCapital,
@@ -272,6 +275,63 @@ export async function getLoansPage(ctx: CompanyContext) {
   };
 }
 
+/**
+ * For Home: the unpaid installments and a person's profit dates that are late
+ * or fall due within `days`, earliest first (no permission check: the caller
+ * shows them only to those who see the business's money).
+ */
+export async function installmentsComing(
+  ctx: CompanyContext,
+  days = 7,
+  limit = 5,
+  now: Date = new Date(),
+) {
+  const tz = ctx.company.timezone;
+  const today = localDay(now, tz);
+  const until = addDays(today, days);
+  const rows = await ctx.db.capitalInstallment.findMany({
+    where: {
+      status: { in: [...UNPAID] },
+      dueDate: { lt: toInstant(addDays(until, 1), tz) },
+      capitalSource: { status: "ACTIVE", voidedAt: null, kind: { not: "OWNER_CAPITAL" } },
+    },
+    include: {
+      capitalSource: {
+        select: {
+          name: true,
+          lenderId: true,
+          autoPay: true,
+          kind: true,
+          periodMonths: true,
+          lender: { select: { name: true } },
+        },
+      },
+    },
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+  });
+  const items = rows.map((i) => {
+    const s = i.capitalSource;
+    const day = localDay(i.dueDate, tz);
+    return {
+      id: i.id,
+      lenderId: s.lenderId,
+      name: s.lender?.name ?? s.name,
+      dueDate: day,
+      amount: i.amount.toFixed(2),
+      overdue: day < today,
+      autoPay: s.autoPay,
+      isTerm: s.kind === "PRIVATE_LOAN" && s.periodMonths !== null,
+    };
+  });
+  return {
+    days,
+    late: items.filter((i) => i.overdue).length,
+    count: items.length,
+    total: items.reduce((t, i) => t.plus(i.amount), ZERO).toFixed(2),
+    items: items.slice(0, limit),
+  };
+}
+
 /** A lender's profile: every loan or term with them, running or closed, and the totals. */
 export async function getLenderProfile(ctx: CompanyContext, lenderId: string) {
   assertCanViewAccounts(ctx);
@@ -305,6 +365,7 @@ export async function getLenderProfile(ctx: CompanyContext, lenderId: string) {
       owedNow: total((l) => l.owedNow),
       principalPaid: total((l) => l.paid.principal),
       interestPaid: total((l) => l.paid.interest),
+      interestPaidBefore: total((l) => l.interestPaidBefore),
       paid: total((l) => l.paid.amount),
       running: loans.filter((l) => l.state !== "CLOSED").length,
       closed: loans.filter((l) => l.state === "CLOSED").length,
@@ -453,6 +514,7 @@ export async function addLoan(ctx: CompanyContext, raw: unknown, meta?: RequestM
       data: {
         lenderId: lender.id,
         takenAmount: money(input.amount),
+        interestPaidBefore: input.before?.interestPaid ? money(input.before.interestPaid) : null,
         keepInCapital: input.keepInCapital,
         keptInCapitalFrom: input.keepInCapital ? toInstant(input.takenOn, tz) : null,
         ...autoPay,
@@ -771,6 +833,7 @@ export async function payDueInstallments(now: Date = new Date()) {
   let paid = 0;
   const contexts = new Map<string, CompanyContext | null>();
   const switchedOff = new Set<string>();
+  const problems = new NightProblems();
   for (const installment of due) {
     const source = installment.capitalSource;
     if (switchedOff.has(source.id)) continue;
@@ -796,6 +859,10 @@ export async function payDueInstallments(now: Date = new Date()) {
         entityId: source.id,
         summary: `${source.name}: installments stopped paying by themselves, because the person who switched it on can no longer pay money; pay the one due ${localDay(installment.dueDate, source.company.timezone)} by hand`,
       });
+      problems.add(
+        source.companyId,
+        `${source.name}: stopped paying by itself, because the person who switched it on can no longer pay money. Pay the one due ${localDay(installment.dueDate, source.company.timezone)} by hand.`,
+      );
       continue;
     }
     try {
@@ -815,8 +882,13 @@ export async function payDueInstallments(now: Date = new Date()) {
     } catch (error) {
       // It stays unpaid (and shows as overdue); the next night tries again.
       console.error("[loans] an installment could not pay by itself", installment.id, error);
+      problems.add(
+        source.companyId,
+        `${source.name}: the installment due ${localDay(installment.dueDate, source.company.timezone)} could not pay by itself (${reasonOf(error)}). It shows as late; pay it by hand or fix the cause, and the next night tries again.`,
+      );
     }
   }
+  await problems.send("A loan installment did not pay by itself", "CapitalSource", now);
   return paid;
 }
 

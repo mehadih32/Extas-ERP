@@ -16,7 +16,7 @@
       "target": "marks"
     },
     "route": "/accounts/loans/new",
-    "screen": "bc83602e5306422a",
+    "screen": "4461f42317d90285",
     "guide": "2c570ad833f5fefa",
     "taken": "2026-10-31"
   },
@@ -53,7 +53,7 @@
       "target": "marks"
     },
     "route": "/accounts/reports/balance-sheet",
-    "screen": "9b738c53d3a68f80",
+    "screen": "cf2e6a023e79020a",
     "guide": "46229a0994736251",
     "taken": "2026-10-31"
   },
@@ -272,7 +272,7 @@
       "target": "marks"
     },
     "route": "/accounts/loans/[lenderId]",
-    "screen": "3553fef183feb243",
+    "screen": "8d577e258eaf354b",
     "guide": "e2fe2ccc85e415bb",
     "taken": "2026-10-31"
   },
@@ -415,7 +415,7 @@
       "target": "marks"
     },
     "route": "/accounts/reports/profit-and-loss",
-    "screen": "ad692ba205e0ef36",
+    "screen": "041e1182d5dba3bc",
     "guide": "54a6447105265fa5",
     "taken": "2026-10-31"
   },
@@ -1046,13 +1046,13 @@
       "5": "Why profit changed"
     },
     "clip": {
-      "y": 597,
+      "y": 736,
       "height": 400,
       "target": "Profit by business"
     },
     "route": "/business/overview",
-    "screen": "cf9077066aa54778",
-    "guide": "4af57c7be1c55d46",
+    "screen": "197b21cc258dd9b1",
+    "guide": "4d9c8f1004dcb69b",
     "taken": "2026-10-31"
   },
   "business-retail": {
@@ -1230,7 +1230,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "928f53bf43beb34a",
     "taken": "2026-10-31"
   },
@@ -1297,24 +1297,25 @@
   "dashboard-action-zone": {
     "src": "/help/shots/dashboard-action-zone.webp",
     "width": 1280,
-    "height": 1461,
-    "marks": [1, 2, 5, 6, 7, 8],
+    "height": 1477,
+    "marks": [1, 2, 5, 6, 7, 8, 9],
     "labels": {
       "1": "The Pulse",
       "2": "Show amounts",
       "5": "Order now",
       "6": "Low stock",
       "7": "Pending approvals",
-      "8": "Today"
+      "8": "Open Loans & capital",
+      "9": "Today"
     },
     "clip": {
       "y": 0,
-      "height": 1461,
+      "height": 1477,
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
-    "guide": "37b8daa61e356245",
+    "screen": "e8c50fe4826525a9",
+    "guide": "c79084f1786987ea",
     "taken": "2026-10-31"
   },
   "dashboard-arrange-sections": {
@@ -1331,7 +1332,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "2c4a67642afac832",
     "taken": "2026-10-31"
   },
@@ -1344,12 +1345,12 @@
       "2": "Live activity"
     },
     "clip": {
-      "y": 1479,
+      "y": 1495,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "f22fafcb75578d98",
     "taken": "2026-10-31"
   },
@@ -1369,7 +1370,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "0d0eaabea7c2a7f5",
     "taken": "2026-10-31"
   },
@@ -1386,19 +1387,19 @@
       "5": "Total bad stock value"
     },
     "clip": {
-      "y": 2538,
+      "y": 2553,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
-    "guide": "b67011610e712907",
+    "screen": "e8c50fe4826525a9",
+    "guide": "fb07051e8baf1389",
     "taken": "2026-10-31"
   },
   "dashboard-pipeline-activity": {
     "src": "/help/shots/dashboard-pipeline-activity.webp",
     "width": 1280,
-    "height": 1494,
+    "height": 1510,
     "marks": [1, 2, 4, 5, 6, 7],
     "labels": {
       "1": "Predictive insights",
@@ -1410,18 +1411,18 @@
     },
     "clip": {
       "y": 177,
-      "height": 1494,
+      "height": 1510,
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "3ceb217a108e22f1",
     "taken": "2026-10-31"
   },
   "dashboard-predictive": {
     "src": "/help/shots/dashboard-predictive.webp",
     "width": 1280,
-    "height": 1461,
+    "height": 1477,
     "marks": [1, 2, 5, 6, 7],
     "labels": {
       "1": "Action Zone",
@@ -1432,11 +1433,11 @@
     },
     "clip": {
       "y": 0,
-      "height": 1461,
+      "height": 1477,
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "8c04dc28bf66afc1",
     "taken": "2026-10-31"
   },
@@ -1458,7 +1459,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "6c9dd1dfd771f6c1",
     "taken": "2026-10-31"
   },
@@ -1476,7 +1477,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "4bf1f97f750153f0",
     "taken": "2026-10-31"
   },
@@ -1491,12 +1492,12 @@
       "4": "Low stock"
     },
     "clip": {
-      "y": 2785,
+      "y": 2800,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "166ff55b06c9748a",
     "taken": "2026-10-31"
   },
@@ -1513,12 +1514,12 @@
       "5": "Pieces"
     },
     "clip": {
-      "y": 3127,
+      "y": 3142,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "b43d057e7b9338ed",
     "taken": "2026-10-31"
   },
@@ -1537,7 +1538,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "3aa31fc8317a3bd5",
     "taken": "2026-10-31"
   },
@@ -1550,12 +1551,12 @@
       "4": "Invoices"
     },
     "clip": {
-      "y": 3127,
+      "y": 3142,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "1a8e694ca6c23d50",
     "taken": "2026-10-31"
   },
@@ -4631,7 +4632,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "fdcd59a78bfb7213",
     "taken": "2026-10-31"
   },
@@ -4735,7 +4736,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "2c04e3f0f85dd47e",
     "taken": "2026-10-31"
   },
@@ -4754,7 +4755,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "2b50c89e85a7ec12",
     "taken": "2026-10-31"
   },
@@ -4772,7 +4773,7 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "28d3f8b15e1d2d64",
+    "screen": "e8c50fe4826525a9",
     "guide": "5e16c44fa8773b44",
     "taken": "2026-10-31"
   }

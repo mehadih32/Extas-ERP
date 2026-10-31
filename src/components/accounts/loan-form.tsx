@@ -104,6 +104,8 @@ export function LoanForm({
     if (!takenOn) found.takenOn = "Enter the date.";
     const owedNow = before ? readNumber(values, "owedNow", found) : undefined;
     if (owedNow && amount && owedNow > amount) found.owedNow = "More than the loan itself.";
+    const paidBefore = before ? readAmount(textOf(values, "interestPaidBefore")) : null;
+    if (paidBefore === "invalid") found.interestPaidBefore = "Write an amount, like 25000.";
     const interestRate = readAmount(textOf(values, "interestRate"));
     if (interestRate === "invalid") found.interestRate = "Write a number, like 12.5.";
     const loanFields = person
@@ -131,7 +133,14 @@ export function LoanForm({
       contact: textOf(values, "contact") || null,
       amount,
       takenOn,
-      ...(before && owedNow ? { before: { owedNow } } : {}),
+      ...(before && owedNow
+        ? {
+            before: {
+              owedNow,
+              ...(typeof paidBefore === "number" ? { interestPaid: paidBefore } : {}),
+            },
+          }
+        : {}),
       method: textOf(values, "method") || undefined,
       accountId: textOf(values, "accountId") || undefined,
       reference: textOf(values, "reference") || undefined,
@@ -150,6 +159,9 @@ export function LoanForm({
             : {}),
           ...(fields["before.owedNow"] || fields.before
             ? { owedNow: fields["before.owedNow"] ?? fields.before }
+            : {}),
+          ...(fields["before.interestPaid"]
+            ? { interestPaidBefore: fields["before.interestPaid"] }
             : {}),
         };
         return form.setError(
@@ -285,6 +297,26 @@ export function LoanForm({
                 aria-invalid={Boolean(fieldError("owedNow"))}
                 aria-describedby={
                   fieldError("owedNow") ? "loan-owed-now-error" : "loan-owed-now-hint"
+                }
+              />
+            </Field>
+            <Field
+              id="loan-paid-before"
+              label={`${person ? "Profit" : "Interest"} paid before the ERP (${currency}, optional)`}
+              hint="Shown on the profile only. It was paid before these books, so it never changes Profit and loss."
+              error={fieldError("interestPaidBefore")}
+            >
+              <Input
+                id="loan-paid-before"
+                name="interestPaidBefore"
+                inputMode="decimal"
+                placeholder="0.00"
+                autoComplete="off"
+                aria-invalid={Boolean(fieldError("interestPaidBefore"))}
+                aria-describedby={
+                  fieldError("interestPaidBefore")
+                    ? "loan-paid-before-error"
+                    : "loan-paid-before-hint"
                 }
               />
             </Field>

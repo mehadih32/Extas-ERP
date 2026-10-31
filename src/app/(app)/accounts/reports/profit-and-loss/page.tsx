@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { isNegative, PERIOD_LABELS, signedMoney } from "@/components/accounts/labels";
+import { isNegative, loansHref, PERIOD_LABELS, signedMoney } from "@/components/accounts/labels";
 import { LedgerSummary } from "@/components/accounts/ledger-view";
 import { AccountsNoAccess } from "@/components/accounts/no-access";
 import { Amount, HeaderWithEye, PrivacyProvider } from "@/components/accounts/privacy";
@@ -233,6 +233,7 @@ export default async function ProfitAndLossPage({
                           code: null,
                           name: `${l.name} (kept in capital)`,
                           amount: l.amount,
+                          href: l.lenderId ? loansHref.lender(l.lenderId) : loansHref.page,
                         }))}
                         total={r.keptLoans.total}
                         totalLabel="Repaid out of profit"

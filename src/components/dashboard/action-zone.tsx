@@ -1,6 +1,7 @@
 import {
   CircleCheckIcon,
   ClipboardCheckIcon,
+  LandmarkIcon,
   MessageCircleIcon,
   PackageIcon,
   ReceiptTextIcon,
@@ -12,7 +13,7 @@ import { hrHref } from "@/components/hr/labels";
 import { productionHref } from "@/components/production/labels";
 import { salesHref } from "@/components/sales/labels";
 import { salesListSearch } from "@/components/sales/list-view";
-import { formatCount, formatDayRange, formatMonth, groupAmount } from "@/lib/display";
+import { formatCount, formatDay, formatDayRange, formatMonth, groupAmount } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import type { ActionZone as ActionZoneData } from "@/modules/dashboard/action-zone.service";
 
@@ -402,6 +403,73 @@ function ApprovalsCard({ data }: { data: ActionZoneData }) {
   );
 }
 
+const INSTALLMENTS_SCOPE = "action-installments";
+
+function InstallmentsCard({ data }: { data: ActionZoneData }) {
+  const due = data.installments!;
+  const currency = data.currency;
+  return (
+    <ZoneCard
+      title="Loan installments"
+      icon={LandmarkIcon}
+      count={due.count}
+      eye={
+        due.count > 0 ? (
+          <ScopeEye
+            scope={INSTALLMENTS_SCOPE}
+            label="the loan installments"
+            className="-mt-1.5 -mr-1.5"
+          />
+        ) : undefined
+      }
+      footer={
+        <Link href="/accounts/loans" className={linkClass}>
+          Open Loans &amp; capital
+        </Link>
+      }
+    >
+      {due.count === 0 ? (
+        <Clear>No installment or profit falls due in the next {due.days} days.</Clear>
+      ) : (
+        <ul className="grid grid-cols-1 gap-2.5 text-sm">
+          {due.items.map((i) => (
+            <li key={i.id} className="flex min-w-0 items-baseline justify-between gap-3">
+              <span className="min-w-0 break-words">
+                <Link
+                  href={i.lenderId ? `/accounts/loans/${i.lenderId}` : "/accounts/loans"}
+                  className={linkClass}
+                >
+                  {i.name}
+                </Link>
+                <span
+                  className={cn(
+                    "block text-[0.8125rem]",
+                    i.overdue ? "text-destructive" : "text-muted-foreground",
+                  )}
+                >
+                  {i.overdue ? "Late since" : "Due"} {formatDay(i.dueDate)}
+                  {i.isTerm ? " · profit" : ""}
+                  {i.autoPay && !i.overdue ? " · pays by itself" : ""}
+                </span>
+              </span>
+              <span className="shrink-0 tabular-nums">
+                <Amount scope={INSTALLMENTS_SCOPE}>
+                  {`${currency} ${groupAmount(i.amount, currency)}`}
+                </Amount>
+              </span>
+            </li>
+          ))}
+          {due.count > due.items.length && (
+            <li className="text-[0.8125rem] text-muted-foreground">
+              And {due.count - due.items.length} more
+            </li>
+          )}
+        </ul>
+      )}
+    </ZoneCard>
+  );
+}
+
 /**
  * The Action Zone: overdue invoices with a WhatsApp reminder a click away, low
  * stock with "Order now", and what is waiting for approval (or, for the owner,
@@ -413,6 +481,7 @@ export function ActionZone({ data }: { data: ActionZoneData }) {
     data.overdue && <OverdueCard key="overdue" data={data} />,
     data.lowStock && <LowStockCard key="low" data={data} />,
     data.approvals && <ApprovalsCard key="approvals" data={data} />,
+    data.installments && <InstallmentsCard key="installments" data={data} />,
   ].filter(Boolean);
   if (cards.length === 0) return null;
   return (

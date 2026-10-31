@@ -1,3 +1,4 @@
+import { NightProblems, reasonOf } from "@/modules/accounts/loan-alerts";
 import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
@@ -242,6 +243,7 @@ export async function recordDueFixedCosts(now: Date = new Date()) {
     orderBy: { createdAt: "asc" },
   });
   let recorded = 0;
+  const problems = new NightProblems();
   for (const cost of costs) {
     const months = monthsDue(cost, localDay(now, cost.company.timezone));
     if (months.length === 0) continue;
@@ -259,6 +261,10 @@ export async function recordDueFixedCosts(now: Date = new Date()) {
         entityId: cost.id,
         summary: `Stopped the monthly fixed cost ${cost.name}: the person who set it up can no longer pay money; set it up again`,
       });
+      problems.add(
+        cost.companyId,
+        `${cost.name}: stopped, because the person who set it up can no longer pay money. Set it up again.`,
+      );
       continue;
     }
     let last = cost.lastPostedMonth;
@@ -299,10 +305,15 @@ export async function recordDueFixedCosts(now: Date = new Date()) {
           data: { lastPostedMonth: last },
         });
         console.error("[fixed costs] could not record", cost.id, month, error);
+        problems.add(
+          cost.companyId,
+          `${cost.name} for ${month} could not be recorded (${reasonOf(error)}). The next night tries again.`,
+        );
         break;
       }
     }
   }
+  await problems.send("A monthly fixed cost was not recorded", "RecurringExpense", now);
   return recorded;
 }
 

@@ -186,9 +186,11 @@ function today(ctx: CompanyContext) {
  * (loans.service.ts): it is not an expense, but the owner pays it out of profit,
  * so it shows below net profit, with what is left after it. Reversals count back.
  */
-async function keptLoanRepayments(companyId: string, range: DateRange) {
-  const rows = await prisma.$queryRaw<Array<{ name: string; amount: Prisma.Decimal | null }>>`
-    SELECT cs.name, SUM(jl.debit - jl.credit) AS amount
+export async function keptLoanRepayments(companyId: string, range: DateRange) {
+  const rows = await prisma.$queryRaw<
+    Array<{ name: string; lenderId: string | null; amount: Prisma.Decimal | null }>
+  >`
+    SELECT cs.name, cs."lenderId", SUM(jl.debit - jl.credit) AS amount
     FROM "JournalLine" jl
     JOIN "JournalEntry" je ON je.id = jl."entryId"
     JOIN "CapitalSource" cs ON cs."ledgerAccountId" = jl."accountId"
@@ -198,10 +200,14 @@ async function keptLoanRepayments(companyId: string, range: DateRange) {
       AND cs."keptInCapitalFrom" IS NOT NULL AND je.date >= cs."keptInCapitalFrom"
       ${range.start ? Prisma.sql`AND je.date >= ${range.start}` : Prisma.empty}
       ${range.end ? Prisma.sql`AND je.date < ${range.end}` : Prisma.empty}
-    GROUP BY cs.id, cs.name
+    GROUP BY cs.id, cs.name, cs."lenderId"
     ORDER BY cs.name`;
   const lines = rows
-    .map((r) => ({ name: r.name, amount: new Prisma.Decimal(r.amount ?? 0) }))
+    .map((r) => ({
+      name: r.name,
+      lenderId: r.lenderId,
+      amount: new Prisma.Decimal(r.amount ?? 0),
+    }))
     .filter((r) => !r.amount.isZero());
   return { lines, total: lines.reduce((t, r) => t.plus(r.amount), ZERO) };
 }
@@ -262,7 +268,11 @@ export async function getProfitAndLoss(ctx: CompanyContext, raw: unknown = {}) {
     netMarginPct: pct(f.netProfit, f.revenue.total),
     /** Below net profit: loans kept in capital, repaid out of profit (none: nothing shows). */
     keptLoans: {
-      lines: kept.lines.map((l) => ({ name: l.name, amount: l.amount.toFixed(2) })),
+      lines: kept.lines.map((l) => ({
+        name: l.name,
+        lenderId: l.lenderId,
+        amount: l.amount.toFixed(2),
+      })),
       total: kept.total.toFixed(2),
       leftAfter: f.netProfit.minus(kept.total).toFixed(2),
     },

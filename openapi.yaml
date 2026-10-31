@@ -118,6 +118,40 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "422": { $ref: "#/components/responses/Validation" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /catalog/size-charts:
+    get:
+      tags: [Catalog]
+      summary: Each style's size chart (a measurement per size)
+      description: |
+        Every style that has a size chart in the ERP, values by size name, in `inch` or `cm` (a value is
+        null where the ERP has none). Page through with `cursor` until `nextCursor` is null. With
+        `updatedSince` only the charts saved after that time come back: the fallback for
+        `size_chart.changed`. The site keeps its own edits: it takes a newer ERP chart only for a style
+        whose chart it has not edited, or when its admin chooses to.
+      operationId: listSizeCharts
+      parameters:
+        - $ref: "#/components/parameters/UpdatedSince"
+        - name: styleCode
+          in: query
+          required: false
+          description: Only this style's chart.
+          schema: { type: string, maxLength: 60 }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of size charts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, nextCursor]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/SizeChart" } }
+                  nextCursor: { type: [string, "null"] }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "422": { $ref: "#/components/responses/Validation" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /stock:
     get:
       tags: [Stock]
@@ -1424,6 +1458,39 @@ webhooks:
       responses:
         "2XX":
           description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
+  size_chart.changed:
+    post:
+      summary: A style's size chart was saved in the ERP
+      description: |
+        The chart as GET /catalog/size-charts shows it, once per change. Replace the site's chart only if
+        the site has not edited it; otherwise tell the admin the ERP has a newer one.
+      parameters:
+        - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Extas-Delivery,
+            in: header,
+            required: true,
+            description: "The event id: the same on every retry.",
+            schema: { type: string },
+          }
+        - $ref: "#/components/parameters/Signature"
+        - $ref: "#/components/parameters/Timestamp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, createdAt, data]
+              properties:
+                id: { type: string }
+                type: { type: string, const: size_chart.changed }
+                createdAt: { type: string, format: date-time }
+                data:
+                  $ref: "#/components/schemas/SizeChart"
+      responses:
+        "2XX":
+          description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.
   ping:
     post:
       summary: The "Send test" button in the ERP
@@ -2043,6 +2110,26 @@ components:
             message: { type: string }
             details:
               description: 'Field errors ({ "field": ["message"] }) or the code''s own details; errorId for INTERNAL.'
+    SizeChart:
+      type: object
+      required: [styleCode, styleName, unit, sizes, points, updatedAt]
+      properties:
+        styleCode: { type: string }
+        styleName: { type: string }
+        unit: { type: string, enum: [inch, cm] }
+        sizes: { type: array, items: { type: string }, description: "The style's sizes, in order." }
+        points:
+          type: array
+          items:
+            type: object
+            required: [name, values]
+            properties:
+              name: { type: string, description: "Chest, Waist…" }
+              values:
+                type: object
+                description: By size name; null where the ERP has no value.
+                additionalProperties: { type: [number, "null"] }
+        updatedAt: { type: string, format: date-time }
     CatalogVariant:
       type: object
       required:

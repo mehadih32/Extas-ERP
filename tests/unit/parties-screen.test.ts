@@ -115,7 +115,12 @@ describe("buyer and supplier list filters", () => {
     expect(listPartiesSchema.parse(buyers)).toMatchObject({ kind: "BUYER", take: 30 });
     const suppliers = partyListQuery(partyListViewFrom("suppliers", {}));
     expect(suppliers).toMatchObject({ kind: "SUPPLIER", search: undefined, verified: undefined });
-    expect(listPartiesSchema.parse(suppliers)).toEqual({ kind: "SUPPLIER", take: 30 });
+    // One-time ("Random") suppliers have their own list, Other suppliers.
+    expect(listPartiesSchema.parse(suppliers)).toEqual({
+      kind: "SUPPLIER",
+      oneTime: false,
+      take: 30,
+    });
   });
 });
 
@@ -178,8 +183,13 @@ describe("buyer and supplier addresses", () => {
 
   it("shows the Dues tab only with the ledger permission", () => {
     const tabs = (held: string[]) => visiblePartiesTabs(held).map((t) => t.label);
-    expect(tabs(["parties.view"])).toEqual(["Buyers", "Suppliers"]);
-    expect(tabs(["parties.view", "parties.ledger.view"])).toEqual(["Buyers", "Suppliers", "Dues"]);
+    expect(tabs(["parties.view"])).toEqual(["Buyers", "Suppliers", "Other suppliers"]);
+    expect(tabs(["parties.view", "parties.ledger.view"])).toEqual([
+      "Buyers",
+      "Suppliers",
+      "Other suppliers",
+      "Dues",
+    ]);
     expect(tabs(["parties.ledger.view"])).toEqual(["Dues"]);
     expect(tabs([])).toEqual([]);
   });

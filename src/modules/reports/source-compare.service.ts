@@ -146,16 +146,25 @@ export async function productionVsReadyStock(
       everIn: bigint | null;
     }>
   >`
-    SELECT pv."styleId", l.source::text AS source,
-           SUM(m.quantity) FILTER (WHERE m."createdAt" >= ${range.start})::bigint AS "piecesIn",
-           SUM(m.quantity * COALESCE(m."unitCost", 0)) FILTER (WHERE m."createdAt" >= ${range.start}) AS "costIn",
-           SUM(m.quantity)::bigint AS "everIn"
-    FROM "StockMovement" m
-    JOIN "StockLot" l ON l.id = m."lotId"
-    JOIN "ProductVariant" pv ON pv.id = m."variantId"
-    WHERE m."companyId" = ${companyId}
-      AND m.type IN ('OPENING', 'PRODUCTION_IN', 'PRODUCTION_REVERSAL', 'PURCHASE_IN')
-      AND m."createdAt" < ${range.end}
+    SELECT x."styleId", x.source,
+           SUM(x.quantity) FILTER (WHERE x.at >= ${range.start})::bigint AS "piecesIn",
+           SUM(x.quantity * x."unitCost") FILTER (WHERE x.at >= ${range.start}) AS "costIn",
+           SUM(x.quantity)::bigint AS "everIn"
+    FROM (
+      -- Ready stock counts on its purchase date (as its bill does), the rest when it came in.
+      SELECT pv."styleId", l.source::text AS source, m.quantity,
+             COALESCE(m."unitCost", 0) AS "unitCost",
+             COALESCE(rsp."purchaseDate", m."createdAt") AS at
+      FROM "StockMovement" m
+      JOIN "StockLot" l ON l.id = m."lotId"
+      JOIN "ProductVariant" pv ON pv.id = m."variantId"
+      LEFT JOIN "ReadyStockPurchase" rsp
+        ON m.type = 'PURCHASE_IN' AND m."referenceType" = 'ReadyStockPurchase'
+       AND rsp.id = m."referenceId"
+      WHERE m."companyId" = ${companyId}
+        AND m.type IN ('OPENING', 'PRODUCTION_IN', 'PRODUCTION_REVERSAL', 'PURCHASE_IN')
+    ) x
+    WHERE x.at < ${range.end}
     GROUP BY 1, 2`;
 
   const sold = await topSellers(companyId, range, {

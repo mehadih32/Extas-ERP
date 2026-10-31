@@ -193,18 +193,34 @@ export async function sizeChartFromTechPack(ctx: CompanyContext, styleId: string
   const byName = new Map(
     (await styleSizes(prisma, styleId)).map((s) => [s.name.toUpperCase(), s.id]),
   );
+  // Each name once, at most MAX_POINTS: the chart must save as it is filled.
+  const seen = new Set<string>();
+  const points: SizeChartPoint[] = [];
+  let left = 0;
+  for (const m of techPack.measurements) {
+    const name = m.name.trim().slice(0, 40);
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    if (points.length >= MAX_POINTS) {
+      left += 1;
+      continue;
+    }
+    seen.add(key);
+    const values: Record<string, number | null> = {};
+    for (const [size, v] of Object.entries((m.values ?? {}) as Record<string, unknown>)) {
+      const id = byName.get(size.toUpperCase());
+      if (id && typeof v === "number" && v > 0 && v <= 999) values[id] = Math.round(v * 100) / 100;
+    }
+    points.push({ name, values });
+  }
   return {
     techPack: techPack.number,
-    garment: "TOP" as Garment,
+    // Tech packs are for tops (polo, tee, shirt).
+    garment: (techPack.garmentKind ? "TOP" : "OTHER") as Garment,
     unit: techPack.measureUnit,
-    points: techPack.measurements.map((m) => {
-      const values: Record<string, number | null> = {};
-      for (const [size, v] of Object.entries((m.values ?? {}) as Record<string, unknown>)) {
-        const id = byName.get(size.toUpperCase());
-        if (id && typeof v === "number") values[id] = v;
-      }
-      return { name: m.name.slice(0, 40), values };
-    }),
+    points,
+    /** Measurements left out past the chart's limit. */
+    left,
   };
 }
 

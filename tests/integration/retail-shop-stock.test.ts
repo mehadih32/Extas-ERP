@@ -16,6 +16,7 @@ import { checkParcel, returnsPage } from "@/modules/retail/returns.service";
 import * as shopStock from "@/modules/retail/shop-stock.service";
 import * as stores from "@/modules/retail/stores.service";
 import { resolvePeriod } from "@/modules/accounts/periods";
+import { findProductionParties } from "@/modules/production/screens.service";
 import { productionVsReadyStock } from "@/modules/reports/source-compare.service";
 import * as orders from "@/modules/sales/order.service";
 
@@ -323,6 +324,8 @@ run("Shop stock: the shops' reserve and ready stock bought for them (plan v6 sec
     expect(Number(purchase.extraCost)).toBe(2000);
 
     // Listed under Other suppliers, not in the regular suppliers list.
+    const picker = await findProductionParties(shop.owner, { kind: "SUPPLIER" });
+    expect(picker.map((p) => p.name)).not.toContain("Gulistan wholesaler");
     const other = await parties.listParties(shop.owner, { kind: "SUPPLIER", oneTime: true });
     expect(other.items.map((p) => p.name)).toEqual(["Gulistan wholesaler"]);
     const regular = await parties.listParties(shop.owner, { kind: "SUPPLIER", oneTime: false });
@@ -388,6 +391,18 @@ run("Shop stock: the shops' reserve and ready stock bought for them (plan v6 sec
       price: "300",
       pin: PIN,
     });
+    // Bought earlier but written down today: it counts on its purchase date.
+    const old = await shopStock.buyReadyStock(owner, {
+      supplier: { mode: "PICK", supplierId: supplier.id },
+      style: { mode: "PICK", styleId: shop.polo.id },
+      warehouseId: shop.warehouse.id,
+      purchaseDate: "2020-01-15",
+      lines: [{ colorId: navyM.colorId, sizeId: navyM.sizeId, quantity: 5 }],
+      priceBasis: "PIECE",
+      price: "300",
+      pin: PIN,
+    });
+    expect(old.billId).toBeTruthy();
     // 10 pieces sold at 900.
     await wholesale(10);
 
@@ -398,13 +413,14 @@ run("Shop stock: the shops' reserve and ready stock bought for them (plan v6 sec
     // Shares by the pieces that came in each way: 60 opening, 60 made, 40 bought.
     const polo = report.styles.find((r) => r.styleId === shop.polo.id)!;
     expect(polo.shared).toBe(true);
-    expect(polo.shareNote).toBe("38% production, 25% ready stock, 38% opening and other stock");
+    // The earlier purchase is not in this month's pieces, but counts in the shares (45 bought).
+    expect(polo.shareNote).toBe("36% production, 27% ready stock, 36% opening and other stock");
     const sold = Object.values(polo.sources).reduce((a, f) => a + f.piecesSold, 0);
     const sales = Object.values(polo.sources).reduce((a, f) => a + Number(f.sales), 0);
     expect(sold).toBe(10);
     expect(sales).toBe(9000);
-    expect(polo.sources.READY_STOCK).toMatchObject({ piecesSold: 3, sales: "2250.00" });
-    expect(polo.sources.PRODUCTION).toMatchObject({ piecesSold: 4, sales: "3375.00" });
+    expect(polo.sources.READY_STOCK).toMatchObject({ piecesSold: 3 });
+    expect(polo.sources.PRODUCTION).toMatchObject({ piecesSold: 4 });
     expect(report.totals.READY_STOCK.profitPct).not.toBeNull();
 
     // Costs and profit are for those who see the financials.

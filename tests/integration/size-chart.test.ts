@@ -102,10 +102,33 @@ run("Size charts: on the style, from the tech pack, to the shops", () => {
     expect((await charts.getSizeChart(shop.owner, shop.polo.id)).hasTechPack).toBe(true);
     const filled = await charts.sizeChartFromTechPack(shop.owner, shop.polo.id);
     expect(filled).toMatchObject({ techPack: "TP-2026-00001", unit: "CM" });
+    expect(await prisma.styleSizeChart.count()).toBe(0);
     expect(filled.points).toEqual([
       { name: "Chest width", values: { [sizeId("S")]: 96.5, [sizeId("M")]: 101.5 } },
     ]);
-    expect(await prisma.styleSizeChart.count()).toBe(0);
+    expect(filled.left).toBe(0);
+
+    // A name twice is taken once; past 20 measurements the rest are left out (and counted).
+    for (let i = 0; i < 22; i++) {
+      await prisma.techPackMeasurement.create({
+        data: {
+          companyId: shop.company.id,
+          techPackId: pack.id,
+          code: `B${i}`,
+          name: i === 0 ? "chest width" : `Point ${i}`,
+          tolerance: 1,
+          sortOrder: i + 1,
+          values: { S: 10 },
+          sources: {},
+        },
+      });
+    }
+    const many = await charts.sizeChartFromTechPack(shop.owner, shop.polo.id);
+    expect(many.points).toHaveLength(20);
+    expect(many.points.filter((p) => p.name.toLowerCase() === "chest width")).toHaveLength(1);
+    expect(many.left).toBe(2);
+    // What it fills saves as it is.
+    await charts.saveSizeChart(shop.owner, shop.polo.id, { unit: many.unit, points: many.points });
   });
 
   it("gives the shops the chart by size name, and a size_chart.changed once per change", async () => {

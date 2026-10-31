@@ -9,6 +9,7 @@ import { Panel } from "@/components/sales/detail-bits";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import type { SizeChartScreen } from "@/modules/inventory/size-chart.service";
+import { MAX_POINTS } from "@/modules/inventory/size-chart-points";
 import {
   saveSizeChartAction,
   sizeChartFromTechPackAction,
@@ -172,7 +173,14 @@ function EditSizeChart({
                         points: result.data.points,
                       }),
                     );
-                    setNote(`Filled from ${result.data.techPack}. Check the numbers, then save.`);
+                    const left = result.data.left;
+                    setNote(
+                      `Filled from ${result.data.techPack}.${
+                        left > 0
+                          ? ` ${left} more measurements were left out: a chart holds ${MAX_POINTS}.`
+                          : ""
+                      } Check the numbers, then save.`,
+                    );
                   })
                 }
               >

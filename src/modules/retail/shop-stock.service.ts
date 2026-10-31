@@ -408,213 +408,233 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
   const colorName = new Map(colors.map((c) => [c.id, c.name]));
   const sizeName = new Map(sizes.map((s) => [s.id, s.name]));
 
-  const result = await runTransaction(async (tx) => {
-    // A new or one-time supplier first: its account is locked like any other below.
-    const seller = supplier ?? (await newSupplierTx(tx, ctx, input.supplier as NewSupplierChoice));
-    // Lock order: the supplier's account first, then the SKUs' costs.
-    await lockSupplierAccount(tx, companyId, seller.id);
-    const style =
-      pickedStyle ??
-      (await tx.style.create({
-        data: {
-          companyId,
-          code: (input.style as { code: string }).code,
-          name: (input.style as { name: string }).name,
-          categoryId: (input.style as { categoryId: string }).categoryId,
-        },
-        select: { id: true, code: true, name: true, isActive: true },
+  const result = await retryOnPartyCode(Boolean(supplier), () =>
+    runTransaction(async (tx) => {
+      // A new or one-time supplier first: its account is locked like any other below.
+      const seller =
+        supplier ?? (await newSupplierTx(tx, ctx, input.supplier as NewSupplierChoice));
+      // Lock order: the supplier's account first, then the SKUs' costs.
+      await lockSupplierAccount(tx, companyId, seller.id);
+      const style =
+        pickedStyle ??
+        (await tx.style.create({
+          data: {
+            companyId,
+            code: (input.style as { code: string }).code,
+            name: (input.style as { name: string }).name,
+            categoryId: (input.style as { categoryId: string }).categoryId,
+          },
+          select: { id: true, code: true, name: true, isActive: true },
+        }));
+      const variants = await skusForTx(tx, ctx, style, input.lines, colorName, sizeName);
+      if (input.style.mode === "NEW") {
+        await auditInCompany(
+          ctx,
+          meta,
+          {
+            action: "CREATE",
+            entityType: "Style",
+            entityId: style.id,
+            summary: `Created style ${style.code} (${style.name}) with ${variants.size} SKUs from Buy ready stock`,
+          },
+          tx,
+        );
+        if (input.style.sizeChart) {
+          await saveSizeChartTx(tx, companyId, style.id, input.style.sizeChart, ctx.user.id);
+        }
+      }
+      const lines = input.lines.map((l) => ({
+        variantId: variants.get(`${l.colorId}:${l.sizeId}`)!.id,
+        quantity: l.quantity,
+        unitPrice: figures.unitPrice,
+        unitCost: figures.unitCost,
       }));
-    const variants = await skusForTx(tx, ctx, style, input.lines, colorName, sizeName);
-    if (input.style.mode === "NEW" && input.style.sizeChart) {
-      await saveSizeChartTx(tx, companyId, style.id, input.style.sizeChart, ctx.user.id);
-    }
-    const lines = input.lines.map((l) => ({
-      variantId: variants.get(`${l.colorId}:${l.sizeId}`)!.id,
-      quantity: l.quantity,
-      unitPrice: figures.unitPrice,
-      unitCost: figures.unitCost,
-    }));
-    await lockRows(
-      tx,
-      "ProductVariant",
-      lines.map((l) => l.variantId),
-    );
-    const byId = new Map([...variants.values()].map((v) => [v.id, v]));
-    const number = await nextDocumentNumber(tx, companyId, "READY_STOCK_PURCHASE");
-    const extras = input.extraCosts.map((c) => `${c.label} ${c.amount}`).join(", ");
-    const bill = await tx.supplierBill.create({
-      data: {
-        companyId,
-        number: await nextDocumentNumber(tx, companyId, "SUPPLIER_BILL"),
-        supplierRef: input.supplierRef,
-        supplierId: seller.id,
-        billDate: purchaseDate,
-        totalAmount: total,
-        paymentType: "DUE",
-        dueAmount: total,
-        notes: `Ready stock ${number}: ${style.code} ${style.name}, ${pieces} pieces${
-          extras ? ` (with ${extras})` : ""
-        }`,
-      },
-    });
-    const created = await tx.readyStockPurchase.create({
-      data: {
-        companyId,
-        number,
-        supplierId: seller.id,
-        billId: bill.id,
-        styleId: style.id,
-        warehouseId: warehouse.id,
-        purchaseDate,
-        supplierRef: input.supplierRef,
-        retailOnly: input.retailOnly,
-        priceMode: input.priceMode,
-        fixedPrice: input.priceMode === "FIXED" ? input.fixedPrice : null,
-        extraCost: extra,
-        extraCosts: input.extraCosts.length
-          ? (input.extraCosts as unknown as Prisma.InputJsonArray)
-          : undefined,
-        pieces,
-        totalAmount: total,
-        note: input.note,
-        createdById: ctx.user.id,
-        lines: { create: lines.map((l) => ({ companyId, ...l })) },
-      },
-    });
-    const lots = await openLots(tx, ctx, {
-      variantIds: lines.map((l) => l.variantId),
-      warehouseId: warehouse.id,
-      source: "PURCHASE",
-    });
-    // Stock value per line; the last line takes the rounding so the books match the bill.
-    let booked = ZERO;
-    const values = lines.map((l, i) => {
-      const value =
-        i === lines.length - 1 ? total.minus(booked) : money(l.unitCost.times(l.quantity));
-      booked = booked.plus(value);
-      return value;
-    });
-    for (const l of lines) {
-      const variant = byId.get(l.variantId)!;
-      const costs = await tx.productVariant.findUniqueOrThrow({
-        where: { id: l.variantId },
-        select: { avgCost: true },
-      });
-      const onHand = await tx.stockBalance.aggregate({
-        where: { variantId: l.variantId, grade: "A_GRADE" },
-        _sum: { quantity: true },
-      });
-      const key = { variantId: l.variantId, warehouseId: warehouse.id, grade: "A_GRADE" as const };
-      await tx.stockBalance.upsert({
-        where: { variantId_warehouseId_grade: key },
-        create: { ...key, companyId, quantity: l.quantity },
-        update: { quantity: { increment: l.quantity } },
-      });
-      const movement = await tx.stockMovement.create({
+      await lockRows(
+        tx,
+        "ProductVariant",
+        lines.map((l) => l.variantId),
+      );
+      const byId = new Map([...variants.values()].map((v) => [v.id, v]));
+      const number = await nextDocumentNumber(tx, companyId, "READY_STOCK_PURCHASE");
+      const extras = input.extraCosts.map((c) => `${c.label} ${c.amount}`).join(", ");
+      const bill = await tx.supplierBill.create({
         data: {
-          ...key,
           companyId,
-          type: "PURCHASE_IN",
+          number: await nextDocumentNumber(tx, companyId, "SUPPLIER_BILL"),
+          supplierRef: input.supplierRef,
+          supplierId: seller.id,
+          billDate: purchaseDate,
+          totalAmount: total,
+          paymentType: "DUE",
+          dueAmount: total,
+          notes: `Ready stock ${number}: ${style.code} ${style.name}, ${pieces} pieces${
+            extras ? ` (with ${extras})` : ""
+          }`,
+        },
+      });
+      const created = await tx.readyStockPurchase.create({
+        data: {
+          companyId,
+          number,
+          supplierId: seller.id,
+          billId: bill.id,
+          styleId: style.id,
+          warehouseId: warehouse.id,
+          purchaseDate,
+          supplierRef: input.supplierRef,
+          retailOnly: input.retailOnly,
+          priceMode: input.priceMode,
+          fixedPrice: input.priceMode === "FIXED" ? input.fixedPrice : null,
+          extraCost: extra,
+          extraCosts: input.extraCosts.length
+            ? (input.extraCosts as unknown as Prisma.InputJsonArray)
+            : undefined,
+          pieces,
+          totalAmount: total,
+          note: input.note,
+          createdById: ctx.user.id,
+          lines: { create: lines.map((l) => ({ companyId, ...l })) },
+        },
+      });
+      const lots = await openLots(tx, ctx, {
+        variantIds: lines.map((l) => l.variantId),
+        warehouseId: warehouse.id,
+        source: "PURCHASE",
+      });
+      // Stock value per line; the last line takes the rounding so the books match the bill.
+      let booked = ZERO;
+      const values = lines.map((l, i) => {
+        const value =
+          i === lines.length - 1 ? total.minus(booked) : money(l.unitCost.times(l.quantity));
+        booked = booked.plus(value);
+        return value;
+      });
+      for (const l of lines) {
+        const variant = byId.get(l.variantId)!;
+        const costs = await tx.productVariant.findUniqueOrThrow({
+          where: { id: l.variantId },
+          select: { avgCost: true },
+        });
+        const onHand = await tx.stockBalance.aggregate({
+          where: { variantId: l.variantId, grade: "A_GRADE" },
+          _sum: { quantity: true },
+        });
+        const key = {
+          variantId: l.variantId,
+          warehouseId: warehouse.id,
+          grade: "A_GRADE" as const,
+        };
+        await tx.stockBalance.upsert({
+          where: { variantId_warehouseId_grade: key },
+          create: { ...key, companyId, quantity: l.quantity },
+          update: { quantity: { increment: l.quantity } },
+        });
+        const movement = await tx.stockMovement.create({
+          data: {
+            ...key,
+            companyId,
+            type: "PURCHASE_IN",
+            quantity: l.quantity,
+            unitCost: l.unitCost,
+            referenceType: "ReadyStockPurchase",
+            referenceId: created.id,
+            lotId: lots.get(l.variantId),
+            note: `Bought ready: ${number} from ${seller.name}`,
+            createdById: ctx.user.id,
+          },
+        });
+        await receiveAtCostTx(tx, ctx, {
+          variant,
+          grade: "A_GRADE",
+          onHand: onHand._sum.quantity ?? 0,
+          average: costs.avgCost,
           quantity: l.quantity,
           unitCost: l.unitCost,
-          referenceType: "ReadyStockPurchase",
-          referenceId: created.id,
-          lotId: lots.get(l.variantId),
-          note: `Bought ready: ${number} from ${seller.name}`,
-          createdById: ctx.user.id,
-        },
-      });
-      await receiveAtCostTx(tx, ctx, {
-        variant,
-        grade: "A_GRADE",
-        onHand: onHand._sum.quantity ?? 0,
-        average: costs.avgCost,
-        quantity: l.quantity,
-        unitCost: l.unitCost,
-        movementId: movement.id,
-      });
-    }
-    const acc = await ensureControlAccounts(companyId, tx);
-    const entry = await postJournalEntry(tx, {
-      companyId,
-      date: purchaseDate,
-      description: `Bill ${bill.number} — ${seller.name}${
-        input.supplierRef ? ` (${input.supplierRef})` : ""
-      }: ready stock ${number} into ${warehouse.name}`,
-      sourceType: "SUPPLIER_BILL",
-      sourceId: bill.id,
-      postedById: ctx.user.id,
-      lines: [
-        ...lines.map((l, i) => ({
-          accountId: acc.INVENTORY,
-          debit: values[i]!,
-          memo: `${byId.get(l.variantId)!.sku} × ${l.quantity}`,
-        })),
-        {
-          accountId: acc.PAYABLE,
-          partyId: seller.id,
-          credit: total,
-          memo: input.supplierRef ?? undefined,
-        },
-      ],
-    });
-    await tx.supplierBill.update({ where: { id: bill.id }, data: { journalEntryId: entry.id } });
-    // Paid now: one payment voucher against this bill, from the account chosen.
-    let voucher: string | null = null;
-    if (paidNow.gt(0) && paidFromId && input.payment.mode !== "DUE") {
-      const payment = await tx.payment.create({
-        data: {
-          companyId,
-          number: await nextDocumentNumber(tx, companyId, "PAYMENT_VOUCHER"),
-          direction: "PAID",
-          method: input.payment.method,
-          partyId: seller.id,
-          supplierBillId: bill.id,
-          amount: paidNow,
-          paymentDate: purchaseDate,
-          accountId: paidFromId,
-          reference: input.payment.reference,
-          notes: `Ready stock ${number}`,
-        },
-      });
-      const paid = await postJournalEntry(tx, {
+          movementId: movement.id,
+        });
+      }
+      const acc = await ensureControlAccounts(companyId, tx);
+      const entry = await postJournalEntry(tx, {
         companyId,
         date: purchaseDate,
-        description: `Payment ${payment.number} to ${seller.name} for bill ${bill.number} (ready stock ${number})`,
-        sourceType: "PAYMENT",
-        sourceId: payment.id,
+        description: `Bill ${bill.number} — ${seller.name}${
+          input.supplierRef ? ` (${input.supplierRef})` : ""
+        }: ready stock ${number} into ${warehouse.name}`,
+        sourceType: "SUPPLIER_BILL",
+        sourceId: bill.id,
         postedById: ctx.user.id,
         lines: [
-          { accountId: acc.PAYABLE, partyId: seller.id, debit: paidNow, memo: bill.number },
-          { accountId: paidFromId, credit: paidNow, memo: input.payment.reference ?? undefined },
+          ...lines.map((l, i) => ({
+            accountId: acc.INVENTORY,
+            debit: values[i]!,
+            memo: `${byId.get(l.variantId)!.sku} × ${l.quantity}`,
+          })),
+          {
+            accountId: acc.PAYABLE,
+            partyId: seller.id,
+            credit: total,
+            memo: input.supplierRef ?? undefined,
+          },
         ],
       });
-      await tx.payment.update({ where: { id: payment.id }, data: { journalEntryId: paid.id } });
-      voucher = payment.number;
-    }
-    if (input.retailOnly) await holdForShopsTx(tx, ctx, style.id, lines, byId);
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "CREATE",
-        entityType: "ReadyStockPurchase",
-        entityId: created.id,
-        summary: `Ready stock ${number} (bill ${bill.number}) from ${seller.name}${
-          seller.oneTime ? " (one-time supplier)" : ""
-        }: ${style.code} × ${pieces} into ${warehouse.name}, ${total.toFixed(2)}${
-          extras ? ` with ${extras}` : ""
-        }; ${voucher ? `paid ${paidNow.toFixed(2)} (${voucher})` : "due"}${
-          input.retailOnly ? ", retail only" : ""
-        }`,
-      },
-      tx,
-    );
-    // The payment, or an advance already paid to the supplier, settles the bill.
-    await settleSupplierBills(tx, companyId, seller.id);
-    await recordPartyActivity(seller.id, purchaseDate, tx);
-    return { created, style, lines, byId };
-  });
+      await tx.supplierBill.update({ where: { id: bill.id }, data: { journalEntryId: entry.id } });
+      // Paid now: one payment voucher against this bill, from the account chosen.
+      let voucher: string | null = null;
+      if (paidNow.gt(0) && paidFromId && input.payment.mode !== "DUE") {
+        const payment = await tx.payment.create({
+          data: {
+            companyId,
+            number: await nextDocumentNumber(tx, companyId, "PAYMENT_VOUCHER"),
+            direction: "PAID",
+            method: input.payment.method,
+            partyId: seller.id,
+            supplierBillId: bill.id,
+            amount: paidNow,
+            paymentDate: purchaseDate,
+            accountId: paidFromId,
+            reference: input.payment.reference,
+            notes: `Ready stock ${number}`,
+          },
+        });
+        const paid = await postJournalEntry(tx, {
+          companyId,
+          date: purchaseDate,
+          description: `Payment ${payment.number} to ${seller.name} for bill ${bill.number} (ready stock ${number})`,
+          sourceType: "PAYMENT",
+          sourceId: payment.id,
+          postedById: ctx.user.id,
+          lines: [
+            { accountId: acc.PAYABLE, partyId: seller.id, debit: paidNow, memo: bill.number },
+            { accountId: paidFromId, credit: paidNow, memo: input.payment.reference ?? undefined },
+          ],
+        });
+        await tx.payment.update({ where: { id: payment.id }, data: { journalEntryId: paid.id } });
+        voucher = payment.number;
+      }
+      if (input.retailOnly) await holdForShopsTx(tx, ctx, style.id, lines, byId);
+      await auditInCompany(
+        ctx,
+        meta,
+        {
+          action: "CREATE",
+          entityType: "ReadyStockPurchase",
+          entityId: created.id,
+          summary: `Ready stock ${number} (bill ${bill.number}) from ${seller.name}${
+            seller.oneTime ? " (one-time supplier)" : ""
+          }: ${style.code} × ${pieces} into ${warehouse.name}, ${total.toFixed(2)}${
+            extras ? ` with ${extras}` : ""
+          }; ${voucher ? `paid ${paidNow.toFixed(2)} (${voucher})` : "due"}${
+            input.retailOnly ? ", retail only" : ""
+          }`,
+        },
+        tx,
+      );
+      // The payment, or an advance already paid to the supplier, settles the bill.
+      await settleSupplierBills(tx, companyId, seller.id);
+      await recordPartyActivity(seller.id, purchaseDate, tx);
+      return { created, style, lines, byId };
+    }),
+  );
   const purchase = result.created;
   const { style, lines } = result;
   const variants = result.byId;
@@ -658,6 +678,25 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
 type NewSupplierChoice = Exclude<z.infer<typeof supplierChoice>, { mode: "PICK" }>;
 
 /** A supplier added from the form: a regular one, or a one-time one (Other suppliers). */
+/**
+ * Two people adding a supplier at the same moment can take the same new code:
+ * the purchase is tried again (a few times) with the next one.
+ */
+async function retryOnPartyCode<T>(known: boolean, work: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await work();
+    } catch (error) {
+      const clash =
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002" &&
+        String((error.meta as { modelName?: string } | undefined)?.modelName ?? "Party") ===
+          "Party";
+      if (known || !clash || attempt >= 4) throw error;
+    }
+  }
+}
+
 async function newSupplierTx(
   tx: Prisma.TransactionClient,
   ctx: CompanyContext,

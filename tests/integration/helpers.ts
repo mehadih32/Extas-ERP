@@ -58,6 +58,7 @@ export async function resetDb() {
   await prisma.holiday.deleteMany();
   await prisma.hrSettings.deleteMany();
   await prisma.expense.deleteMany();
+  await prisma.recurringExpense.deleteMany();
   await prisma.salaryRevision.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.expenseHead.deleteMany();
@@ -69,6 +70,7 @@ export async function resetDb() {
   await prisma.reEngagementCampaign.deleteMany();
   await prisma.capitalInstallment.deleteMany();
   await prisma.capitalSource.deleteMany();
+  await prisma.capitalLender.deleteMany();
   await prisma.pettyCashBox.deleteMany();
   await prisma.fixedAsset.deleteMany();
   await prisma.bankAccount.deleteMany();

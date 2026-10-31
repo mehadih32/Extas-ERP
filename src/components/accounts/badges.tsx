@@ -3,7 +3,7 @@ import type { AssetStatus } from "@prisma/client";
 import { StatusBadge, type Tone } from "@/components/sales/badges";
 import type { ExpenseStatus } from "@/modules/expenses/schemas";
 
-import { ASSET_STATUS_LABELS, EXPENSE_STATUS_LABELS } from "./labels";
+import { ASSET_STATUS_LABELS, EXPENSE_STATUS_LABELS, LOAN_STATE_LABELS } from "./labels";
 
 const EXPENSE_TONES: Record<ExpenseStatus, Tone> = {
   PENDING: "open",
@@ -29,4 +29,26 @@ const ASSET_TONES: Record<AssetStatus, Tone> = {
 
 export function AssetBadge({ status }: { status: AssetStatus }) {
   return <StatusBadge tone={ASSET_TONES[status]}>{ASSET_STATUS_LABELS[status]}</StatusBadge>;
+}
+
+const LOAN_TONES: Record<keyof typeof LOAN_STATE_LABELS, Tone> = {
+  RUNNING: "open",
+  RENEWED: "open",
+  CLOSED: "closed",
+};
+
+/** A loan or a person's term: Running, Renewed (how many times) or Closed. */
+export function LoanBadge({
+  state,
+  renewals = 0,
+}: {
+  state: keyof typeof LOAN_STATE_LABELS;
+  renewals?: number;
+}) {
+  return (
+    <StatusBadge tone={LOAN_TONES[state]}>
+      {LOAN_STATE_LABELS[state]}
+      {state === "RENEWED" && renewals > 0 ? ` ×${renewals}` : ""}
+    </StatusBadge>
+  );
 }

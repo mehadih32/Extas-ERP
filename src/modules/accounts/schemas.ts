@@ -1,6 +1,7 @@
 import {
   AccountSubType,
   AccountType,
+  CapitalLenderKind,
   CapitalSourceKind,
   DepreciationMethod,
   InstallmentStatus,
@@ -440,3 +441,107 @@ export const createPettyCashBoxSchema = z.object({
 });
 
 export const updatePettyCashBoxSchema = z.object(pettyCashFields).partial();
+
+// --- Loans & capital page ----------------------------------------------------------------
+
+/** The owner's web PIN, asked when installments are set to pay by themselves. */
+const pin = z.string().trim().max(20).optional();
+
+/**
+ * A loan from a bank, an NGO or a person. A bank or NGO loan is repaid by a fixed
+ * installment (its interest is worked out from it); a person's money is a term
+ * whose profit is paid every few months, then renewed or returned. `before`: a
+ * loan running before the ERP, entered at what is owed today (no money moves).
+ */
+export const addLoanSchema = z
+  .object({
+    lenderKind: z.enum(CapitalLenderKind),
+    /** An existing bank, NGO or person... */
+    lenderId: id.optional(),
+    /** ...or a new one. */
+    lenderName: z.string().trim().min(2).max(160).optional(),
+    contact: optionalText(200),
+    amount: positiveMoney,
+    takenOn: day,
+    before: z.object({ owedNow: positiveMoney }).optional(),
+    ...cashSide,
+    interestRate: percent.nullish(),
+    keepInCapital: z.boolean().default(false),
+    installmentAmount: positiveMoney.optional(),
+    installmentsLeft: z.number().int().min(1).max(360).optional(),
+    nextDueDate: day.optional(),
+    autoPay: z.boolean().default(false),
+    pin,
+    periodMonths: z.number().int().min(1).max(60).optional(),
+    profitPerPeriod: positiveMoney.optional(),
+    /** Profit per period as % of the money: worked out into profitPerPeriod. */
+    profitPct: percent.optional(),
+    notes: optionalText(2000),
+  })
+  .superRefine((v, ctx) => {
+    const need = (ok: unknown, path: string, message: string) => {
+      if (!ok) ctx.addIssue({ code: "custom", path: [path], message });
+    };
+    need(v.lenderId || v.lenderName, "lenderName", "Enter the name");
+    if (v.before) need(v.before.owedNow <= v.amount, "before", "More than the loan itself");
+    if (v.lenderKind === "PERSON") {
+      need(v.periodMonths, "periodMonths", "Enter the months");
+      need(v.profitPerPeriod || v.profitPct, "profitPerPeriod", "Enter the profit");
+    } else {
+      need(v.installmentAmount, "installmentAmount", "Enter the installment");
+      need(v.installmentsLeft, "installmentsLeft", "Enter how many");
+      need(v.nextDueDate, "nextDueDate", "Enter the date");
+    }
+  });
+
+/** At the end of a person's term: renew it, return the money, or return part of it. */
+export const termActionSchema = z
+  .object({
+    action: z.enum(["RENEW", "RETURN", "RETURN_PART"]),
+    /** The profit installment shown when it was pressed: refused when it is no longer the due one. */
+    installmentId: id.optional(),
+    /** RETURN_PART: how much of the money goes back now. */
+    returnAmount: positiveMoney.optional(),
+    /** The profit paid now; default: the term's profit. */
+    profit: money.optional(),
+    date: day.optional(),
+    ...cashSide,
+  })
+  .refine((v) => v.action !== "RETURN_PART" || v.returnAmount, {
+    message: "Enter how much goes back",
+    path: ["returnAmount"],
+  });
+
+/** Installments paid by themselves on their due day, from this account (the PIN to switch on). */
+export const autoPaySchema = z.object({
+  on: z.boolean(),
+  method: z.enum(PaymentMethod).default("BANK_TRANSFER"),
+  accountId: id.optional(),
+  pin,
+});
+
+export const keepInCapitalSchema = z.object({ keepInCapital: z.boolean() });
+
+// --- Monthly fixed costs -------------------------------------------------------------------
+
+export const recurringExpenseSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  headId: id,
+  amount: positiveMoney,
+  dayOfMonth: z.number().int().min(1).max(31),
+  method: z.enum(PaymentMethod).default("CASH"),
+  accountId: id.optional(),
+  /** First month recorded; default: this month. */
+  startMonth: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
+  pin,
+});
+
+export const updateRecurringExpenseSchema = z.object({
+  amount: positiveMoney.optional(),
+  dayOfMonth: z.number().int().min(1).max(31).optional(),
+  stop: z.boolean().optional(),
+  pin,
+});

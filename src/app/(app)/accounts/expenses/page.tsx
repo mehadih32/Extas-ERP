@@ -1,10 +1,10 @@
-import { CoinsIcon, PlusIcon, TagsIcon } from "lucide-react";
+import { CalendarClockIcon, CoinsIcon, PlusIcon, TagsIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AccountsFilters } from "@/components/accounts/accounts-filters";
 import { ExpenseList } from "@/components/accounts/expense-list";
-import { pettyCashHref } from "@/components/accounts/labels";
+import { loansHref, pettyCashHref } from "@/components/accounts/labels";
 import { Amount, PrivacyProvider, PrivacyToggle } from "@/components/accounts/privacy";
 import {
   accountsListSearch,
@@ -79,6 +79,14 @@ export default async function ExpensesPage({
                 <Link href="/accounts/expenses/heads">
                   <TagsIcon aria-hidden />
                   Expense heads
+                </Link>
+              </Button>
+            )}
+            {ctx.can("accounts.view") && (
+              <Button asChild variant="outline" className="w-full sm:w-auto">
+                <Link href={loansHref.fixedCosts}>
+                  <CalendarClockIcon aria-hidden />
+                  Monthly fixed costs
                 </Link>
               </Button>
             )}

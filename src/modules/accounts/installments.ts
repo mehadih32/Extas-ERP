@@ -91,3 +91,39 @@ export function planTotals(installments: PlannedInstallment[]) {
     { principal: ZERO, interest: ZERO, amount: ZERO },
   );
 }
+
+/**
+ * A plan from the installment the lender asks for, with no interest rate: what is
+ * paid over the loan (amount x count) beyond what is owed is the interest, spread
+ * evenly. 10,00,000 repaid as 12 x 1,00,000: each installment is 83,333.33
+ * principal and 16,666.67 interest; the last takes the paisa left over. Null when
+ * the installments do not cover what is owed.
+ */
+export function planFromInstallment(input: {
+  principal: Prisma.Decimal;
+  amount: Prisma.Decimal;
+  count: number;
+  firstDueDate: string;
+  everyMonths: number;
+}): PlannedInstallment[] | null {
+  const { principal, amount, count, firstDueDate, everyMonths } = input;
+  if (amount.times(count).lt(principal)) return null;
+  // Rounded up, so the last installment's share is never more than the others' (and its
+  // interest never below zero): the installment covers it, as amount x count >= principal.
+  const each = principal.dividedBy(count).toDecimalPlaces(2, Prisma.Decimal.ROUND_UP);
+  const installments: PlannedInstallment[] = [];
+  let balance = principal;
+  for (let i = 1; i <= count; i++) {
+    const principalPart = i === count ? balance : Prisma.Decimal.min(each, balance);
+    balance = balance.minus(principalPart);
+    installments.push({
+      number: i,
+      dueDate: addMonths(firstDueDate, (i - 1) * everyMonths),
+      principal: principalPart,
+      interest: amount.minus(principalPart),
+      amount,
+      balanceAfter: balance,
+    });
+  }
+  return installments;
+}

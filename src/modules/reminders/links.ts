@@ -92,6 +92,15 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
     case "BackupRun":
       // A backup, test restore or restore failed or finished (the platform owner's).
       return ctx.user?.isSuperAdmin ? "/settings/backups" : null;
+    case "CapitalLender":
+      // A person's term ends soon: their profile.
+      return ctx.can("accounts.view") ? `/accounts/loans/${id}` : null;
+    case "CapitalSource":
+      // An installment did not pay by itself (one message for the night).
+      return ctx.can("accounts.view") ? "/accounts/loans" : null;
+    case "RecurringExpense":
+      // A monthly fixed cost was not recorded.
+      return ctx.can("accounts.view") ? "/accounts/expenses/fixed-costs" : null;
     case "FullCheckRun":
     case "ClaudeCodeRequest":
       // A Full check finished, or a Claude Code fix is ready (the platform owner's).

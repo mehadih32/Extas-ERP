@@ -463,7 +463,13 @@ export const addLoanSchema = z
     contact: optionalText(200),
     amount: positiveMoney,
     takenOn: day,
-    before: z.object({ owedNow: positiveMoney }).optional(),
+    before: z
+      .object({
+        owedNow: positiveMoney,
+        /** Interest (or a person's profit) already paid before the ERP: shown on the profile only. */
+        interestPaid: money.optional(),
+      })
+      .optional(),
     ...cashSide,
     interestRate: percent.nullish(),
     keepInCapital: z.boolean().default(false),

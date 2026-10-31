@@ -16,6 +16,8 @@ export type ReportLine = {
   code: string | null;
   name: string;
   amount: string;
+  /** Where the line opens when it is not a ledger account (a lender's profile). */
+  href?: string;
 };
 
 const amountClass = (fixed: string) =>
@@ -33,9 +35,9 @@ export function ReportLines({ lines, currency }: { lines: ReportLine[]; currency
           className="flex min-w-0 items-baseline justify-between gap-3 py-2 text-sm"
         >
           <span className="min-w-0 break-words">
-            {l.accountId ? (
+            {l.accountId || l.href ? (
               <Link
-                href={accountsHref.account(l.accountId)}
+                href={l.href ?? accountsHref.account(l.accountId!)}
                 className="underline-offset-4 hover:text-primary hover:underline"
               >
                 {l.code && (

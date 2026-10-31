@@ -4,6 +4,7 @@ import { dateOnly, daysBetween, localDay } from "@/lib/dates";
 import { formatDay, groupAmount } from "@/lib/display";
 import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
+import { installmentsComing } from "@/modules/accounts/loans.service";
 import { canSeeFinancials, canSeeSalesAmounts, canSeeStock } from "@/modules/dashboard/access";
 import { homePeriod, homeRangeSchema, type HomePeriod } from "@/modules/dashboard/home.service";
 import { stockWindow } from "@/modules/dashboard/insights.service";
@@ -36,6 +37,8 @@ import { whatsappLink } from "@/modules/parties/contact";
 /** Rows each part lists; the rest are a click away. */
 const LIMIT = 5;
 const FEW = 3;
+/** Days ahead the loan installments card looks. */
+export const INSTALLMENT_DAYS = 7;
 
 /** An order whose discounts come to more than this share of its goods is flagged. */
 export const BIG_DISCOUNT_PCT = 10;
@@ -51,6 +54,8 @@ export function actionZoneAccess(ctx: Pick<CompanyContext, "can">) {
     /** The owner (company settings) looks over the period's returns and big discounts. */
     returns: ownerReview(ctx),
     discounts: ownerReview(ctx),
+    /** Loan installments and a person's profit dates: those who see the business's money and Accounts. */
+    installments: canSeeFinancials(ctx) && ctx.can("accounts.view"),
   };
 }
 
@@ -382,13 +387,14 @@ export async function getActionZone(ctx: CompanyContext, raw: unknown = {}, now 
   const today = localDay(now, tz);
   const period = homePeriod(range, today, tz);
   const can = actionZoneAccess(ctx);
-  const [overdue, low, returns, leave, payroll, discounts] = await Promise.all([
+  const [overdue, low, returns, leave, payroll, discounts, installments] = await Promise.all([
     can.overdue ? overdueInvoices(ctx, now, today) : null,
     can.lowStock ? lowStockAlerts(ctx, now) : null,
     can.returns ? periodReturns(ctx, period) : null,
     can.leave ? pendingLeave(ctx) : null,
     can.payroll ? pendingPayroll(ctx) : null,
     can.discounts ? bigDiscounts(ctx, period) : null,
+    can.installments ? installmentsComing(ctx, INSTALLMENT_DAYS, LIMIT, now) : null,
   ]);
   const approvals =
     returns || leave || payroll || discounts ? { returns, leave, payroll, discounts } : null;
@@ -401,6 +407,8 @@ export async function getActionZone(ctx: CompanyContext, raw: unknown = {}, now 
     overdue,
     lowStock: low,
     approvals,
+    /** Loan installments late or due within a week. */
+    installments,
     /** Which pages the rows may link to. */
     open: { buyers: ctx.can("parties.view"), sales: ctx.can("sales.view") },
   };

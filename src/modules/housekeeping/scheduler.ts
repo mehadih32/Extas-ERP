@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { remindTermsEnding } from "@/modules/accounts/loan-alerts";
 import { payDueInstallments } from "@/modules/accounts/loans.service";
 import { recordAudit } from "@/modules/audit/audit.service";
 import { purgeExpiredSessions } from "@/modules/auth/session.service";
@@ -91,6 +92,7 @@ export async function runHousekeeping(now: Date = new Date()) {
   const yearReportsMade = await makeYearReports(now);
   const installmentsPaid = await payDueInstallments(now);
   const fixedCostsRecorded = await recordDueFixedCosts(now);
+  const termsReminded = await remindTermsEnding(now);
   return {
     companies: companies.length,
     markedDormant,
@@ -107,6 +109,7 @@ export async function runHousekeeping(now: Date = new Date()) {
     yearReportsMade,
     installmentsPaid,
     fixedCostsRecorded,
+    termsReminded,
   };
 }
 

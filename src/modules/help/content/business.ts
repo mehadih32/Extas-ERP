@@ -60,7 +60,7 @@ export const businessHelp: HelpSection = {
           text: "টাকার অঙ্ক শুরুতে লুকানো থাকে। “Show amounts” চাপলে সব দেখায়, “Hide amounts” চাপলে আবার লুকায়।",
         },
         {
-          text: "“Total sales”, “Total profit or loss”, “Buying house profit”, “Retail profit”, “Cash” আর “Shops owe” কার্ড দেখুন। নিচের লাইনে আগের সময়ের সাথে পার্থক্য।",
+          text: "“Total sales”, “Total profit or loss”, “Buying house profit”, “Retail profit”, “Cash”, “Shops owe” আর “Left after installments” কার্ড দেখুন। নিচের লাইনে আগের সময়ের সাথে পার্থক্য।",
         },
         {
           text: "“Profit by business” গ্রাফে দুই ব্যবসার লাভ দেখুন। “Why profit changed” চাপলে বদলের তালিকা খোলে।",
@@ -95,6 +95,10 @@ export const businessHelp: HelpSection = {
         },
         { label: "Cash", text: "আজ ক্যাশ, ব্যাংক আর মোবাইল ওয়ালেটে মোট কত।" },
         { label: "Shops owe", text: "আজ সব শপের কাছে ইআরপির পাওনা।" },
+        {
+          label: "Left after installments",
+          text: "মোট লাভ (বায়িং হাউস আর রিটেল মিলে) থেকে এই সময়ে “Keep it in my capital for ever” রাখা লোনের যে আসল টাকা শোধ হয়েছে তা বাদে হাতে কত থাকল। Profit and loss-এর “Left after installments” শুধু বায়িং হাউসের লাভ থেকে বাদ দেয়, তাই দুটো আলাদা হতে পারে। এমন লোন না থাকলে মোট লাভের সমান।",
+        },
         { label: "Profit by business", text: "দুই ব্যবসার লাভের গ্রাফ, দুই রঙে।" },
         { label: "Buying house", text: "গ্রাফে বায়িং হাউসের রঙ।" },
         { label: "Retail", text: "গ্রাফে রিটেলের রঙ। ট্যাবে রিটেল শপগুলোর পাতা।" },

@@ -91,16 +91,26 @@ export function kindLabel(party: { kind: PartyKind; buyerType: BuyerType | null 
   return KIND_LABELS[party.kind];
 }
 
-/** The list a buyer or supplier belongs to: "buyers" (buyers and both) or "suppliers". */
-export type PartyListName = "buyers" | "suppliers";
+/**
+ * The list a buyer or supplier belongs to: "buyers" (buyers and both),
+ * "suppliers", or "other-suppliers" (one-time suppliers from "Buy ready stock").
+ */
+export type PartyListName = "buyers" | "suppliers" | "other-suppliers";
 
-export function listOf(kind: PartyKind): PartyListName {
-  return kind === "SUPPLIER" ? "suppliers" : "buyers";
+export function listOf(kind: PartyKind, oneTime = false): PartyListName {
+  if (kind !== "SUPPLIER") return "buyers";
+  return oneTime ? "other-suppliers" : "suppliers";
 }
 
-/** The profile's address: /parties/buyers/… or /parties/suppliers/…. */
-export function partyHref(party: { id: string; kind: PartyKind }, page = ""): string {
-  return `/parties/${listOf(party.kind)}/${encodeURIComponent(party.id)}${page}`;
+/** Whether a list is of suppliers (regular or other). */
+export const isSupplierList = (list: PartyListName) => list !== "buyers";
+
+/** The profile's address: /parties/buyers/…, /parties/suppliers/… or /parties/other-suppliers/…. */
+export function partyHref(
+  party: { id: string; kind: PartyKind; oneTime?: boolean },
+  page = "",
+): string {
+  return `/parties/${listOf(party.kind, party.oneTime)}/${encodeURIComponent(party.id)}${page}`;
 }
 
 /** "BDT 12,500.00" from "12500.00" (or "-12500.00"). */

@@ -11,6 +11,7 @@ export type PartiesTab = { href: string; label: string; anyOf: readonly Permissi
 export const PARTIES_TABS: readonly PartiesTab[] = [
   { href: "/parties/buyers", label: "Buyers", anyOf: ["parties.view"] },
   { href: "/parties/suppliers", label: "Suppliers", anyOf: ["parties.view"] },
+  { href: "/parties/other-suppliers", label: "Other suppliers", anyOf: ["parties.view"] },
   { href: "/parties/dues", label: "Dues", anyOf: ["parties.ledger.view"] },
 ];
 

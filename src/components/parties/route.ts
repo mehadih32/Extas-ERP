@@ -1,8 +1,8 @@
 import type { PartyListName } from "./labels";
 
-/** The list named in the address ("buyers" or "suppliers"), or null for anything else. */
+/** The list named in the address ("buyers", "suppliers" or "other-suppliers"), or null. */
 export function listName(value: string): PartyListName | null {
-  return value === "buyers" || value === "suppliers" ? value : null;
+  return value === "buyers" || value === "suppliers" || value === "other-suppliers" ? value : null;
 }
 
 /** "YYYY-MM-DD" from the address, or undefined when missing or malformed. */

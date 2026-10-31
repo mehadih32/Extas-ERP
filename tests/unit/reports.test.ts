@@ -343,6 +343,7 @@ describe("report metrics and permissions", () => {
       "SALES",
       "PROFIT_AND_LOSS",
       "TOP_SELLERS",
+      "PRODUCTION_VS_READY",
       "STOCK_ALERTS",
     ]);
     expect(allowedMetrics(role("ACCOUNTS"))).toEqual(allowedMetrics(role("SUPER_ADMIN")));
@@ -358,6 +359,7 @@ describe("report metrics and permissions", () => {
       ["SALES", false],
       ["PROFIT_AND_LOSS", false],
       ["TOP_SELLERS", true],
+      ["PRODUCTION_VS_READY", false],
       ["STOCK_ALERTS", true],
     ]);
   });

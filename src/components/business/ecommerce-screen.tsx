@@ -72,7 +72,7 @@ export function EcommerceScreen({ page }: { page: EcommercePage }) {
               {page.stores.map((s) => (
                 <li key={s.id} className="min-w-0 rounded-md border p-4 text-sm">
                   <Link
-                    href={`/business/stores/${s.id}`}
+                    href={`/business/retail/stores/${s.id}`}
                     className="font-medium break-words text-primary hover:underline"
                   >
                     {s.name}

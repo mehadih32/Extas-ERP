@@ -92,6 +92,8 @@ export const listPartiesSchema = z.object({
   city: z.string().trim().max(80).optional(),
   search: z.string().trim().max(100).optional(),
   withBalance: queryBoolean.optional(),
+  /** One-time suppliers (Other suppliers) only, or (false) none of them. */
+  oneTime: queryBoolean.optional(),
   cursor: z.string().optional(),
   take: z.coerce.number().int().min(1).max(200).optional(),
 });

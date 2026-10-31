@@ -29,11 +29,12 @@ export const partiesHelp: HelpSection = {
         "পার্টি",
         "প্রোফাইল",
       ],
-      routes: ["/parties/buyers", "/parties/suppliers", "/parties"],
+      routes: ["/parties/buyers", "/parties/suppliers", "/parties/other-suppliers", "/parties"],
       who: "যাঁরা ক্রেতা ও সরবরাহকারী দেখতে পারেন: Super Admin, Sales Executive, Accounts ও Production Manager। “Dues” ট্যাব শুধু Super Admin, Sales Executive ও Accounts দেখেন। নতুন যোগ করার বোতাম শুধু Super Admin ও Sales Executive পান।",
       anyOf: ["parties.view"],
       what: [
         "“Buyers & suppliers” হলো আপনার সব ক্রেতা (বায়ার), সরবরাহকারী (কাপড়ের মিল, অ্যাক্সেসরিজের দোকান, CM ফ্যাক্টরি, এমব্রয়ডারি বা প্রিন্ট হাউস) আর তাঁদের সঙ্গে টাকার হিসাবের ঠিকানা।",
+        "“Other suppliers” ট্যাবে একবারের সাপ্লায়াররা থাকে: তৈরি মাল কেনার সময় “Random supplier” টিক দিয়ে যাদের লেখা হয়। নিয়মিত সাপ্লায়ারের তালিকায় তারা আসে না।",
         "ওপরে তিনটি ট্যাব: “Buyers”, “Suppliers” ও “Dues”। ক্রেতা বা সরবরাহকারীর তালিকায় প্রতিটি সারিতে নাম, কোড, ধরন বা কী সরবরাহ করেন, যোগাযোগের মানুষ ও ফোন, শহর, গ্রেড আর আজকের ব্যালান্স থাকে।",
         "তালিকার ওপরে খোঁজার ঘর ও ফিল্টার (অবস্থা, গ্রেড, ক্রেতার ধরন বা সরবরাহকারীর ধরন, Blue Verified)।",
         "নামে চাপলে প্রোফাইল খোলে: ওপরে নাম, গ্রেড, Blue Verified চিহ্ন ও অবস্থা; তারপর “Balance” (পাওনা-দেনা, ক্রেডিট সীমা, পরিশোধের মেয়াদ, শেষ পেমেন্ট), “Contact” (ফোন, WhatsApp, ইমেইল, ঠিকানা, ট্যাক্স নম্বর) আর “Business so far” (কয়টি কোটেশন, অর্ডার, ইনভয়েস, বিল ও প্রোডাকশন)।",
@@ -52,6 +53,9 @@ export const partiesHelp: HelpSection = {
         },
         {
           text: "“Suppliers” ট্যাবে “All types”-এর জায়গায় “All categories” বাছাই থাকে: “Fabric”, “Accessories”, “FOB”, “CM (Factory)” বা “Embroidery / Print” বেছে শুধু সেই ধরনের সরবরাহকারী দেখুন। তালিকার “Category” কলামে প্রত্যেকে কী সরবরাহ করেন তা লেখা থাকে।",
+        },
+        {
+          text: "একবারের সাপ্লায়ার দেখতে “Other suppliers” ট্যাব খুলুন। নামে চাপলে তার বিল, কত দেওয়া হয়েছে আর কত বাকি দেখাবে।",
         },
         {
           text: "তালিকার “Balance”-এ “Owes you” মানে তাঁর কাছে আপনার পাওনা, “You owe” মানে আপনার দেনা, “Settled” মানে কিছু বাকি নেই। প্রথমে 30টি দেখায়; বাকিগুলো দেখতে নিচে “Show more …” চাপুন।",
@@ -78,6 +82,10 @@ export const partiesHelp: HelpSection = {
         {
           label: "Suppliers",
           text: "যাঁদের কাছ থেকে আপনি কেনেন বা কাজ করান: কাপড়ের মিল, অ্যাক্সেসরিজ, FOB বা CM ফ্যাক্টরি, এমব্রয়ডারি বা প্রিন্ট হাউস। দুটোই হলে নামের নিচে “Also a buyer” লেখা থাকে।",
+        },
+        {
+          label: "Other suppliers",
+          text: "একবারের সাপ্লায়ার (“Random supplier”), যেমন গুলিস্তানের কোনো পাইকার যার কাছ থেকে একবার তৈরি মাল কিনলেন। প্রত্যেকের নিজের হিসাব আছে: বাকি, কিছু দেওয়া বা পুরো দেওয়া এখানে দেখবেন, Accounts বাকি টাকা দিতে পারে।",
         },
         {
           label: "Dues",

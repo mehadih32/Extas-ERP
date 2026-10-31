@@ -6,6 +6,7 @@ import { useOptimistic, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import type { PeriodPreset } from "@/modules/accounts/periods";
 
 import { PERIOD_CHOICES, PERIOD_LABELS } from "./labels";
 import { periodSearch, type PeriodView } from "./report-view";
@@ -35,6 +36,8 @@ export function ReportPeriod({
   resolved,
   today,
   monthToggle = false,
+  choices = PERIOD_CHOICES,
+  fallback = "THIS_MONTH",
   children,
 }: {
   view: PeriodView;
@@ -42,6 +45,9 @@ export function ReportPeriod({
   resolved: { from: string; to: string } | null;
   today: string;
   monthToggle?: boolean;
+  /** The quick choices, and the one shown when none is in the address. */
+  choices?: readonly PeriodPreset[];
+  fallback?: PeriodPreset;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -49,7 +55,7 @@ export function ReportPeriod({
   const [pending, startTransition] = useTransition();
   const [shown, setShown] = useOptimistic(view);
   const custom = Boolean(shown.from || shown.to);
-  const preset = custom ? null : (shown.period ?? "THIS_MONTH");
+  const preset = custom ? null : (shown.period ?? fallback);
 
   function show(next: PeriodView) {
     startTransition(() => {
@@ -72,7 +78,7 @@ export function ReportPeriod({
     <div className="grid gap-6">
       <div className="grid gap-3">
         <div role="group" aria-label="Period" className="flex flex-wrap gap-2">
-          {PERIOD_CHOICES.map((p) => (
+          {choices.map((p) => (
             <Button
               key={p}
               type="button"

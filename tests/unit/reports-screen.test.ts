@@ -30,8 +30,17 @@ const nav = (permissions: string[]) => visibleNavItems(permissions).map((i) => i
 
 describe("Reports & documents in the menu, by role", () => {
   it("gives each role the tabs its Server Actions let it open", () => {
-    expect(tabs(role("SUPER_ADMIN"))).toEqual(["Reports", "Printed documents", "Templates"]);
-    expect(tabs(role("ACCOUNTS"))).toEqual(["Reports", "Printed documents"]);
+    expect(tabs(role("SUPER_ADMIN"))).toEqual([
+      "Reports",
+      "Production vs ready stock",
+      "Printed documents",
+      "Templates",
+    ]);
+    expect(tabs(role("ACCOUNTS"))).toEqual([
+      "Reports",
+      "Production vs ready stock",
+      "Printed documents",
+    ]);
     expect(tabs(role("PRODUCTION_MANAGER"))).toEqual(["Reports", "Printed documents"]);
     expect(tabs(role("SALES_EXECUTIVE"))).toEqual(["Printed documents"]);
     expect(tabs(role("WAREHOUSE_TEAM"))).toEqual(["Printed documents"]);

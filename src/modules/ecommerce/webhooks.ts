@@ -12,10 +12,16 @@ import { assertMayWrite } from "@/lib/read-only";
 import type { CompanyContext } from "@/modules/auth/context";
 import { DeferJob, enqueueJobs, retryDelayMs } from "@/modules/jobs/queue";
 
+import type { ShopSizeChart } from "@/modules/inventory/size-chart.service";
 import { RETAIL_EVENT_TYPES } from "@/modules/retail/shop-events";
 import { pricesOfStore } from "@/modules/retail/stores.service";
 
-import { catalogVariantOf, stockRowOf, storeCatalogVariantOf } from "./catalog.service";
+import {
+  catalogVariantOf,
+  shopSizeCharts,
+  stockRowOf,
+  storeCatalogVariantOf,
+} from "./catalog.service";
 import { assertCanManageShops, privateAddress } from "./integration.service";
 import type { CatalogVariant, StockRow, StoreCatalogVariant } from "./schemas";
 import {
@@ -34,7 +40,10 @@ import {
  *     (pieces in or out, a reservation made or released), with onHand,
  *     reserved and available;
  *   - variant.changed: a variant or its style changed (price, active, a new
- *     variant: isNew), as GET /catalog/variants shows it.
+ *     variant: isNew), as GET /catalog/variants shows it;
+ *   - size_chart.changed: a style's size chart was saved, as GET
+ *     /catalog/size-charts shows it (one per style; the shop keeps its own
+ *     edits and decides whether to take the new one).
  * One WebhookEvent per SKU per pass, holding the exact body that is sent, and
  * a background job that sends it, signed like the API (signature.ts), retried
  * by the queue (30 s, 1 min, 2 min... then hourly) until 24 hours have gone.
@@ -72,6 +81,7 @@ const CHUNK = 500;
 export const EVENT_TYPES = [
   "stock.changed",
   "variant.changed",
+  "size_chart.changed",
   "summary.missing",
   "ping",
   ...RETAIL_EVENT_TYPES,
@@ -113,9 +123,10 @@ const comparable = (data: unknown) => {
 
 type Shop = SalesChannelIntegration;
 type Planned = {
-  type: "stock.changed" | "variant.changed";
+  type: "stock.changed" | "variant.changed" | "size_chart.changed";
+  /** The SKU, or the style code for a size chart. */
   sku: string;
-  data: StockRow | VariantChanged;
+  data: StockRow | VariantChanged | ShopSizeChart;
 };
 
 /** A cursor that is still usable: set, not in the future, at most a day old. */
@@ -259,6 +270,24 @@ async function variantChanges(shop: Shop, since: Date, now: Date): Promise<Plann
   }));
 }
 
+async function sizeChartChanges(shop: Shop, since: Date, now: Date): Promise<Planned[]> {
+  const charts = await prisma.styleSizeChart.findMany({
+    where: { companyId: shop.companyId, updatedAt: { gt: since, lte: now } },
+    include: { style: { select: { code: true, name: true } } },
+    orderBy: { updatedAt: "asc" },
+  });
+  const rows = await shopSizeCharts(charts);
+  const sent = await lastSent(
+    shop,
+    "size_chart.changed",
+    rows.map((r) => r.styleCode),
+    since,
+  );
+  return rows
+    .filter((row) => sent.get(row.styleCode) !== comparable(row))
+    .map((row) => ({ type: "size_chart.changed" as const, sku: row.styleCode, data: row }));
+}
+
 class PassTaken extends Error {}
 
 /**
@@ -277,6 +306,7 @@ export async function scanShop(shop: Shop, now: Date = new Date()): Promise<numb
   const planned = [
     ...(stockFrom ? await stockChanges(shop, back(stockFrom), now) : []),
     ...(variantsFrom ? await variantChanges(shop, back(variantsFrom), now) : []),
+    ...(variantsFrom ? await sizeChartChanges(shop, back(variantsFrom), now) : []),
   ];
   const events = planned.map((p) => {
     const id = randomUUID();

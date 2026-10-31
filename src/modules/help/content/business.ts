@@ -75,6 +75,10 @@ export const businessHelp: HelpSection = {
         "স্থির খরচ না এলে হলুদ লেখা দেখায়: তখন রিটেলের লাভ আসলের চেয়ে বেশি দেখায়।",
       ],
       fields: [
+        {
+          label: "Production vs ready stock",
+          text: "ছোট কার্ড: চাপলে এই দিনগুলোর জন্য প্রোডাকশন আর কেনা তৈরি মালের তুলনা খোলে (পিস, বিক্রি, লাভ, স্টাইল ধরে)।",
+        },
         { label: "Overview", text: "পুরো ব্যবসার এক নজরের পাতা।" },
         ...PERIOD_FIELDS,
         { label: "Show amounts", text: "লুকানো সব টাকার অঙ্ক দেখায়।" },
@@ -138,6 +142,7 @@ export const businessHelp: HelpSection = {
         "নিচে প্রতিটা শপের বিক্রি, লাভ, লাভের হার আর ইআরপির কাছে বাকি, পাশাপাশি।",
         "শপের নাম চাপলে তার নিজের পাতা খোলে, সেখানে পুরো ড্যাশবোর্ড।",
         "“POS” ট্যাব এখন খালি: শোরুম খুললে সেখানে তার হিসাব আসবে।",
+        "Retail-এর ভিতরেই আরও তিনটা ট্যাব: “Retail stores” (শপ যোগ আর প্রতিটা শপের পাতা), “Shop stock” (শপের রিজার্ভ আর রেডি স্টক কেনা) আর “Returns” (শপের ফেরত চেক)।",
       ],
       why: "ধরুন Extas Retail আর Polo Hub দুইটা অনলাইন শপ। এই মাসে Extas Retail বেচল 3,10,000, লাভ 42,000 (13.5%), আর Polo Hub বেচল 1,20,000, লস 8,000। পাশাপাশি দেখে বোঝেন Polo Hub-এর বিজ্ঞাপন বা ফেরত দেখতে হবে: নাম চাপলে তার ড্যাশবোর্ড খোলে।",
       steps: [
@@ -153,17 +158,27 @@ export const businessHelp: HelpSection = {
         {
           text: "শোরুমের জন্য “POS” ট্যাব। এখন সেখানে লেখা থাকে কোনো শোরুম নেই।",
         },
+        {
+          text: "শপের বাকি কাজ একই সারির ট্যাবে: শপ যোগ বা কোনো শপের পাতা “Retail stores”-এ, রিজার্ভ আর রেডি স্টক কেনা “Shop stock”-এ, ফেরত চেক “Returns”-এ।",
+        },
       ],
       tips: [
         "লাভে মাসের স্থির খরচ দিনে ভাগ করে বাদ দেওয়া থাকে।",
         "বন্ধ শপও তালিকায় থাকে, নামের পাশে “closed” লেখা।",
+        "পুরনো লিংক বা বুকমার্ক (আগে Business-এর নিচে আলাদা ট্যাব ছিল) এখনও কাজ করে: নিজে থেকে Retail-এর ভিতরের নতুন জায়গায় নিয়ে যায়।",
       ],
       fields: [
         { label: "Overview", text: "পুরো ব্যবসা এক নজরে দেখার ট্যাব।" },
         { label: "Retail", text: "রিটেল শপগুলোর হিসাবের ট্যাব।" },
-        { label: "Retail stores", text: "শপ যোগ আর প্রতিটা শপের পাতার ট্যাব।" },
-        { label: "Returns", text: "শপের ফেরত চেকের ট্যাব।" },
-        { label: "Shop stock", text: "শপের রিজার্ভ আর শুধু রিটেলের জন্য কেনা মালের ট্যাব।" },
+        {
+          label: "Retail stores",
+          text: "Retail-এর ভিতরের ট্যাব: শপ যোগ আর প্রতিটা শপের পাতা।",
+        },
+        { label: "Returns", text: "Retail-এর ভিতরের ট্যাব: শপের ফেরত চেক।" },
+        {
+          label: "Shop stock",
+          text: "Retail-এর ভিতরের ট্যাব: শপের রিজার্ভ আর রেডি স্টক কেনা।",
+        },
         { label: "E-commerce", text: "অনলাইন শপগুলোর হিসাবের ট্যাব।" },
         ...PERIOD_FIELDS,
         { label: "Show amounts", text: "লুকানো সব টাকার অঙ্ক দেখায়।" },
@@ -199,7 +214,7 @@ export const businessHelp: HelpSection = {
         "গ্রাহক",
         "সেরা প্রোডাক্ট",
       ],
-      routes: ["/business/stores/[storeId]"],
+      routes: ["/business/retail/stores/[storeId]"],
       who: "যাদের রিটেল শপ দেখার অনুমতি আছে। “The store in the ERP's books” অংশ শুধু শপ বদলানোর বা টাকার হিসাব দেখার অনুমতিতে।",
       what: [
         "শপের নামের নিচে স্বাস্থ্যের চিহ্ন: সবুজ, হলুদ বা লাল, সাথে এক লাইনে কারণ।",
@@ -307,7 +322,7 @@ export const businessHelp: HelpSection = {
         "শুধু ROAS দেখে বিজ্ঞাপন বাড়ানো: “Came back” বেশি হলে আসল লাভ কম।",
         "COD আটকে থাকা টাকাকে হাতের টাকা ধরা: কুরিয়ার দেওয়ার আগ পর্যন্ত সেটা আসেনি।",
       ],
-      shot: { route: "/business/stores/[storeId]", target: "Store dashboard" },
+      shot: { route: "/business/retail/stores/[storeId]", target: "Store dashboard" },
     },
     {
       slug: "business-downloads",
@@ -332,7 +347,7 @@ export const businessHelp: HelpSection = {
         "/business/overview",
         "/business/retail",
         "/business/retail/pos",
-        "/business/stores/[storeId]",
+        "/business/retail/stores/[storeId]",
       ],
       who: "যে পাতা দেখতে পারে, সে সেই পাতার রিপোর্ট নামাতে পারে। লোগো বসাতে শপ বদলানোর অনুমতি লাগে।",
       what: [
@@ -398,7 +413,7 @@ export const businessHelp: HelpSection = {
         "শপের লোগোর জায়গায় কোম্পানির লোগো দেওয়া: শপের প্যাডে শপের নিজের লোগো দিন।",
         "কিছুই টিক না দিয়ে “Download” চাপা: অন্তত একটা অংশ টিক দিন।",
       ],
-      shot: { route: "/business/stores/[storeId]", target: "Pad and year-end summaries" },
+      shot: { route: "/business/retail/stores/[storeId]", target: "Pad and year-end summaries" },
     },
     {
       slug: "business-stores",
@@ -416,7 +431,7 @@ export const businessHelp: HelpSection = {
         "দোকান",
         "শোরুম",
       ],
-      routes: ["/business/stores"],
+      routes: ["/business/retail/stores"],
       who: "যাদের ভূমিকায় রিটেল শপ দেখার বা বদলানোর অনুমতি আছে। শপ যোগ আর বদল শুধু বদলানোর অনুমতিতে।",
       what: [
         "প্রতিটা রিটেল শপ ইআরপির কাছে একজন বিশেষ হোলসেল বায়ার: শপ ইআরপি থেকে নিজের দামে মাল কেনে।",
@@ -426,7 +441,7 @@ export const businessHelp: HelpSection = {
       why: "ধরুন আপনার ওয়েবসাইট “Extas Retail” আর একটা শোরুম আছে। দুইটাকেই আলাদা শপ হিসেবে যোগ করলে প্রতিটার কেনা, বাকি আর লাভ আলাদা দেখা যায়। আবার শপটা বায়ার লিস্টেও থাকে, তাই একই শপের জন্য দুইটা আলাদা খাতা হয় না।",
       steps: [
         {
-          text: "মেনু থেকে “Business” খুলুন। “Retail stores” পাতায় “Add store” চাপুন।",
+          text: "মেনু থেকে “Business” খুলুন, “Retail” ট্যাবের ভিতরে “Retail stores”-এ যান। সেখানে “Add store” চাপুন।",
         },
         {
           text: "“Store name” ঘরে শপের নাম লিখুন। প্রথম শপের নাম আগে থেকেই Extas Retail লেখা থাকে, চাইলে বদলান। “Kind” থেকে “Online” বা “Showroom” বাছুন।",
@@ -493,7 +508,7 @@ export const businessHelp: HelpSection = {
         "হাতে দাম",
         "বি গ্রেড",
       ],
-      routes: ["/business/stores/[storeId]"],
+      routes: ["/business/retail/stores/[storeId]"],
       who: "দেখতে পারে যাদের রিটেল শপ দেখার অনুমতি আছে। দাম বদলাতে বদলানোর অনুমতি আর আপনার PIN লাগে।",
       what: [
         "শপ প্রতিটা SKU একটা নির্দিষ্ট দামে কেনে। দাম আসে তিন জায়গা থেকে, এই ক্রমে: SKU-র হাতে দাম, কালারের হাতে দাম, স্টাইলের হাতে দাম, তারপর গ্রেডের নিয়ম।",
@@ -600,7 +615,7 @@ export const businessHelp: HelpSection = {
         "পুরো স্টাইলের দাম দিতে গিয়ে কালার বেছে ফেলা: পুরো স্টাইলের জন্য “All colours” রাখুন।",
         "ভুল দাম মুছে ফেলার চেষ্টা: “Take off” চাপলে বা নতুন দাম দিলে আগেরটা ইতিহাসে থাকে, কিছুই হারায় না।",
       ],
-      shot: { route: "/business/stores/[storeId]", target: "Price rules" },
+      shot: { route: "/business/retail/stores/[storeId]", target: "Price rules" },
     },
     {
       slug: "business-store-account",
@@ -619,7 +634,7 @@ export const businessHelp: HelpSection = {
         "স্টেটমেন্ট",
         "শপের টাকা",
       ],
-      routes: ["/business/stores/[storeId]"],
+      routes: ["/business/retail/stores/[storeId]"],
       who: "দেখতে পারে যাদের রিটেল শপ দেখার অনুমতি আছে। হোল্ড খুলতে বদলানোর অনুমতি আর আপনার PIN লাগে। শপের টাকা রেকর্ড করে শুধু Accounts।",
       what: [
         "শপের ওয়েবসাইট থেকে আসা প্রতিটা অর্ডার ইআরপিতে শপের কাছে বিক্রি, শপের দামে। দাম ঠিক হয় অর্ডার আসার সময়।",
@@ -675,7 +690,7 @@ export const businessHelp: HelpSection = {
         "কারণ না লিখে হোল্ড খোলার চেষ্টা: কারণ ছাড়া খোলে না, কারণটাই পরে মনে করিয়ে দেয় কেন খোলা হয়েছিল।",
         "হোল্ড অনেক দিনের জন্য খোলা: অল্প দিনের জন্য খুলুন, দরকার হলে আবার খুলবেন।",
       ],
-      shot: { route: "/business/stores/[storeId]", target: "Account" },
+      shot: { route: "/business/retail/stores/[storeId]", target: "Account" },
     },
     {
       slug: "business-store-books",
@@ -693,7 +708,7 @@ export const businessHelp: HelpSection = {
         "বাজেট",
         "লক্ষ্য",
       ],
-      routes: ["/business/stores/[storeId]"],
+      routes: ["/business/retail/stores/[storeId]"],
       who: "দেখতে পারে যাদের রিটেল শপ দেখার অনুমতি আছে। বাজেট আর লক্ষ্য বসাতে শপ বদলানোর অনুমতি লাগে।",
       what: [
         "শপের সাইট প্রতিদিন রাত 12:30-এ আগের দিনের বিক্রি, খরচ আর লাভ পাঠায়, বিক্রি না থাকলেও (তখন সব 0)।",
@@ -766,7 +781,7 @@ export const businessHelp: HelpSection = {
         "“Not complete yet” দেখে লাভ চূড়ান্ত ধরা: সব খরচ এলে লাভ বদলাতে পারে।",
         "বাজেট বসিয়ে মাস শেষে না দেখা: পরের মাসে “Copy last month” দিয়ে বসিয়ে দরকারমতো বদলান।",
       ],
-      shot: { route: "/business/stores/[storeId]", target: "Daily figures" },
+      shot: { route: "/business/retail/stores/[storeId]", target: "Daily figures" },
     },
     {
       slug: "business-returns",
@@ -786,7 +801,7 @@ export const businessHelp: HelpSection = {
         "পার্সেল",
         "কুরিয়ার",
       ],
-      routes: ["/business/returns"],
+      routes: ["/business/retail/returns"],
       who: "দেখতে পারে যাদের রিটেল শপ দেখার বা ফেরত চেকের অনুমতি আছে। টিক আর চেক করতে ফেরত চেকের অনুমতি লাগে। Approve করলে শপের বাকি কমে, তাই Approve করতে Accounts-এর টাকা রেকর্ডের অনুমতি আর ফেরত মাল চেকের (QC) অনুমতিও লাগে।",
       what: [
         "শপের সাইট জানায় কুরিয়ার কী বলল: ডেলিভারি, পার্সিয়াল বা ফেরত। পার্সিয়াল হলে ইআরপি নিজেই বের করে কাস্টমার কোন পিস রাখল।",
@@ -908,7 +923,7 @@ export const businessHelp: HelpSection = {
         "কেনা",
         "সাপ্লায়ার",
       ],
-      routes: ["/business/shop-stock"],
+      routes: ["/business/retail/shop-stock"],
       who: "দেখতে পারে যাদের রিটেল শপ দেখার অনুমতি আছে। রিজার্ভ বসাতে শপ বদলানোর বা তৈরি মাল কেনার অনুমতি লাগে। তৈরি মাল কিনতে আলাদা অনুমতি আর আপনার PIN লাগে।",
       what: [
         "রিজার্ভ: সব শপের জন্য একটাই। একটা স্টাইলের সব কালারে, বা স্টাইলের একটা কালারে বসে।",
@@ -926,18 +941,11 @@ export const businessHelp: HelpSection = {
           text: "রিজার্ভ বদলাতে বা তুলতে তার পাশে “Change” চাপুন। 0 দিলে রিজার্ভ উঠে যায়।",
         },
         {
-          text: "তৈরি মাল কিনতে “Buy ready stock” চাপুন। “Supplier”, “Style”, “Warehouse”, “Date” আর “Supplier's bill no.” দিন।",
-        },
-        {
-          text: "“Pieces and price per piece”-এ প্রতিটা কালার-সাইজে কত পিস আর প্রতি পিসের দাম লিখুন। পরিবহন থাকলে “Transport and other costs”-এ দিন।",
-        },
-        {
-          text: "শুধু শপের জন্য হলে “Retail only: hold every piece for the shops” টিক দিন। “Shops' price” বাছুন, PIN দিয়ে “Save the purchase” চাপুন।",
+          text: "তৈরি মাল কিনতে “Buy ready stock” চাপুন। পুরো জানালার কাজ “তৈরি মাল কেনা” গাইডে আছে। কেনা মাল নিচে “Ready stock bought” তালিকায় দেখাবে।",
         },
       ],
       tips: [
         "একটা স্টাইলে হয় পুরো স্টাইলের একটা রিজার্ভ, নয়তো কালার ধরে রিজার্ভ: দুইটা একসাথে হয় না।",
-        "পরিবহন খরচ এই বিলেই যোগ হয়, তাই যে সাপ্লায়ার পরিবহন নিয়েছে শুধু তার বেলায় দিন।",
         "“At cost” বাছলে শপ কেনা দামেই মাল পায়, ইআরপি লাভ রাখে না।",
       ],
       fields: [
@@ -970,18 +978,141 @@ export const businessHelp: HelpSection = {
           label: "Profit on shop sales",
           text: "শপের কাছে বিক্রির দাম থেকে এই পিসগুলোর কেনা খরচ বাদ দিয়ে ইআরপির লাভ।",
         },
-        { label: "Supplier", text: "যার কাছ থেকে কিনলেন। সাপ্লায়ারের তালিকা থেকে বাছুন।" },
+      ],
+      next: "কেনা মাল সাথে সাথে স্টকে আর শপের সাইটে দেখায়। বিলটা Accounts-এর সাপ্লায়ার বিলে ওঠে, Accounts অন্য বিলের মতো টাকা দেয়। ভুল হলে মোছা যায় না: Accounts উল্টো এন্ট্রি দিয়ে ঠিক করে।",
+      mistakes: [
+        "একই কেনা দুইবার লেখা: সেভের আগে তালিকায় দেখে নিন, কারণ পরে মোছা যায় না।",
+        "শপের রিজার্ভ আর কেনা মালের “Retail only” এক ভাবা: “Retail only” টিক দিলে কেনা সব পিস রিজার্ভে যোগ হয়, আলাদা রিজার্ভ বসাতে হয় না।",
+        "রিজার্ভ বসিয়ে ভুলে যাওয়া: 60 দিনের মনে করানো এলে দেখে কমান বা রাখুন।",
+      ],
+      shot: { route: "/business/retail/shop-stock", target: "Shops' reserve" },
+    },
+    {
+      slug: "business-buy-ready-stock",
+      title: "তৈরি মাল কেনা (Buy ready stock)",
+      summary:
+        "সাপ্লায়ারের কাছ থেকে তৈরি মাল কেনা এক জানালায়: সাপ্লায়ার (তালিকা থেকে, নতুন বা একবারের), স্টাইল (তালিকা থেকে বা নতুন), কালার-সাইজে পিস, দাম, বাড়তি খরচ আর টাকা দেওয়া।",
+      keywords: [
+        "buy ready stock",
+        "ready stock",
+        "random supplier",
+        "other suppliers",
+        "extra costs",
+        "তৈরি মাল",
+        "কেনা",
+        "একবারের সাপ্লায়ার",
+        "পরিবহন",
+      ],
+      routes: ["/business/retail/shop-stock"],
+      who: "যাদের তৈরি মাল কেনার অনুমতি আছে, আপনার PIN দিয়ে। নতুন সাপ্লায়ার লিখতে সাপ্লায়ার যোগ করার, নতুন স্টাইল লিখতে প্রোডাক্ট বদলানোর অনুমতি লাগে। এখনই টাকা দেওয়ার ঘর শুধু Accounts আর Super Admin দেখে।",
+      what: [
+        "একটা স্টাইলের তৈরি মাল কেনার পুরো হিসাব এক জানালায়। মাল কেনা দামে Products-এর স্টকে ঢোকে, অন্য স্টকের মতোই।",
+        "সাপ্লায়ার তিনভাবে: তালিকা থেকে, নতুন সাপ্লায়ার, বা “Random supplier” (একবারের, “Other suppliers”-এ নিজের হিসাব সহ থাকে)।",
+        "দাম একটাই পুরো স্টাইলের: প্রতি পিস দিলে মোট হিসাব হয়, মোট দিলে প্রতি পিস।",
+        "পরিবহন বা অন্য খরচ একই বিলে যোগ হয়। প্রতি পিসের কস্ট = বিলের মোট ÷ পিস।",
+        "টাকা: বাকি, কিছু দেওয়া বা পুরো দেওয়া, পুরো বিলের জন্য একটা ক্যাশ বা ব্যাংক থেকে। সাথে সাথে Accounts-এ ওঠে।",
+      ],
+      why: "ধরুন ঈদের আগে গুলিস্তানের এক পাইকারের কাছ থেকে 300 পিস চিনো প্যান্ট কিনলেন মোট 9,000 টাকায়, পরিবহন 2,000। পাইকারকে আর কখনো লাগবে না, তাই “Random supplier” দিলেন। বিল হলো 11,000, প্রতি পিসের কস্ট 36.67। পুরো টাকা ক্যাশ থেকে দিলেন: বিল সাথে সাথে Paid হলো, ক্যাশ থেকে 11,000 কমলো। স্টাইলটা নতুন, তাই এখানেই “New style” দিয়ে বানালেন আর সাইজ চার্টও দিয়ে দিলেন।",
+      steps: [
+        {
+          text: "“Shop stock” পাতায় “Buy ready stock” চাপুন।",
+        },
+        {
+          text: "“Supplier”-এ বাছুন: “From the list” (তারপর “Pick the supplier”), “New supplier” (নাম, ফোন, ঠিকানা) বা “Random supplier” (নাম না দিলেও চলে)।",
+        },
+        {
+          text: "“Style”-এ “From Products” দিয়ে “Pick the style”, বা “New style” দিয়ে “Style code”, “Style name” আর “Category” দিন। নতুন স্টাইলে চাইলে “Size chart (optional)” খুলে মাপ দিন।",
+        },
+        {
+          text: "“Warehouse”, “Date” আর “Supplier's bill no.” দিন। “Colours” আর “Sizes” টিক দিন, তারপর ছকে প্রতিটা কালার-সাইজে কত পিস লিখুন।",
+        },
+        {
+          text: "“Price for the style”-এ “Price per piece” বা “Total for the pieces” বেছে দাম লিখুন। পরিবহন বা অন্য খরচ থাকলে “Add a cost” চাপুন। নিচের “Bill”-এ মোট আর প্রতি পিসের কস্ট দেখুন।",
+        },
+        {
+          text: "“Payment”-এ “Due”, “Part paid” বা “Paid in full” বাছুন। টাকা দিলে “Paid now” আর “Paid from” দিন। শেষে “Shops' price”, PIN দিয়ে “Save the purchase”।",
+        },
+      ],
+      tips: [
+        "বাড়তি খরচ বিলেরই অংশ, তাই একই অ্যাকাউন্ট থেকে একসাথে দেওয়া হয়। যেমন মাল 9,000 + পরিবহন 2,000 = 11,000।",
+        "যে পাইকারের কাছ থেকে আবার কিনবেন না, তাকে “Random supplier” দিন: নিয়মিত সাপ্লায়ারের তালিকা পরিষ্কার থাকে।",
+        "টাকা দেওয়ার অনুমতি না থাকলে কেনা “Due” হিসেবে সেভ হয়, পরে Accounts সাপ্লায়ারকে টাকা দেয়।",
+      ],
+      fields: [
+        { label: "Supplier", text: "যার কাছ থেকে কিনলেন: তালিকা থেকে, নতুন, বা একবারের।" },
+        { label: "From the list", text: "সাপ্লায়ারের তালিকা থেকে বাছা।" },
+        {
+          label: "Pick the supplier",
+          text: "তালিকার সাপ্লায়ার। একবারের সাপ্লায়ার এখানে আসে না।",
+        },
+        {
+          label: "New supplier",
+          text: "এখানেই নতুন সাপ্লায়ার লেখা। পরে “Suppliers” তালিকায় থাকে।",
+        },
+        {
+          label: "Random supplier",
+          text: "একবারের সাপ্লায়ার। “Other suppliers”-এ নিজের হিসাব সহ থাকে, নিয়মিত তালিকায় আসে না। বাকি, কিছু দেওয়া বা পুরো দেওয়া সবই চলে।",
+        },
+        { label: "Supplier's name", text: "নতুন সাপ্লায়ারের নাম।" },
+        {
+          label: "Supplier's name (optional)",
+          text: "একবারের সাপ্লায়ারের নাম। খালি রাখলে “Random supplier” আর তারিখ দিয়ে নাম হয়।",
+        },
+        { label: "Phone (optional)", text: "সাপ্লায়ারের ফোন।" },
+        { label: "Address (optional)", text: "সাপ্লায়ারের ঠিকানা।" },
+        { label: "Style", text: "কোন স্টাইল কিনছেন: Products থেকে বা নতুন।" },
+        { label: "From Products", text: "Products-এ আগে থেকে থাকা স্টাইল।" },
+        { label: "Pick the style", text: "যে স্টাইল কিনছেন।" },
+        { label: "New style", text: "এখানেই নতুন স্টাইল বানানো। পরে Products-এ থাকে।" },
+        { label: "Style code", text: "নতুন স্টাইলের কোড, যেমন EX-PN-001। আগে থাকা কোড হবে না।" },
+        { label: "Style name", text: "নতুন স্টাইলের নাম, যেমন Cotton chino pant।" },
+        { label: "Category", text: "নতুন স্টাইলের ধরন (Tops, Bottoms…)।" },
         { label: "Warehouse", text: "কোন গুদামে মাল ঢুকবে।" },
         { label: "Date", text: "কেনার তারিখ। খালি রাখলে আজ।" },
         { label: "Supplier's bill no.", text: "সাপ্লায়ারের নিজের বিলের নম্বর।" },
+        { label: "Colours", text: "যে কালারগুলো কিনলেন, টিক দিন।" },
+        { label: "Sizes", text: "যে সাইজগুলো কিনলেন, টিক দিন।" },
+        { label: "Pieces", text: "প্রতিটা কালার-সাইজে কত পিস। যেটা কেনেননি সেটা খালি রাখুন।" },
         {
-          label: "Pieces and price per piece",
-          text: "প্রতিটা কালার-সাইজে কত পিস আর প্রতি পিসের দাম। যেটা কেনেননি সেটা খালি রাখুন।",
+          label: "Size chart (optional)",
+          text: "নতুন স্টাইলের সাইজ চার্ট: প্রতি সাইজের মাপ। শপে যায়। পরে স্টাইলের পাতা থেকেও দেওয়া যায়।",
+        },
+        { label: "Garment", text: "কাপড়ের ধরন: টপ বা বটম। ধরন অনুযায়ী মাপের নাম আগে থেকে আসে।" },
+        {
+          label: "Top (shirt, polo, T-shirt)",
+          text: "উপরের কাপড়: মাপ আসে Chest, Body length, Shoulder, Sleeve length।",
         },
         {
-          label: "Transport and other costs",
-          text: "এই বিলের পরিবহন বা অন্য খরচ। পিস ধরে ভাগ হয়ে প্রতি পিসের কস্টে যোগ হয়।",
+          label: "Bottom (pant, trouser, shorts)",
+          text: "নিচের কাপড়: মাপ আসে Waist, Hip, Length, Inseam, Thigh, Leg opening।",
         },
+        { label: "Other", text: "অন্য কাপড়: মাপের নাম নিজে লিখুন।" },
+        { label: "Unit", text: "মাপ ইঞ্চিতে না সেন্টিমিটারে লিখবেন।" },
+        { label: "Inches", text: "ইঞ্চিতে লিখুন, নিচে সেন্টিমিটার দেখায়।" },
+        { label: "Centimetres", text: "সেন্টিমিটারে লিখুন, নিচে ইঞ্চি দেখায়।" },
+        { label: "Measurement", text: "মাপের নাম, যেমন Chest। নাম বদলানো যায়।" },
+        { label: "Add a measurement", text: "নতুন মাপের সারি যোগ করে।" },
+        { label: "Price for the style", text: "পুরো স্টাইলের একটাই দাম, সব কালার-সাইজে।" },
+        { label: "Price per piece", text: "প্রতি পিসের দাম দিন, মোট হিসাব হয়ে যায়।" },
+        {
+          label: "Total for the pieces",
+          text: "সব পিসের মোট দাম দিন, প্রতি পিস হিসাব হয়। যেমন 300 পিস 9,000 টাকা = প্রতি পিস 30।",
+        },
+        {
+          label: "Extra costs (on the same bill)",
+          text: "পরিবহন, লোডিং বা অন্য খরচ। বিলে যোগ হয়, প্রতি পিসের কস্টেও।",
+        },
+        { label: "Add a cost", text: "আরেকটা বাড়তি খরচের সারি।" },
+        { label: "Bill", text: "সারাংশ: পিস, মালের দাম, বাড়তি খরচ, মোট আর প্রতি পিসের কস্ট।" },
+        { label: "Cost per piece", text: "বিলের মোট ÷ পিস। এই দামে মাল স্টকে ঢোকে।" },
+        { label: "Payment", text: "এখন কত দিলেন: বাকি, কিছু, বা পুরো।" },
+        { label: "Due", text: "কিছু দেননি। পুরো বিল সাপ্লায়ারের বাকিতে।" },
+        { label: "Part paid", text: "কিছু দিলেন, বাকিটা সাপ্লায়ারের বাকিতে।" },
+        { label: "Paid in full", text: "পুরো বিল (বাড়তি খরচ সহ) এখনই দিলেন।" },
+        { label: "Paid now", text: "এখন কত টাকা দিলেন। বিলের মোটের বেশি হবে না।" },
+        { label: "Paid from", text: "কোন ক্যাশ, ব্যাংক বা মোবাইল অ্যাকাউন্ট থেকে।" },
+        { label: "How", text: "কীভাবে দিলেন: ক্যাশ, ব্যাংক ট্রান্সফার, চেক বা মোবাইল।" },
+        { label: "Reference (optional)", text: "চেক বা ট্রান্সফারের নম্বর।" },
         {
           label: "Retail only: hold every piece for the shops",
           text: "টিক দিলে সব পিস শপের রিজার্ভে যায়: হোলসেল এগুলো পাবে না।",
@@ -997,16 +1128,16 @@ export const businessHelp: HelpSection = {
         { label: "PIN", text: "মালিকের ওয়েব PIN। তৈরি মাল কিনতে লাগে।" },
         {
           label: "Save the purchase",
-          text: "PIN দিয়ে কেনা সেভ করে: মাল স্টকে, বিল সাপ্লায়ারের বাকিতে।",
+          text: "PIN দিয়ে কেনা সেভ করে: মাল স্টকে, বিল সাপ্লায়ারের হিসাবে, দেওয়া টাকা Accounts-এ।",
         },
       ],
-      next: "কেনা মাল সাথে সাথে স্টকে আর শপের সাইটে দেখায়। বিলটা Accounts-এর সাপ্লায়ার বিলে ওঠে, Accounts অন্য বিলের মতো টাকা দেয়। ভুল হলে মোছা যায় না: Accounts উল্টো এন্ট্রি দিয়ে ঠিক করে।",
+      next: "মাল সাথে সাথে Products-এর স্টকে আর শপের সাইটে দেখায়। বিল সাপ্লায়ারের হিসাবে ওঠে; বাকি থাকলে Accounts পরে দেয়। ভুল হলে মোছা যায় না: Accounts উল্টো এন্ট্রি দিয়ে ঠিক করে।",
       mistakes: [
-        "একই কেনা দুইবার লেখা: সেভের আগে তালিকায় দেখে নিন, কারণ পরে মোছা যায় না।",
-        "অন্য কাউকে দেওয়া পরিবহন খরচ এই বিলে দেওয়া: তাহলে সাপ্লায়ারের বাকি বেশি দেখাবে।",
-        "রিজার্ভ বসিয়ে ভুলে যাওয়া: 60 দিনের মনে করানো এলে দেখে কমান বা রাখুন।",
+        "অন্য কাউকে দেওয়া পরিবহন খরচ এই বিলে দেওয়া: তাহলে সাপ্লায়ারের বিল আর প্রতি পিসের কস্ট বেশি দেখাবে।",
+        "নিয়মিত সাপ্লায়ারকে “Random supplier” দেওয়া: তাহলে তার হিসাব দুই জায়গায় ভাগ হয়ে যায়। নিয়মিত হলে “New supplier” দিন।",
+        "“Total for the pieces”-এ প্রতি পিসের দাম লেখা: নিচের “Bill”-এ মোট মিলিয়ে দেখে তারপর সেভ করুন।",
       ],
-      shot: { route: "/business/shop-stock", target: "Shops' reserve" },
+      shot: { route: "/business/retail/shop-stock", open: "Buy ready stock" },
     },
   ],
 };

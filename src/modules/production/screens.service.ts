@@ -1119,6 +1119,8 @@ export async function findProductionParties(
   const rows = await ctx.db.party.findMany({
     where: {
       kind: { in: [query.kind, "BOTH"] },
+      // One-time ("Random") suppliers are only for the ready stock they came with.
+      ...(query.kind === "SUPPLIER" ? { oneTime: false } : {}),
       status: { in: ["ACTIVE", "DORMANT"] },
       ...(search
         ? {

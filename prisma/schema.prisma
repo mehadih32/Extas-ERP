@@ -150,6 +150,7 @@ model Company {
   retailExchangeEvents   RetailExchangeEvent[]
   retailReserves         RetailReserve[]
   readyStockPurchases    ReadyStockPurchase[]
+  styleSizeCharts        StyleSizeChart[]
   readyStockLines        ReadyStockLine[]
   retailDailySummaries   RetailDailySummary[]
   retailFixedCosts       RetailFixedCost[]
@@ -702,6 +703,7 @@ model Style {
   retailPrices       RetailPrice[]
   retailReserves     RetailReserve[]
   readyPurchases     ReadyStockPurchase[]
+  sizeChart          StyleSizeChart?
 
   @@unique([companyId, code])
   @@index([companyId, categoryId])
@@ -1420,6 +1422,9 @@ model Party {
   /// What a supplier supplies (any number of them; none for buyers). Fabric, FOB and CM
   /// suppliers are settled project by project; accessories run on a continuous ledger.
   supplierCategories SupplierCategory[] @default([])
+  /// A one-time ("random") supplier added from "Buy ready stock": listed under
+  /// Other suppliers, never in the regular suppliers list or pickers.
+  oneTime            Boolean            @default(false)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -6022,6 +6027,7 @@ enum ReportPeriod {
   LAST_FINANCIAL_YEAR
   ONE_WEEK
   ONE_MONTH
+  SIX_MONTHS
   ONE_YEAR
   CUSTOM
 }
@@ -7860,6 +7866,8 @@ model ReadyStockPurchase {
   fixedPrice   Decimal?            @db.Decimal(14, 2)
   /// Transport and other costs on the bill, shared per piece into the cost.
   extraCost    Decimal             @default(0) @db.Decimal(14, 2)
+  /// The extra costs one by one: [{ label, amount }] (their sum is extraCost).
+  extraCosts   Json?
   pieces       Int
   totalAmount  Decimal             @db.Decimal(14, 2)
   note         String?
@@ -8018,4 +8026,25 @@ model RetailTarget {
   store   RetailStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, month])
+}
+
+/// A style's size chart (2026-10-31): each measurement's value per size, as the
+/// shops show it to customers. Sent to the shops; their own edits stay theirs.
+model StyleSizeChart {
+  id          String      @id @default(cuid())
+  companyId   String
+  styleId     String      @unique
+  /// TOP, BOTTOM or OTHER: which measurements it starts with.
+  garment     String      @default("TOP")
+  unit        MeasureUnit @default(INCH)
+  /// [{ name, values: { [sizeId]: number | null } }], in order.
+  points      Json
+  updatedById String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  style   Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, updatedAt])
 }

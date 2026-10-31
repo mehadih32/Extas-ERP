@@ -30,6 +30,15 @@ const nextConfig = {
       "./node_modules/harfbuzzjs/dist/harfbuzz.wasm",
     ],
   },
+  // Retail stores, Returns and Shop stock moved inside Business > Retail (2026-10-31):
+  // old links and bookmarks still open them.
+  async redirects() {
+    return ["stores", "returns", "shop-stock"].map((page) => ({
+      source: `/business/${page}/:rest*`,
+      destination: `/business/retail/${page}/:rest*`,
+      permanent: true,
+    }));
+  },
   experimental: {
     serverActions: {
       // Allows packing-list photos / PDFs for AI stock intake.

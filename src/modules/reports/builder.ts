@@ -40,6 +40,12 @@ import {
 import { registrationLines } from "@/modules/documents/builders";
 import { METRIC_INFO, type ReportMetricKey } from "@/modules/reports/catalog";
 import {
+  productionVsReadyStock,
+  SOURCE_LABELS,
+  SOURCES,
+  type SourceFigures,
+} from "@/modules/reports/source-compare.service";
+import {
   formatAmount,
   formatDay,
   formatRange,
@@ -79,6 +85,7 @@ export const PERIOD_LABELS: Record<PeriodPreset | "CUSTOM", string> = {
   LAST_FINANCIAL_YEAR: "Last financial year",
   ONE_WEEK: "Past week",
   ONE_MONTH: "Past month",
+  SIX_MONTHS: "Past 6 months",
   ONE_YEAR: "Past year",
   CUSTOM: "Chosen dates",
 };
@@ -619,6 +626,84 @@ async function topSellersSection(b: Build): Promise<ReportSection> {
 }
 
 // =============================================================================
+// Production vs ready stock
+// =============================================================================
+
+async function productionVsReadySection(b: Build): Promise<ReportSection> {
+  const data = await productionVsReadyStock(b.ctx, b.period);
+  const figureCells = (f: SourceFigures) => [
+    f.piecesIn,
+    f.costIn,
+    f.piecesSold,
+    f.sales,
+    f.cogs,
+    f.profit,
+    f.profitPct,
+  ];
+  const figureHeads: ReportColumn[] = [
+    { label: "Pieces in", kind: "int", weight: 0.9 },
+    { label: cur(b, "Cost in"), kind: "money", weight: 1.3 },
+    { label: "Pieces sold", kind: "int", weight: 0.9 },
+    { label: cur(b, "Sales"), kind: "money", weight: 1.3 },
+    { label: cur(b, "Cost of goods"), kind: "money", weight: 1.3 },
+    { label: cur(b, "Profit"), kind: "money", weight: 1.3 },
+    { label: "Profit %", kind: "percent", weight: 0.8 },
+  ];
+  const shown = SOURCES.filter((s) => s !== "OTHER" || data.styles.some((r) => r.sources.OTHER));
+  return {
+    key: "PRODUCTION_VS_READY",
+    title: METRIC_INFO.PRODUCTION_VS_READY.label,
+    subtitle: formatRange(b.period.from, b.period.to),
+    figures: (["PRODUCTION", "READY_STOCK"] as const).flatMap((s) => [
+      {
+        label: `${SOURCE_LABELS[s]}: pieces in`,
+        value: data.totals[s].piecesIn,
+        kind: "int" as const,
+      },
+      {
+        label: `${SOURCE_LABELS[s]}: profit`,
+        value: data.totals[s].profit,
+        kind: "money" as const,
+      },
+    ]),
+    tables: [
+      {
+        title: "Side by side",
+        sheet: "Side by side",
+        columns: [{ label: "Came in as", kind: "text", weight: 2 }, ...figureHeads],
+        rows: shown.map((s) => ({ cells: [SOURCE_LABELS[s], ...figureCells(data.totals[s])] })),
+        empty: "Nothing came in or sold in this period.",
+      },
+      {
+        title: "Style by style",
+        sheet: "Styles",
+        columns: [
+          { label: "Style", kind: "text", weight: 1.3 },
+          { label: "Product", kind: "text", weight: 2 },
+          { label: "Came in as", kind: "text", weight: 1.4 },
+          ...figureHeads,
+        ],
+        rows: data.styles.flatMap((r) =>
+          SOURCES.filter((s) => r.sources[s]).map((s, i) => ({
+            cells: [
+              i === 0 ? r.styleCode : "",
+              i === 0 ? r.styleName : "",
+              SOURCE_LABELS[s],
+              ...figureCells(r.sources[s]!),
+            ],
+          })),
+        ),
+        empty: "Nothing came in or sold in this period.",
+      },
+    ],
+    notes: [
+      "Pieces in: deliveries from production (less those undone) and ready stock bought in the period, at their cost. Sales: invoices dated in the period less goods that came back in it.",
+      "A sale does not say which batch its pieces came from, so a style that came both ways shares its sales by the pieces that came in each way up to the period's end.",
+    ],
+  };
+}
+
+// =============================================================================
 // Stock alerts
 // =============================================================================
 
@@ -751,6 +836,7 @@ const SECTIONS: Record<ReportMetricKey, (b: Build) => Promise<ReportSection>> = 
   SALES: salesSection,
   PROFIT_AND_LOSS: profitSection,
   TOP_SELLERS: topSellersSection,
+  PRODUCTION_VS_READY: productionVsReadySection,
   STOCK_ALERTS: stockAlertsSection,
 };
 

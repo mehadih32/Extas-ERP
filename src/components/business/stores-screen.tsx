@@ -51,7 +51,7 @@ export function StoresScreen({ list }: { list: StoreList }) {
           {list.stores.map((store) => (
             <li key={store.id} className="min-w-0">
               <Link
-                href={`/business/stores/${store.id}`}
+                href={`/business/retail/stores/${store.id}`}
                 className="grid h-full gap-3 rounded-lg border bg-card p-5 transition-colors outline-none hover:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-ring/25"
               >
                 <div className="flex flex-wrap items-center gap-2">

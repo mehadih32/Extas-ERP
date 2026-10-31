@@ -11,7 +11,7 @@ import { requireCompanyPage } from "@/server/pages/guards";
 export default async function BusinessPage() {
   const ctx = await requireCompanyPage();
   if (canSeeFinancials(ctx)) redirect("/business/overview");
-  if (ctx.can("retail.view") || ctx.can("retail.manage")) redirect("/business/stores");
-  if (ctx.can("retail.returns")) redirect("/business/returns");
-  redirect("/business/shop-stock");
+  if (ctx.can("retail.view") || ctx.can("retail.manage")) redirect("/business/retail/stores");
+  if (ctx.can("retail.returns")) redirect("/business/retail/returns");
+  redirect("/business/retail/shop-stock");
 }

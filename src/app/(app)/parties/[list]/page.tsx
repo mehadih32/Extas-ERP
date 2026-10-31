@@ -19,13 +19,19 @@ import { Button } from "@/components/ui/button";
 import { getPartyListAction } from "@/server/actions/parties.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
+const TITLES = {
+  buyers: "Buyers",
+  suppliers: "Suppliers",
+  "other-suppliers": "Other suppliers",
+} as const;
+
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ list: string }>;
 }): Promise<Metadata> {
   const { list } = await params;
-  return { title: list === "suppliers" ? "Suppliers" : "Buyers" };
+  return { title: TITLES[listName(list) ?? "buyers"] };
 }
 
 /**
@@ -48,13 +54,19 @@ export default async function PartyListPage({
   const result = await getPartyListAction(partyListQuery(view));
   if (!result.ok) {
     if (result.error.code === "FORBIDDEN") return <PartiesNoAccess />;
-    const title = name === "buyers" ? "Buyers" : "Suppliers";
+    const title = TITLES[name];
     return (
-      <SectionError title={title} heading={`The ${name} could not load`} error={result.error} />
+      <SectionError
+        title={title}
+        heading={`The ${TITLES[name].toLowerCase()} could not load`}
+        error={result.error}
+      />
     );
   }
-  const { items, nextCursor, canCreate } = result.data;
+  const { items, nextCursor } = result.data;
   const buyers = name === "buyers";
+  // Other suppliers are added from "Buy ready stock", never here.
+  const canCreate = result.data.canCreate && name !== "other-suppliers";
   const noun = buyers ? "buyer" : "supplier";
 
   return (
@@ -62,12 +74,14 @@ export default async function PartyListPage({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 id="parties-heading" className="font-serif text-2xl text-primary">
-            {buyers ? "Buyers" : "Suppliers"}
+            {TITLES[name]}
           </h2>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
             {buyers
               ? "Everyone you sell to, with what each owes you. Open one for the full profile."
-              : "The factories and suppliers you buy from, with what you owe each. Open one for the full profile."}
+              : name === "suppliers"
+                ? "The factories and suppliers you buy from, with what you owe each. Open one for the full profile."
+                : "One-time suppliers added while buying ready stock, with what you owe each. Open one for the full profile."}
           </p>
         </div>
         {canCreate && (
@@ -83,12 +97,12 @@ export default async function PartyListPage({
       <PartyFilters view={view}>
         {items.length === 0 ? (
           isFiltered(view) ? (
-            <EmptyState title={`No ${name} match`}>
+            <EmptyState title={`No ${TITLES[name].toLowerCase()} match`}>
               Try part of a name, a code or a phone number, or clear the filters.
             </EmptyState>
           ) : (
             <EmptyState
-              title={`No ${name} yet`}
+              title={`No ${TITLES[name].toLowerCase()} yet`}
               action={
                 canCreate ? (
                   <Button asChild>
@@ -99,7 +113,9 @@ export default async function PartyListPage({
             >
               {buyers
                 ? "Buyers show here once they are added, with what each owes."
-                : "Suppliers show here once they are added, with what you owe each."}
+                : name === "suppliers"
+                  ? "Suppliers show here once they are added, with what you owe each."
+                  : "A one-time supplier shows here once ready stock is bought with \u201cRandom supplier\u201d ticked."}
             </EmptyState>
           )
         ) : (

@@ -35,6 +35,9 @@ export default async function ReportsPage({
   if (!ctx.permissions.has("reports.export")) {
     if (holdsAny(ctx.permissions, DOCUMENT_KEYS)) redirect(reportsHref.documents());
     if (ctx.permissions.has("templates.manage")) redirect(reportsHref.templates);
+    if (holdsAny(ctx.permissions, ["dashboard.financials", "accounts.view"])) {
+      redirect("/reports/production-vs-ready-stock");
+    }
   }
   const mine = (await searchParams).mine === "1";
   const result = await getReportsScreenAction({ mine: mine ? "1" : undefined });

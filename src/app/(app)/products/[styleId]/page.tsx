@@ -7,6 +7,7 @@ import { categoryPath, money } from "@/components/products/labels";
 import { InwardBatches } from "@/components/products/inward-batches";
 import { StockHistory } from "@/components/products/stock-history";
 import { HISTORY_PAGE_SIZE } from "@/components/products/stock-history-view";
+import { SizeChartPanel } from "@/components/products/size-chart-panel";
 import { StockMatrix } from "@/components/products/stock-matrix";
 import { StockRecords } from "@/components/products/stock-records";
 import { StyleActions } from "@/components/products/style-actions";
@@ -15,6 +16,7 @@ import { BackLink } from "@/components/settings/back-link";
 import { NoAccess } from "@/components/settings/no-access";
 import { StatusBadge } from "@/components/sales/badges";
 import {
+  getSizeChartAction,
   getStyleScreenAction,
   listStockLotsAction,
   listStockMovementsAction,
@@ -58,9 +60,10 @@ export default async function StylePage({
   const { style } = screen;
   const currency = ctx.company.currency;
   const page = { styleId: style.id, warehouseId: screen.warehouseId ?? undefined };
-  const [history, lots] = await Promise.all([
+  const [history, lots, sizeChart] = await Promise.all([
     listStockMovementsAction({ ...page, take: HISTORY_PAGE_SIZE }),
     listStockLotsAction({ ...page, take: HISTORY_PAGE_SIZE }),
+    getSizeChartAction(style.id),
   ]);
   const where = screen.warehouseId ?? "all";
   const notice =
@@ -122,6 +125,16 @@ export default async function StylePage({
       </div>
 
       <StockMatrix screen={screen} currency={currency} openSku={one(query.sku)} />
+
+      {sizeChart.ok ? (
+        <SizeChartPanel styleId={style.id} chart={sizeChart.data} />
+      ) : (
+        <SectionError
+          title="Size chart"
+          heading="The size chart could not load"
+          error={sizeChart.error}
+        />
+      )}
 
       <StockRecords
         batches={

@@ -315,7 +315,9 @@ export default async function PartyPage({
   const screen = result.data;
   const { party } = screen;
   // A supplier opened from the buyers' address (or the other way) moves to its own list.
-  if (party.kind !== "BOTH" && listOf(party.kind) !== name) redirect(partyHref(party));
+  if (party.kind !== "BOTH" && listOf(party.kind, party.oneTime) !== name) {
+    redirect(partyHref(party));
+  }
   const currency = ctx.company.currency;
   const open = historyFrom(one(query.show));
   const openList = supplierListFrom(one(query.show));
@@ -323,7 +325,7 @@ export default async function PartyPage({
   // Supplier 360°: suppliers (and accounts that are both), seen from the suppliers' list.
   const [buyer, supplier] = await Promise.all([
     name === "buyers" ? getBuyer360Action(party.id, { all: open }) : null,
-    name === "suppliers" ? getSupplier360Action(party.id, { all: openList }) : null,
+    name !== "buyers" ? getSupplier360Action(party.id, { all: openList }) : null,
   ]);
   const buyer360 = buyer?.ok ? buyer.data : null;
   const supplier360 = supplier?.ok ? supplier.data : null;

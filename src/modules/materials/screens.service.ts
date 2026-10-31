@@ -454,6 +454,8 @@ export async function findSuppliers(ctx: CompanyContext, query: { search?: strin
     where: {
       kind: { in: ["SUPPLIER", "BOTH"] },
       status: { in: ["ACTIVE", "DORMANT"] },
+      // One-time suppliers (Other suppliers) are not offered for new orders.
+      oneTime: false,
       ...(search
         ? {
             OR: [

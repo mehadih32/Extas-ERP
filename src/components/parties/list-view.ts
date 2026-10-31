@@ -56,7 +56,7 @@ export function partyListViewFrom(list: PartyListName, params: SearchParams): Pa
     status: pick(STATUSES, one(params, "status")),
     grade: pick(GRADES, one(params, "grade")),
     type: list === "buyers" ? pick(TYPES, one(params, "type")) : undefined,
-    category: list === "suppliers" ? pick(CATEGORIES, one(params, "category")) : undefined,
+    category: list !== "buyers" ? pick(CATEGORIES, one(params, "category")) : undefined,
     verified: one(params, "verified") === "1",
   };
 }
@@ -68,7 +68,7 @@ export function partyListSearch(view: PartyListView): string {
   if (view.status) params.set("status", view.status);
   if (view.grade) params.set("grade", view.grade);
   if (view.list === "buyers" && view.type) params.set("type", view.type);
-  if (view.list === "suppliers" && view.category) params.set("category", view.category);
+  if (view.list !== "buyers" && view.category) params.set("category", view.category);
   if (view.verified) params.set("verified", "1");
   const query = params.toString();
   return query ? `?${query}` : "";
@@ -89,7 +89,9 @@ export function partyListQuery(view: PartyListView, cursor?: string) {
     status: view.status,
     grade: view.grade,
     buyerType: view.list === "buyers" ? view.type : undefined,
-    category: view.list === "suppliers" ? view.category : undefined,
+    category: view.list !== "buyers" ? view.category : undefined,
+    // Other suppliers (one-time) have their own list, never the regular one.
+    oneTime: view.list === "buyers" ? undefined : view.list === "other-suppliers",
     verified: view.verified || undefined,
     cursor,
     take: PARTY_PAGE_SIZE,

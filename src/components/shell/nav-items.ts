@@ -89,6 +89,9 @@ export const REPORTS_KEYS: readonly PermissionKey[] = [
   "reports.export",
   ...DOCUMENT_KEYS,
   "templates.manage",
+  // Production vs ready stock (costs and profit).
+  "dashboard.financials",
+  "accounts.view",
 ];
 
 /**

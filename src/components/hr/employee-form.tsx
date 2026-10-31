@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { EmployeeForm as EmployeeFormData } from "@/modules/hr/screens.service";
 import { createEmployeeAction, updateEmployeeAction } from "@/server/actions/hr.actions";
 
-import { BLOOD_GROUPS, hrHref, payDetails, SALARY_METHODS } from "./labels";
+import { BLOOD_GROUPS, hrHref, OWNER_POST, payDetails, SALARY_METHODS } from "./labels";
 
 const CODE_PATTERN = /^[A-Za-z0-9/_-]+$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -241,6 +241,7 @@ export function EmployeeForm({ form: data }: { form: EmployeeFormData }) {
           {text("designation", "Post (optional)", {
             defaultValue: e?.designation,
             max: 80,
+            list: "posts",
             placeholder: "Like: Sewing operator",
           })}
           {text("department", "Department (optional)", {
@@ -297,6 +298,10 @@ export function EmployeeForm({ form: data }: { form: EmployeeFormData }) {
             </Field>
           )}
         </div>
+        {/* The owner draws a salary like anyone else, so it counts as a cost in profit and loss. */}
+        <datalist id="posts">
+          <option value={OWNER_POST} />
+        </datalist>
         <datalist id="departments">
           {data.departments.map((d) => (
             <option key={d} value={d} />

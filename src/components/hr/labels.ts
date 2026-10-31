@@ -98,6 +98,9 @@ export const SALARY_METHODS: readonly PaymentMethod[] = [
   "CHEQUE",
 ];
 
+/** The post offered for the owner or CEO, who is added and paid like any employee. */
+export const OWNER_POST = "Owner / CEO";
+
 export const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
 
 /** "1 day", "half a day", "2.5 days". */

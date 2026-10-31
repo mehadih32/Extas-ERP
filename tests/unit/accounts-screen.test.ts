@@ -60,6 +60,7 @@ describe("Accounts in the menu, by role", () => {
       "Cash & bank",
       "Supplier payments",
       "Expenses",
+      "Loans & capital",
       "Journal",
       "Chart of accounts",
       "Reports",

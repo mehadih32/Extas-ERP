@@ -18,6 +18,7 @@ vi.mock("next/cache", () => ({ revalidatePath: () => undefined, revalidateTag: (
 
 import { addDays } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
+import { getLenderProfile, getLoansPage } from "@/modules/accounts/loans.service";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { getBatchSummary } from "@/modules/production/batch-summary.service";
 import { getRun } from "@/modules/ai/orders/order-run.service";
@@ -34,6 +35,7 @@ import { getTemplate } from "@/modules/templates/template.service";
 import {
   assertDemoDatabase,
   loadFiveStylePoloDemo,
+  loadLoansSamplesDemo,
   loadSampleShopDemo,
   loadV62SamplesDemo,
   loadV63SamplesDemo,
@@ -359,5 +361,31 @@ run("The demo site's sample data", () => {
     expect(await prisma.salesChannelIntegration.count({ where: { companyId: company.id } })).toBe(
       1,
     );
+  });
+
+  it("adds the loans sample once: a bank loan kept in capital, a person's terms and the rent", async () => {
+    const { company, roles } = await makeCompany("Extas");
+    const owner = await makeUser("owner@extras.test", { isSuperAdmin: true });
+    await addToCompany(owner.id, company.id, roles.SUPER_ADMIN);
+
+    const loaded = await loadLoansSamplesDemo(owner.id, company.id);
+    expect(loaded?.name).toBe("BRAC Bank");
+    const ctx = await contextFor(owner.id, company.id);
+    const page = await getLoansPage(ctx);
+    expect(page.lenders.map((l) => [l.name, l.kind, l.owedNow])).toEqual([
+      ["BRAC Bank", "BANK", "666666.68"],
+      ["Shishir", "PERSON", "1000000.00"],
+    ]);
+    expect(page.capital).toMatchObject({ kept: "1000000.00", keptStillOwed: "666666.68" });
+    const profile = await getLenderProfile(ctx, loaded!.lenderId);
+    expect(profile.loans[0]).toMatchObject({ state: "RUNNING", keepInCapital: true });
+    expect(profile.loans[0]!.left.count).toBe(8);
+    expect(await prisma.recurringExpense.count({ where: { companyId: company.id } })).toBe(1);
+    // No money moved: both were entered as taken before the ERP.
+    expect(await prisma.capitalInstallment.count({ where: { status: "PAID" } })).toBe(0);
+
+    // Once: the second time it adds nothing.
+    expect(await loadLoansSamplesDemo(owner.id, company.id)).toBeNull();
+    expect(await prisma.capitalLender.count({ where: { companyId: company.id } })).toBe(2);
   });
 });

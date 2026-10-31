@@ -1,10 +1,10 @@
-import { CoinsIcon, PlusIcon, TagsIcon } from "lucide-react";
+import { CalendarClockIcon, CoinsIcon, PlusIcon, TagsIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AccountsFilters } from "@/components/accounts/accounts-filters";
 import { ExpenseList } from "@/components/accounts/expense-list";
-import { pettyCashHref } from "@/components/accounts/labels";
+import { loansHref, pettyCashHref } from "@/components/accounts/labels";
 import { Amount, PrivacyProvider, PrivacyToggle } from "@/components/accounts/privacy";
 import {
   accountsListSearch,
@@ -59,7 +59,7 @@ export default async function ExpensesPage({
   return (
     <PrivacyProvider>
       <section aria-labelledby="expenses-heading" className="grid gap-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 id="expenses-heading" className="font-serif text-2xl text-primary">
               {seesAll ? "Expenses and claims" : "My expenses"}
@@ -72,13 +72,21 @@ export default async function ExpensesPage({
                   : "What you spent for the company. Accounts pays each claim back once they approve it."}
             </p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <PrivacyToggle className="w-full sm:w-auto" />
             {can.manageHeads && (
               <Button asChild variant="outline" className="w-full sm:w-auto">
                 <Link href="/accounts/expenses/heads">
                   <TagsIcon aria-hidden />
                   Expense heads
+                </Link>
+              </Button>
+            )}
+            {ctx.can("accounts.view") && (
+              <Button asChild variant="outline" className="w-full sm:w-auto">
+                <Link href={loansHref.fixedCosts}>
+                  <CalendarClockIcon aria-hidden />
+                  Monthly fixed costs
                 </Link>
               </Button>
             )}

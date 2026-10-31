@@ -10,6 +10,7 @@ import * as costs from "@/modules/production/cost.service";
 import * as projects from "@/modules/production/project.service";
 
 import { loadSampleShop } from "./cn005-shop";
+import { loadLoansSamples } from "./loans-samples";
 import { loadRetailStore } from "./retail-store";
 import { POLO_BATCH, runFiveStylePolo, type SimulationManifest } from "./five-style-polo";
 import { loadTestBookings } from "./test-bookings";
@@ -190,6 +191,16 @@ export async function loadRetailStoreDemo(userId: string, companyId: string) {
   const { ctx, done } = await signIn(userId, companyId);
   try {
     return await loadRetailStore(ctx);
+  } finally {
+    await done();
+  }
+}
+
+/** The loans and fixed costs sample (./loans-samples.ts), made once as the owner. */
+export async function loadLoansSamplesDemo(userId: string, companyId: string) {
+  const { ctx, done } = await signIn(userId, companyId);
+  try {
+    return await loadLoansSamples(ctx);
   } finally {
     await done();
   }

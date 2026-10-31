@@ -12,6 +12,7 @@ import * as bank from "@/modules/accounts/bank.service";
 import * as capital from "@/modules/accounts/capital.service";
 import * as chart from "@/modules/accounts/chart.service";
 import * as executive from "@/modules/accounts/executive.service";
+import * as loans from "@/modules/accounts/loans.service";
 import * as breakdown from "@/modules/accounts/expense-breakdown.service";
 import * as moneyInOut from "@/modules/accounts/money-in-out.service";
 import * as pettyCash from "@/modules/accounts/petty-cash.service";
@@ -19,6 +20,7 @@ import * as reports from "@/modules/accounts/reports.service";
 import * as screens from "@/modules/accounts/screens.service";
 import * as supplierPayments from "@/modules/accounts/supplier-payment.service";
 import * as vouchers from "@/modules/accounts/voucher.service";
+import * as fixedCosts from "@/modules/expenses/recurring.service";
 
 /*
  * Accounts Server Actions. Each returns { ok: true, data } or { ok: false, error }.
@@ -346,6 +348,59 @@ export const payInstallmentAction = async (installmentId: string, input: unknown
 export const skipInstallmentAction = async (installmentId: string, input: unknown) =>
   runAction(async () =>
     capital.skipInstallment(await manage(), installmentId, input, await getRequestMeta()),
+  );
+
+// --- Loans & capital page -------------------------------------------------------------------
+/** Paying money out from the loans and fixed costs pages: Accounts who pay (the services check too). */
+const managePay = async () => {
+  await payOut();
+  return manage();
+};
+const switchesOn = (input: unknown) =>
+  typeof input === "object" && input !== null && (input as { on?: unknown }).on === true;
+export const getLoansPageAction = async () =>
+  runAction(async () => loans.getLoansPage(await view()));
+export const getLenderProfileAction = async (lenderId: string) =>
+  runAction(async () => loans.getLenderProfile(await view(), lenderId));
+export const getLoanFormAction = async () =>
+  runAction(async () => loans.getLoanFormOptions(await manage()));
+export const addLoanAction = async (input: unknown) =>
+  change(async () => loans.addLoan(await manage(), input, await getRequestMeta()));
+export const termActionAction = async (sourceId: string, input: unknown) =>
+  change(async () => loans.termAction(await managePay(), sourceId, input, await getRequestMeta()));
+export const setAutoPayAction = async (sourceId: string, input: unknown) =>
+  change(async () =>
+    loans.setAutoPay(
+      await (switchesOn(input) ? managePay() : manage()),
+      sourceId,
+      input,
+      await getRequestMeta(),
+    ),
+  );
+export const setKeepInCapitalAction = async (sourceId: string, input: unknown) =>
+  change(async () =>
+    loans.setKeepInCapital(await manage(), sourceId, input, await getRequestMeta()),
+  );
+/** Pays one installment from the loans page; hands back only the ids. */
+export const payLoanInstallmentAction = async (installmentId: string, input: unknown) =>
+  change(async () => {
+    const paid = await capital.payInstallment(
+      await managePay(),
+      installmentId,
+      input,
+      await getRequestMeta(),
+    );
+    return { id: paid.id, lenderId: paid.lenderId };
+  });
+
+// --- Monthly fixed costs ----------------------------------------------------------------------
+export const getFixedCostsAction = async () =>
+  runAction(async () => fixedCosts.getFixedCostsScreen(await view()));
+export const createFixedCostAction = async (input: unknown) =>
+  change(async () => fixedCosts.createFixedCost(await managePay(), input, await getRequestMeta()));
+export const updateFixedCostAction = async (costId: string, input: unknown) =>
+  change(async () =>
+    fixedCosts.updateFixedCost(await manage(), costId, input, await getRequestMeta()),
   );
 
 // --- Supplier payments ----------------------------------------------------------------------------

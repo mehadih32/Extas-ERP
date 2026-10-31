@@ -2,6 +2,7 @@ import type {
   AccountSubType,
   AccountType,
   AssetStatus,
+  CapitalLenderKind,
   DepreciationMethod,
   JournalSource,
   PaymentType,
@@ -316,3 +317,22 @@ export function employeePayHref(employeeId: string, year?: number): string {
   const base = `/accounts/salaries/${encodeURIComponent(employeeId)}`;
   return year ? `${base}?year=${year}` : base;
 }
+
+export const LENDER_KIND_LABELS: Record<CapitalLenderKind, string> = {
+  BANK: "Bank",
+  NGO: "NGO",
+  PERSON: "Person",
+};
+
+export const LOAN_STATE_LABELS = {
+  RUNNING: "Running",
+  RENEWED: "Renewed",
+  CLOSED: "Closed",
+} as const;
+
+export const loansHref = {
+  page: "/accounts/loans",
+  add: "/accounts/loans/new",
+  lender: (id: string) => `/accounts/loans/${encodeURIComponent(id)}`,
+  fixedCosts: "/accounts/expenses/fixed-costs",
+};

@@ -27,6 +27,7 @@ export const ACCOUNTS_TABS: readonly AccountsTab[] = [
     label: "Expenses",
     anyOf: ["expenses.create", "expenses.manage", "accounts.view", "accounts.payments.record"],
   },
+  { href: "/accounts/loans", label: "Loans & capital", anyOf: ["accounts.view"] },
   { href: "/accounts/journal", label: "Journal", anyOf: ["accounts.view"] },
   { href: "/accounts/chart", label: "Chart of accounts", anyOf: ["accounts.view"] },
   { href: "/accounts/reports", label: "Reports", anyOf: ["accounts.view"] },

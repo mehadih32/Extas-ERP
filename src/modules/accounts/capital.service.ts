@@ -99,7 +99,11 @@ const accountName = (kind: CapitalSourceKind, name: string) =>
   `${KIND_ACCOUNT[kind].label} — ${name}`;
 
 /** Locks the source (never a voided one); gives it a ledger account if it has none yet. */
-async function lockSource(tx: Tx, ctx: CompanyContext, sourceId: string): Promise<LinkedSource> {
+export async function lockSource(
+  tx: Tx,
+  ctx: CompanyContext,
+  sourceId: string,
+): Promise<LinkedSource> {
   await lockRow(tx, "CapitalSource", sourceId);
   const source = await tx.capitalSource.findFirst({
     where: { id: sourceId, companyId: ctx.company.id, voidedAt: null },
@@ -117,7 +121,7 @@ async function lockSource(tx: Tx, ctx: CompanyContext, sourceId: string): Promis
 }
 
 /** What is still owed (or invested) right now, from the ledger. */
-async function outstandingTx(db: Db, companyId: string, source: LinkedSource) {
+export async function outstandingTx(db: Db, companyId: string, source: LinkedSource) {
   return (await rawBalance(companyId, source.ledgerAccountId, {}, db)).neg();
 }
 
@@ -127,7 +131,7 @@ async function outstandingTx(db: Db, companyId: string, source: LinkedSource) {
  * money owed again makes it ACTIVE again. When that comes from reversing the
  * final repayment, the installments skipped for it come back.
  */
-async function syncSourceTx(
+export async function syncSourceTx(
   tx: Tx,
   companyId: string,
   sourceId: string,
@@ -315,6 +319,13 @@ function presentSource(s: CapitalSource, tz: string) {
     repaid: s.principal.minus(s.outstanding).toFixed(2),
     interestRate: s.interestRate?.toFixed(2) ?? null,
     profitSharePct: s.profitSharePct?.toFixed(2) ?? null,
+    lenderId: s.lenderId,
+    takenAmount: (s.takenAmount ?? s.principal).toFixed(2),
+    keepInCapital: s.keepInCapital,
+    autoPay: s.autoPay,
+    periodMonths: s.periodMonths,
+    profitPerPeriod: s.profitPerPeriod?.toFixed(2) ?? null,
+    renewals: s.renewals,
     startDate: localDay(s.startDate, tz),
     maturityDate: s.maturityDate ? localDay(s.maturityDate, tz) : null,
     createdAt: s.createdAt,
@@ -1096,60 +1107,72 @@ export async function payInstallment(
   raw: unknown,
   meta?: RequestMeta,
 ) {
+  const { sourceId } = await runTransaction(
+    (tx) => payInstallmentTx(tx, ctx, installmentId, raw, meta),
+    TX_OPTIONS,
+  );
+  return getCapitalSource(ctx, sourceId);
+}
+
+/** Pays an installment inside the caller's transaction (a renewal, the nightly clock). */
+export async function payInstallmentTx(
+  tx: Tx,
+  ctx: CompanyContext,
+  installmentId: string,
+  raw: unknown,
+  meta?: RequestMeta,
+) {
   assertCanManageAccounts(ctx, "Only Accounts can pay installments.");
   assertCanPayMoney(ctx);
   const input = payInstallmentSchema.parse(raw);
   const tz = ctx.company.timezone;
   const date = input.date ? toInstant(input.date, tz) : new Date();
-  const sourceId = await runTransaction(async (tx) => {
-    const { source, installment } = await lockInstallment(tx, ctx, installmentId);
-    const scheduledInterest = installment.interestPart ?? ZERO;
-    const scheduledPrincipal =
-      installment.principalPart ?? installment.amount.minus(scheduledInterest);
-    const principal = money(input.principalPart ?? scheduledPrincipal);
-    const interest = money(input.interestPart ?? scheduledInterest);
-    if (principal.plus(interest).lte(0)) {
-      throw new AppError("VALIDATION", "Enter the principal, the interest or both.");
-    }
-    assertPrincipalFits(source, principal, await outstandingTx(tx, ctx.company.id, source));
-    const due = localDay(installment.dueDate, tz);
-    const paidFrom = await cashAccountFor(tx, ctx.company.id, input.method, input.accountId);
-    const entry = await postPayoutTx(tx, ctx, source, {
-      method: input.method,
-      accountId: paidFrom,
-      reference: input.reference,
-      principal,
-      interest,
-      date,
-      description: `Installment due ${due} — ${source.name}${input.notes ? ` — ${input.notes}` : ""}`,
-    });
-    await tx.capitalInstallment.update({
-      where: { id: installment.id },
-      data: {
-        status: "PAID",
-        paidAt: date,
-        paidFromAccountId: paidFrom,
-        journalEntryId: entry.id,
-        principalPart: principal,
-        interestPart: interest,
-        amount: principal.plus(interest),
-      },
-    });
-    await syncSourceTx(tx, ctx.company.id, source.id);
-    await auditInCompany(
-      ctx,
-      meta,
-      {
-        action: "CREATE",
-        entityType: "CapitalInstallment",
-        entityId: installment.id,
-        summary: `Paid installment due ${due} to ${source.name}: ${principal.plus(interest).toFixed(2)} (principal ${principal.toFixed(2)}, interest ${interest.toFixed(2)}, ${input.method}) ${entry.number}`,
-      },
-      tx,
-    );
-    return source.id;
-  }, TX_OPTIONS);
-  return getCapitalSource(ctx, sourceId);
+  const { source, installment } = await lockInstallment(tx, ctx, installmentId);
+  const scheduledInterest = installment.interestPart ?? ZERO;
+  const scheduledPrincipal =
+    installment.principalPart ?? installment.amount.minus(scheduledInterest);
+  const principal = money(input.principalPart ?? scheduledPrincipal);
+  const interest = money(input.interestPart ?? scheduledInterest);
+  if (principal.plus(interest).lte(0)) {
+    throw new AppError("VALIDATION", "Enter the principal, the interest or both.");
+  }
+  assertPrincipalFits(source, principal, await outstandingTx(tx, ctx.company.id, source));
+  const due = localDay(installment.dueDate, tz);
+  const paidFrom = await cashAccountFor(tx, ctx.company.id, input.method, input.accountId);
+  const entry = await postPayoutTx(tx, ctx, source, {
+    method: input.method,
+    accountId: paidFrom,
+    reference: input.reference,
+    principal,
+    interest,
+    date,
+    description: `Installment due ${due} — ${source.name}${input.notes ? ` — ${input.notes}` : ""}`,
+  });
+  await tx.capitalInstallment.update({
+    where: { id: installment.id },
+    data: {
+      status: "PAID",
+      paidAt: date,
+      paidFromAccountId: paidFrom,
+      journalEntryId: entry.id,
+      principalPart: principal,
+      interestPart: interest,
+      amount: principal.plus(interest),
+    },
+  });
+  const synced = await syncSourceTx(tx, ctx.company.id, source.id);
+  await auditInCompany(
+    ctx,
+    meta,
+    {
+      action: "CREATE",
+      entityType: "CapitalInstallment",
+      entityId: installment.id,
+      summary: `Paid installment due ${due} to ${source.name}: ${principal.plus(interest).toFixed(2)} (principal ${principal.toFixed(2)}, interest ${interest.toFixed(2)}, ${input.method}) ${entry.number}`,
+    },
+    tx,
+  );
+  return { sourceId: source.id, source: synced, entry };
 }
 
 /** Marks an unpaid installment as not needed (waived, rescheduled by the lender...). */

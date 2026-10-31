@@ -209,6 +209,21 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-31 (loans, capital and fixed costs): a new "Loans & capital" tab in Accounts. Every bank, NGO or person
+  who lends money has a profile with every loan or term, running, renewed or closed; closed ones stay for good and
+  nothing is deleted (corrections by reversal). A bank or NGO loan is repaid by a fixed monthly installment; its
+  interest is what is paid beyond the loan, split evenly over the installments (the rate is only a note). A person's
+  money runs in terms (profit every few months, as money or %), ended with "Pay profit & renew", "Pay profit &
+  return money" or "Return part". Each loan chooses "Keep it in my capital for ever": yes, the money working in the
+  business never drops for it and its principal repayments show below Net profit ("Loan installments paid", then
+  "Left after installments"); no, what is repaid comes off it. Interest and a person's profit are always a cost
+  before Net profit. The capital figure shows the owner's capital, loans kept in capital (with a small "Still owed
+  to the bank" line) and other loans owed. Installments can pay by themselves on their due day and monthly fixed
+  costs (rent, internet) are recorded by themselves on their day: both set up with the PIN, by Accounts or Super
+  Admin, run by the nightly clock in that person's name with their permissions checked each time (lost permission
+  switches it off, logged). Fixed costs are office costs, never order costing; a changed amount counts from the next
+  month. The CEO's salary is an HR employee with the post "Owner / CEO", paid through payroll, never also as a fixed
+  cost. Loans running before the ERP are entered with "Taken before the ERP" at what is owed today (no money moves).
 - 2026-10-30 (Drive keeps 3): Google Drive keeps the newest 3 checked backups (and the newest 3 update safety
   copies); each new backup, once Google's copy is checked, replaces the oldest, so a backup in Drive is never
   removed before a newer one is safe there. The "Keep in Google Drive for (days)" setting is gone (its column

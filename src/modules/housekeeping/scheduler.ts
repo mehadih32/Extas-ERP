@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { payDueInstallments } from "@/modules/accounts/loans.service";
 import { recordAudit } from "@/modules/audit/audit.service";
 import { purgeExpiredSessions } from "@/modules/auth/session.service";
 import { parseCron, previousRun } from "@/modules/backups/cron";
 import { purgeKeptSalesPdfs } from "@/modules/documents/print.service";
 import { purgeShopLogs } from "@/modules/ecommerce/housekeeping";
+import { recordDueFixedCosts } from "@/modules/expenses/recurring.service";
 import { purgeOldPings } from "@/modules/hr/location.service";
 import { purgeOldJobs } from "@/modules/jobs/queue";
 import { refreshStatusesForCompany } from "@/modules/parties/dormant.service";
@@ -35,7 +37,10 @@ import { purgeUnusedReferenceImages } from "@/modules/sales/reference-image.serv
  *     (30 days) and the webhooks sent to them that were delivered or skipped
  *     (90 days) are cleared; failed webhooks stay (ecommerce/housekeeping.ts);
  *   - a retail store's exchange whose old piece is not back by its deadline is
- *     billed in full (retail/exchanges.service.ts).
+ *     billed in full (retail/exchanges.service.ts);
+ *   - loan installments set to pay by themselves are paid on their due day
+ *     (accounts/loans.service.ts), and monthly fixed costs are recorded on their
+ *     day of the month (expenses/recurring.service.ts).
  * Every step is safe to repeat, so a run after a restart changes nothing new.
  */
 
@@ -84,6 +89,8 @@ export async function runHousekeeping(now: Date = new Date()) {
   const exchangesBilled = await billOverdueExchanges(now);
   const reservesReminded = await remindIdleReserves(now);
   const yearReportsMade = await makeYearReports(now);
+  const installmentsPaid = await payDueInstallments(now);
+  const fixedCostsRecorded = await recordDueFixedCosts(now);
   return {
     companies: companies.length,
     markedDormant,
@@ -98,6 +105,8 @@ export async function runHousekeeping(now: Date = new Date()) {
     exchangesBilled,
     reservesReminded,
     yearReportsMade,
+    installmentsPaid,
+    fixedCostsRecorded,
   };
 }
 

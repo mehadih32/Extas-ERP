@@ -180,6 +180,8 @@ model Company {
   pettyCashBoxes         PettyCashBox[]
   fixedAssets            FixedAsset[]
   capitalSources         CapitalSource[]
+  capitalLenders         CapitalLender[]
+  recurringExpenses      RecurringExpense[]
   expenseHeads           ExpenseHead[]
   expenses               Expense[]
   adSpends               AdSpend[]
@@ -3334,29 +3336,99 @@ model FixedAsset {
 
 /// Capital, investors and loans (liabilities) with installment schedules.
 model CapitalSource {
-  id              String            @id @default(cuid())
-  companyId       String
-  ledgerAccountId String?           @unique
-  kind            CapitalSourceKind
-  name            String // investor / lender name
-  contact         String?
-  principal       Decimal           @db.Decimal(14, 2)
-  interestRate    Decimal?          @db.Decimal(5, 2)
-  profitSharePct  Decimal?          @db.Decimal(5, 2)
-  startDate       DateTime
-  maturityDate    DateTime?
-  outstanding     Decimal           @db.Decimal(14, 2)
-  status          CapitalStatus     @default(ACTIVE)
-  notes           String?
-  createdAt       DateTime          @default(now())
+  id                String            @id @default(cuid())
+  companyId         String
+  ledgerAccountId   String?           @unique
+  kind              CapitalSourceKind
+  name              String // investor / lender name
+  contact           String?
+  principal         Decimal           @db.Decimal(14, 2)
+  interestRate      Decimal?          @db.Decimal(5, 2)
+  profitSharePct    Decimal?          @db.Decimal(5, 2)
+  startDate         DateTime
+  maturityDate      DateTime?
+  outstanding       Decimal           @db.Decimal(14, 2)
+  status            CapitalStatus     @default(ACTIVE)
+  notes             String?
+  createdAt         DateTime          @default(now())
   /// Set when it was added by mistake and voided: its entries are reversed and it
   /// leaves the lists, but the row and its installments stay.
-  voidedAt        DateTime?
-  voidReason      String?
+  voidedAt          DateTime?
+  voidReason        String?
+  /// The bank, NGO or person behind it, for their profile (loans only).
+  lenderId          String?
+  /// What was taken at the start; a loan running before the ERP is entered at what
+  /// is owed on the day (its opening balance), so its full amount is kept here.
+  takenAmount       Decimal?          @db.Decimal(14, 2)
+  /// Counted in the owner's capital for ever: the capital never goes down, and its
+  /// principal repayments come out of profit (shown below net profit).
+  keepInCapital     Boolean           @default(false)
+  /// Since when its repayments come out of profit (reports before it stay as they were).
+  keptInCapitalFrom DateTime?
+  /// Installments paid by themselves on their due day (the nightly clock), from this
+  /// account, in the name of the person who switched it on (with the PIN).
+  autoPay           Boolean           @default(false)
+  autoPayMethod     PaymentMethod?
+  autoPayAccountId  String?
+  autoPayById       String?
+  /// A person's term: profit paid every `periodMonths`, then renewed or returned.
+  periodMonths      Int?
+  profitPerPeriod   Decimal?          @db.Decimal(14, 2)
+  renewals          Int               @default(0)
 
   company       Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   ledgerAccount LedgerAccount?       @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
+  lender        CapitalLender?       @relation(fields: [lenderId], references: [id], onDelete: SetNull)
   installments  CapitalInstallment[]
+
+  @@index([lenderId])
+}
+
+enum CapitalLenderKind {
+  BANK
+  NGO
+  PERSON
+}
+
+/// A bank, NGO or person who lent money: their profile groups every loan or term.
+model CapitalLender {
+  id        String            @id @default(cuid())
+  companyId String
+  kind      CapitalLenderKind
+  name      String
+  contact   String?
+  createdAt DateTime          @default(now())
+
+  company Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  loans   CapitalSource[]
+
+  @@unique([companyId, kind, name])
+}
+
+/// A cost recorded by itself every month (rent, internet), as the person who set it up.
+model RecurringExpense {
+  id              String        @id @default(cuid())
+  companyId       String
+  name            String
+  headId          String
+  amount          Decimal       @db.Decimal(14, 2)
+  /// Day of the month (1-31; a shorter month uses its last day).
+  dayOfMonth      Int
+  method          PaymentMethod @default(CASH)
+  accountId       String?
+  /// First month it is recorded for ("2026-11").
+  startMonth      String
+  /// The last month recorded ("2026-11"), so a month is never recorded twice.
+  lastPostedMonth String?
+  isActive        Boolean       @default(true)
+  createdById     String
+  createdAt       DateTime      @default(now())
+  stoppedAt       DateTime?
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  head    ExpenseHead @relation(fields: [headId], references: [id])
+
+  @@index([companyId, isActive])
 }
 
 /// Scheduled installment payouts (loan EMIs, investor profit payouts).
@@ -3398,6 +3470,7 @@ model ExpenseHead {
   expenses        Expense[]
   billAllocations SupplierBillAllocation[]
   staffClaims     StaffClaim[]             @relation("StaffClaimCostHead")
+  recurring       RecurringExpense[]
 
   @@unique([companyId, name])
 }

@@ -1,4 +1,25 @@
 {
+  "accounts-add-loan": {
+    "src": "/help/shots/accounts-add-loan.webp",
+    "width": 1280,
+    "height": 1600,
+    "marks": [1, 2, 3, 5],
+    "labels": {
+      "1": "Who lent it",
+      "2": "Received into",
+      "3": "Installments left",
+      "5": "Add the loan"
+    },
+    "clip": {
+      "y": 236,
+      "height": 1600,
+      "target": "marks"
+    },
+    "route": "/accounts/loans/new",
+    "screen": "bc83602e5306422a",
+    "guide": "2c570ad833f5fefa",
+    "taken": "2026-10-31"
+  },
   "accounts-approve-claims": {
     "src": "/help/shots/accounts-approve-claims.webp",
     "width": 1280,
@@ -13,9 +34,9 @@
       "target": "marks"
     },
     "route": "/accounts/expenses",
-    "screen": "96c43748320719a8",
+    "screen": "c5d86a4290f067df",
     "guide": "c8454cbefd4eb8ef",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-balance-sheet": {
     "src": "/help/shots/accounts-balance-sheet.webp",
@@ -32,9 +53,9 @@
       "target": "marks"
     },
     "route": "/accounts/reports/balance-sheet",
-    "screen": "26fce1fba490fbae",
+    "screen": "9b738c53d3a68f80",
     "guide": "46229a0994736251",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-bank-accounts": {
     "src": "/help/shots/accounts-bank-accounts.webp",
@@ -51,9 +72,9 @@
       "target": "marks"
     },
     "route": "/accounts/cash-bank",
-    "screen": "9e7e32c11bcc0a9e",
+    "screen": "7bc2c87b05e597c2",
     "guide": "f273bb4da6bcc33f",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-bank-reconcile": {
     "src": "/help/shots/accounts-bank-reconcile.webp",
@@ -70,9 +91,9 @@
       "target": "marks"
     },
     "route": "/accounts/cash-bank",
-    "screen": "9e7e32c11bcc0a9e",
+    "screen": "7bc2c87b05e597c2",
     "guide": "c2d108ebdf745c83",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-books-check": {
     "src": "/help/shots/accounts-books-check.webp",
@@ -88,9 +109,9 @@
       "target": "marks"
     },
     "route": "/accounts/reports/books-check",
-    "screen": "0b8793209c32b1e0",
+    "screen": "72425231165aecec",
     "guide": "31d5dcc54b94ff75",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-chart": {
     "src": "/help/shots/accounts-chart.webp",
@@ -107,14 +128,14 @@
       "target": "marks"
     },
     "route": "/accounts/chart",
-    "screen": "b07ce129e328b7a1",
+    "screen": "3dd595f0b6c4bbc1",
     "guide": "d485636e097f497b",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-expense-breakdown": {
     "src": "/help/shots/accounts-expense-breakdown.webp",
     "width": 1280,
-    "height": 1489,
+    "height": 1517,
     "marks": [1, 2, 4, 5, 6],
     "labels": {
       "1": "Show amounts",
@@ -125,18 +146,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1489,
+      "height": 1517,
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "7b32688e41483eca",
+    "screen": "7205d30ec77ae583",
     "guide": "a52417ae4594174d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-expense-claim": {
     "src": "/help/shots/accounts-expense-claim.webp",
     "width": 1280,
-    "height": 1168,
+    "height": 1196,
     "marks": [1, 2, 3, 5],
     "labels": {
       "1": "Record an expense",
@@ -146,13 +167,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1168,
+      "height": 1196,
       "target": "marks"
     },
     "route": "/accounts/expenses/new",
-    "screen": "b8073867a3b3623c",
+    "screen": "31830a2623c4e7dc",
     "guide": "1015a67b003e6af9",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-expense-heads": {
     "src": "/help/shots/accounts-expense-heads.webp",
@@ -170,9 +191,9 @@
       "target": "marks"
     },
     "route": "/accounts/expenses/heads",
-    "screen": "ffd5365559bba92b",
+    "screen": "15d0e09a70db2721",
     "guide": "28682984cc5846e0",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-fixed-assets": {
     "src": "/help/shots/accounts-fixed-assets.webp",
@@ -191,9 +212,29 @@
       "target": "marks"
     },
     "route": "/accounts/assets",
-    "screen": "50e783e782301725",
+    "screen": "690d10c947637b54",
     "guide": "ccacf003262c2050",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
+  },
+  "accounts-fixed-costs": {
+    "src": "/help/shots/accounts-fixed-costs.webp",
+    "width": 1280,
+    "height": 800,
+    "marks": [1, 2, 3],
+    "labels": {
+      "1": "Expenses",
+      "2": "Add a fixed cost",
+      "3": "Change"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "marks"
+    },
+    "route": "/accounts/expenses/fixed-costs",
+    "screen": "6e931321e87ff01f",
+    "guide": "15d224e6f0b195b9",
+    "taken": "2026-10-31"
   },
   "accounts-journal": {
     "src": "/help/shots/accounts-journal.webp",
@@ -210,9 +251,51 @@
       "target": "marks"
     },
     "route": "/accounts/journal",
-    "screen": "690bda2e5f8528e4",
+    "screen": "17af8b340251b517",
     "guide": "5c2ad734b0a3afae",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
+  },
+  "accounts-lender-profile": {
+    "src": "/help/shots/accounts-lender-profile.webp",
+    "width": 1280,
+    "height": 932,
+    "marks": [1, 2, 4, 5],
+    "labels": {
+      "1": "Taken in all",
+      "2": "Pay the installment",
+      "4": "Every payment",
+      "5": "Take out of my capital"
+    },
+    "clip": {
+      "y": 0,
+      "height": 932,
+      "target": "marks"
+    },
+    "route": "/accounts/loans/[lenderId]",
+    "screen": "3553fef183feb243",
+    "guide": "e2fe2ccc85e415bb",
+    "taken": "2026-10-31"
+  },
+  "accounts-loans": {
+    "src": "/help/shots/accounts-loans.webp",
+    "width": 1280,
+    "height": 844,
+    "marks": [1, 2, 3, 4],
+    "labels": {
+      "1": "Loans & capital",
+      "2": "Pay",
+      "3": "Banks, NGOs and people",
+      "4": "Add a loan"
+    },
+    "clip": {
+      "y": 0,
+      "height": 844,
+      "target": "marks"
+    },
+    "route": "/accounts/loans",
+    "screen": "6a6fa7f11386f329",
+    "guide": "88cc014f5c46628a",
+    "taken": "2026-10-31"
   },
   "accounts-money-in-out": {
     "src": "/help/shots/accounts-money-in-out.webp",
@@ -228,9 +311,9 @@
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "7b32688e41483eca",
+    "screen": "7205d30ec77ae583",
     "guide": "d70e4b52e7f99fef",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-move-money": {
     "src": "/help/shots/accounts-move-money.webp",
@@ -246,14 +329,14 @@
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "7b32688e41483eca",
+    "screen": "7205d30ec77ae583",
     "guide": "bdd3730aaa7114d7",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-overview": {
     "src": "/help/shots/accounts-overview.webp",
     "width": 1280,
-    "height": 1018,
+    "height": 1046,
     "marks": [1, 2, 3, 4, 5, 6, 7, 8, 9],
     "labels": {
       "1": "Show amounts",
@@ -268,18 +351,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1018,
+      "height": 1046,
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "7b32688e41483eca",
+    "screen": "7205d30ec77ae583",
     "guide": "42963b56dd335c21",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-pay-supplier": {
     "src": "/help/shots/accounts-pay-supplier.webp",
     "width": 1280,
-    "height": 1015,
+    "height": 1043,
     "marks": [1, 2, 4, 5],
     "labels": {
       "1": "Supplier payments",
@@ -289,13 +372,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1015,
+      "height": 1043,
       "target": "marks"
     },
     "route": "/accounts/supplier-payments/new",
-    "screen": "2f3be76c57a57749",
+    "screen": "c3e94a8fb2c86a37",
     "guide": "b9b5c7a7b990dfd4",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-petty-cash": {
     "src": "/help/shots/accounts-petty-cash.webp",
@@ -312,14 +395,14 @@
       "target": "marks"
     },
     "route": "/accounts/expenses",
-    "screen": "96c43748320719a8",
+    "screen": "c5d86a4290f067df",
     "guide": "d3ffddc23429eaea",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-profit-and-loss": {
     "src": "/help/shots/accounts-profit-and-loss.webp",
     "width": 1280,
-    "height": 837,
+    "height": 865,
     "marks": [1, 2, 3],
     "labels": {
       "1": "Profit and loss",
@@ -328,18 +411,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 837,
+      "height": 865,
       "target": "marks"
     },
     "route": "/accounts/reports/profit-and-loss",
-    "screen": "aa61f090c7586600",
+    "screen": "ad692ba205e0ef36",
     "guide": "54a6447105265fa5",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-record-expense": {
     "src": "/help/shots/accounts-record-expense.webp",
     "width": 1280,
-    "height": 1448,
+    "height": 1476,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Record an expense",
@@ -349,13 +432,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1448,
+      "height": 1476,
       "target": "marks"
     },
     "route": "/accounts/expenses/new",
-    "screen": "b8073867a3b3623c",
+    "screen": "31830a2623c4e7dc",
     "guide": "369af0605fa2bcb7",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-user-manual": {
     "src": "/help/shots/accounts-user-manual.webp",
@@ -373,19 +456,19 @@
       "11": "Balance sheet"
     },
     "clip": {
-      "y": 164,
+      "y": 192,
       "height": 1579,
       "target": "marks"
     },
     "route": "/accounts",
-    "screen": "7b32688e41483eca",
+    "screen": "7205d30ec77ae583",
     "guide": "91e514d32c00dd19",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "accounts-voucher": {
     "src": "/help/shots/accounts-voucher.webp",
     "width": 1280,
-    "height": 1238,
+    "height": 1266,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Journal",
@@ -395,18 +478,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1238,
+      "height": 1266,
       "target": "marks"
     },
     "route": "/accounts/journal/new",
-    "screen": "aa9a78bf77842791",
+    "screen": "d07e811813c020ba",
     "guide": "733e7c79225a46e6",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-agents": {
     "src": "/help/shots/ai-agents.webp",
     "width": 1280,
-    "height": 1058,
+    "height": 1086,
     "marks": [1, 2, 3, 4, 5],
     "labels": {
       "1": "Skills, books and last runs",
@@ -417,18 +500,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1058,
+      "height": 1086,
       "target": "marks"
     },
     "route": "/ai/agents",
     "screen": "fb8bfcd5de6b0f9e",
     "guide": "65ff8e7186058b5f",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-bot": {
     "src": "/help/shots/ai-bot.webp",
     "width": 1280,
-    "height": 897,
+    "height": 925,
     "marks": [2, 5],
     "labels": {
       "2": "Connect a bot",
@@ -436,18 +519,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 897,
+      "height": 925,
       "target": "marks"
     },
     "route": "/ai/bot",
     "screen": "674c0b943b028968",
     "guide": "cab60dd96b1ceeea",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-bug-guard": {
     "src": "/help/shots/ai-bug-guard.webp",
     "width": 1280,
-    "height": 1392,
+    "height": 1420,
     "marks": [1, 2, 3, 7, 9],
     "labels": {
       "1": "Run now",
@@ -458,18 +541,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1392,
+      "height": 1420,
       "target": "marks"
     },
     "route": "/ai/bug-guard",
     "screen": "0c9fd500f6324b7a",
     "guide": "51b3fda614cd44ac",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-chat": {
     "src": "/help/shots/ai-chat.webp",
     "width": 1280,
-    "height": 886,
+    "height": 914,
     "marks": [1, 7],
     "labels": {
       "1": "Send",
@@ -477,18 +560,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 886,
+      "height": 914,
       "target": "marks"
     },
     "route": "/ai/chat",
     "screen": "2743f18d64b5bc26",
     "guide": "ac408fff6d4c2b55",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-control": {
     "src": "/help/shots/ai-control.webp",
     "width": 1280,
-    "height": 1597,
+    "height": 1600,
     "marks": [1, 3, 4, 5, 6, 7],
     "labels": {
       "1": "Do",
@@ -500,18 +583,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1597,
+      "height": 1600,
       "target": "marks"
     },
     "route": "/ai/control",
     "screen": "e03cbe5d4dcdf6b5",
     "guide": "c5475956e6d74383",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-costs": {
     "src": "/help/shots/ai-costs.webp",
     "width": 1280,
-    "height": 1173,
+    "height": 1201,
     "marks": [1, 2, 3, 4, 6, 8],
     "labels": {
       "1": "Money",
@@ -523,13 +606,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1173,
+      "height": 1201,
       "target": "marks"
     },
     "route": "/ai/costs",
     "screen": "8063b733a472ef66",
     "guide": "b54f38415f9779e0",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-drafts": {
     "src": "/help/shots/ai-drafts.webp",
@@ -549,12 +632,12 @@
     "route": "/ai/drafts",
     "screen": "97688b4a141be845",
     "guide": "d72ac72009289167",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-full-check": {
     "src": "/help/shots/ai-full-check.webp",
     "width": 1280,
-    "height": 1300,
+    "height": 1328,
     "marks": [3, 5, 6, 8, 9],
     "labels": {
       "3": "Send to Claude Code",
@@ -565,13 +648,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1300,
+      "height": 1328,
       "target": "marks"
     },
     "route": "/ai/full-check",
     "screen": "413675701d80a523",
     "guide": "c1b318229ab746fd",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-health": {
     "src": "/help/shots/ai-health.webp",
@@ -591,7 +674,7 @@
     "route": "/ai/health",
     "screen": "df0e1ec010b12daa",
     "guide": "dfd7968ebcdc4677",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-knowledge": {
     "src": "/help/shots/ai-knowledge.webp",
@@ -610,7 +693,7 @@
     "route": "/ai/knowledge",
     "screen": "47954b18a908ceb3",
     "guide": "f10a94021b7aa26c",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-logs": {
     "src": "/help/shots/ai-logs.webp",
@@ -629,12 +712,12 @@
     "route": "/ai/logs",
     "screen": "030b9774dadec340",
     "guide": "f584d1a1f1a1afe4",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-mehedi": {
     "src": "/help/shots/ai-mehedi.webp",
     "width": 1280,
-    "height": 1245,
+    "height": 1273,
     "marks": [1, 2, 4, 6, 7],
     "labels": {
       "1": "Mehedi & Agents",
@@ -645,13 +728,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1245,
+      "height": 1273,
       "target": "marks"
     },
     "route": "/ai/mehedi",
     "screen": "58b57e673757723c",
     "guide": "36e9da63ab1b10f7",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-models": {
     "src": "/help/shots/ai-models.webp",
@@ -664,14 +747,14 @@
       "8": "Built in"
     },
     "clip": {
-      "y": 597,
+      "y": 625,
       "height": 1600,
       "target": "Which model does which task"
     },
     "route": "/ai/models",
     "screen": "0c9989a586687667",
     "guide": "51a437ddef37ead6",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-orders": {
     "src": "/help/shots/ai-orders.webp",
@@ -689,12 +772,12 @@
     "route": "/ai/orders",
     "screen": "72ea78c106c7c8e3",
     "guide": "4310edfc09b907ad",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-requests": {
     "src": "/help/shots/ai-requests.webp",
     "width": 1280,
-    "height": 1002,
+    "height": 1030,
     "marks": [1, 3],
     "labels": {
       "1": "Waiting for your answer",
@@ -702,18 +785,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1002,
+      "height": 1030,
       "target": "marks"
     },
     "route": "/ai",
     "screen": "b794b4c765e94477",
     "guide": "c8dd3b85f0af9605",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-settings": {
     "src": "/help/shots/ai-settings.webp",
     "width": 1280,
-    "height": 1595,
+    "height": 1600,
     "marks": [2, 4, 5, 6, 8, 9],
     "labels": {
       "2": "Add the key",
@@ -725,13 +808,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1595,
+      "height": 1600,
       "target": "marks"
     },
     "route": "/ai/settings",
     "screen": "5951ab758172157a",
     "guide": "d4b0171a53f4b8a4",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-skills": {
     "src": "/help/shots/ai-skills.webp",
@@ -750,12 +833,12 @@
     "route": "/ai/skills",
     "screen": "a1acc1fbcf965f0d",
     "guide": "f34d86c7651f691e",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "ai-switch": {
     "src": "/help/shots/ai-switch.webp",
     "width": 1280,
-    "height": 1128,
+    "height": 1156,
     "marks": [1, 2, 3, 7],
     "labels": {
       "1": "AI is off",
@@ -765,13 +848,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1128,
+      "height": 1156,
       "target": "marks"
     },
     "route": "/ai",
     "screen": "b794b4c765e94477",
     "guide": "ac8c54cfae404612",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "appearance": {
     "src": "/help/shots/appearance.webp",
@@ -790,7 +873,7 @@
     "route": "/settings/appearance",
     "screen": "521751eca4360586",
     "guide": "96e30fd82f5316d8",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "backups-cloudflare": {
     "src": "/help/shots/backups-cloudflare.webp",
@@ -808,12 +891,12 @@
     "route": "/settings/backups",
     "screen": "4cd2fb6fc55657b8",
     "guide": "284e480596e7ffe7",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "backups-drive-key": {
     "src": "/help/shots/backups-drive-key.webp",
     "width": 1280,
-    "height": 1574,
+    "height": 1594,
     "marks": [1, 3, 5, 6, 7, 8, 11],
     "labels": {
       "1": "Backups",
@@ -826,13 +909,13 @@
     },
     "clip": {
       "y": 217,
-      "height": 1574,
+      "height": 1594,
       "target": "marks"
     },
     "route": "/settings/backups",
     "screen": "4cd2fb6fc55657b8",
     "guide": "8ce0629bbedfb5f0",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "backups-github-alert": {
     "src": "/help/shots/backups-github-alert.webp",
@@ -850,7 +933,7 @@
     "route": "/settings/backups",
     "screen": "4cd2fb6fc55657b8",
     "guide": "0167dbb5b93d51c8",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "backups-google-setup": {
     "src": "/help/shots/backups-google-setup.webp",
@@ -862,14 +945,14 @@
       "4": "Save the Google client"
     },
     "clip": {
-      "y": 1489,
+      "y": 1509,
       "height": 800,
       "target": "dialog"
     },
     "route": "/settings/backups",
     "screen": "4cd2fb6fc55657b8",
     "guide": "ab148c67cbc46a72",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "backups-new-server": {
     "src": "/help/shots/backups-new-server.webp",
@@ -890,12 +973,12 @@
     "route": "/settings/backups",
     "screen": "4cd2fb6fc55657b8",
     "guide": "3dc0e28cf2a95202",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "backups-restore": {
     "src": "/help/shots/backups-restore.webp",
     "width": 1280,
-    "height": 1569,
+    "height": 1589,
     "marks": [1, 2, 4, 5, 6, 7],
     "labels": {
       "1": "Backups in Google Drive",
@@ -907,13 +990,13 @@
     },
     "clip": {
       "y": 1166,
-      "height": 1569,
+      "height": 1589,
       "target": "marks"
     },
     "route": "/settings/backups",
     "screen": "4cd2fb6fc55657b8",
     "guide": "d23f987fb10aefe1",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "backups-server-drill": {
     "src": "/help/shots/backups-server-drill.webp",
@@ -933,7 +1016,7 @@
     "route": "/settings/backups",
     "screen": "4cd2fb6fc55657b8",
     "guide": "f4e7baa4ce96c993",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "business-downloads": {
     "src": "/help/shots/business-downloads.webp",
@@ -945,14 +1028,14 @@
       "5": "Year-end summaries"
     },
     "clip": {
-      "y": 1749,
+      "y": 1777,
       "height": 800,
       "target": "Pad and year-end summaries"
     },
     "route": "/business/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "7cef8bc301953a81",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "business-overview": {
     "src": "/help/shots/business-overview.webp",
@@ -963,14 +1046,14 @@
       "5": "Why profit changed"
     },
     "clip": {
-      "y": 569,
+      "y": 597,
       "height": 400,
       "target": "Profit by business"
     },
     "route": "/business/overview",
     "screen": "cf9077066aa54778",
     "guide": "4af57c7be1c55d46",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "business-retail": {
     "src": "/help/shots/business-retail.webp",
@@ -982,14 +1065,14 @@
       "3": "Stores side by side"
     },
     "clip": {
-      "y": 556,
+      "y": 584,
       "height": 400,
       "target": "Stores side by side"
     },
     "route": "/business/retail",
     "screen": "c6942719bc72ed8d",
     "guide": "6c6aa6b8b3d48f92",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "business-shop-stock": {
     "src": "/help/shots/business-shop-stock.webp",
@@ -1001,14 +1084,14 @@
       "3": "Buy ready stock"
     },
     "clip": {
-      "y": 293,
+      "y": 321,
       "height": 507,
       "target": "Shops' reserve"
     },
     "route": "/business/shop-stock",
     "screen": "fdbd6406309b9d27",
     "guide": "d44ec8ae52376c34",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "business-store-account": {
     "src": "/help/shots/business-store-account.webp",
@@ -1020,14 +1103,14 @@
       "2": "Open the statement"
     },
     "clip": {
-      "y": 1911,
+      "y": 1939,
       "height": 800,
       "target": "Account"
     },
     "route": "/business/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "c6acd17cf2d89b4f",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "business-store-books": {
     "src": "/help/shots/business-store-books.webp",
@@ -1040,14 +1123,14 @@
       "4": "Set target"
     },
     "clip": {
-      "y": 2181,
+      "y": 2209,
       "height": 1248,
       "target": "Daily figures"
     },
     "route": "/business/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "895922720a14428a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "business-store-dashboard": {
     "src": "/help/shots/business-store-dashboard.webp",
@@ -1063,14 +1146,14 @@
       "6": "Best sellers and best customers"
     },
     "clip": {
-      "y": 410,
+      "y": 438,
       "height": 1108,
       "target": "Store dashboard"
     },
     "route": "/business/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "f2b6678d9bf27f8d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "business-store-prices": {
     "src": "/help/shots/business-store-prices.webp",
@@ -1085,14 +1168,14 @@
       "5": "Search"
     },
     "clip": {
-      "y": 3483,
+      "y": 3511,
       "height": 1175,
       "target": "Price rules"
     },
     "route": "/business/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "5fbd21d28cb984f0",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "business-stores": {
     "src": "/help/shots/business-stores.webp",
@@ -1110,7 +1193,7 @@
     "route": "/business/stores",
     "screen": "34245fc204796796",
     "guide": "bbe376c12b3b2edb",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "change-password": {
     "src": "/help/shots/change-password.webp",
@@ -1131,7 +1214,7 @@
     "route": "/change-password",
     "screen": "5a5595989259c760",
     "guide": "af70209549cd5837",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "common-buttons": {
     "src": "/help/shots/common-buttons.webp",
@@ -1147,14 +1230,14 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "928f53bf43beb34a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "compliance-add": {
     "src": "/help/shots/compliance-add.webp",
     "width": 1280,
-    "height": 800,
+    "height": 814,
     "marks": [1, 4],
     "labels": {
       "1": "Add a licence",
@@ -1162,18 +1245,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 800,
+      "height": 814,
       "target": "marks"
     },
     "route": "/compliance",
     "screen": "aa16f6b182dcaa71",
     "guide": "e8339daf7e2f2583",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "compliance-overview": {
     "src": "/help/shots/compliance-overview.webp",
     "width": 1280,
-    "height": 984,
+    "height": 1012,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Compliance",
@@ -1183,13 +1266,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 984,
+      "height": 1012,
       "target": "marks"
     },
     "route": "/compliance",
     "screen": "aa16f6b182dcaa71",
     "guide": "47fbc14309e3322f",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "compliance-renew": {
     "src": "/help/shots/compliance-renew.webp",
@@ -1209,12 +1292,12 @@
     "route": "/compliance/[recordId]",
     "screen": "52db1a842f7e4242",
     "guide": "5ca08fec3d12e7fb",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-action-zone": {
     "src": "/help/shots/dashboard-action-zone.webp",
     "width": 1280,
-    "height": 1433,
+    "height": 1461,
     "marks": [1, 2, 5, 6, 7, 8],
     "labels": {
       "1": "The Pulse",
@@ -1226,13 +1309,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1433,
+      "height": 1461,
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "37b8daa61e356245",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-arrange-sections": {
     "src": "/help/shots/dashboard-arrange-sections.webp",
@@ -1248,9 +1331,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "2c4a67642afac832",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-empty": {
     "src": "/help/shots/dashboard-empty.webp",
@@ -1261,14 +1344,14 @@
       "2": "Live activity"
     },
     "clip": {
-      "y": 1451,
+      "y": 1479,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "f22fafcb75578d98",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-home-top-bar": {
     "src": "/help/shots/dashboard-home-top-bar.webp",
@@ -1286,9 +1369,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "0d0eaabea7c2a7f5",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-key-figures": {
     "src": "/help/shots/dashboard-key-figures.webp",
@@ -1303,14 +1386,14 @@
       "5": "Total bad stock value"
     },
     "clip": {
-      "y": 2529,
+      "y": 2538,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "b67011610e712907",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-pipeline-activity": {
     "src": "/help/shots/dashboard-pipeline-activity.webp",
@@ -1326,19 +1409,19 @@
       "7": "Show amounts"
     },
     "clip": {
-      "y": 149,
+      "y": 177,
       "height": 1494,
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "3ceb217a108e22f1",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-predictive": {
     "src": "/help/shots/dashboard-predictive.webp",
     "width": 1280,
-    "height": 1433,
+    "height": 1461,
     "marks": [1, 2, 5, 6, 7],
     "labels": {
       "1": "Action Zone",
@@ -1349,18 +1432,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1433,
+      "height": 1461,
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "8c04dc28bf66afc1",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-pulse": {
     "src": "/help/shots/dashboard-pulse.webp",
     "width": 1280,
-    "height": 800,
+    "height": 817,
     "marks": [1, 2, 3, 4, 5],
     "labels": {
       "1": "Today",
@@ -1371,13 +1454,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 800,
+      "height": 817,
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "6c9dd1dfd771f6c1",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-sales-target": {
     "src": "/help/shots/dashboard-sales-target.webp",
@@ -1393,9 +1476,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "4bf1f97f750153f0",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-stock-alerts": {
     "src": "/help/shots/dashboard-stock-alerts.webp",
@@ -1408,14 +1491,14 @@
       "4": "Low stock"
     },
     "clip": {
-      "y": 2776,
+      "y": 2785,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "166ff55b06c9748a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "dashboard-top-sellers": {
     "src": "/help/shots/dashboard-top-sellers.webp",
@@ -1430,21 +1513,22 @@
       "5": "Pieces"
     },
     "clip": {
-      "y": 3118,
+      "y": 3127,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "b43d057e7b9338ed",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "demo-site": {
     "src": "/help/shots/demo-site.webp",
     "width": 1280,
     "height": 800,
-    "marks": [7],
+    "marks": [2, 7],
     "labels": {
+      "2": "Demo site",
       "7": "Sales"
     },
     "clip": {
@@ -1453,9 +1537,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "3aa31fc8317a3bd5",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "find-your-way": {
     "src": "/help/shots/find-your-way.webp",
@@ -1466,14 +1550,14 @@
       "4": "Invoices"
     },
     "clip": {
-      "y": 3118,
+      "y": 3127,
       "height": 800,
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "1a8e694ca6c23d50",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "help-ai": {
     "src": "/help/shots/help-ai.webp",
@@ -1492,12 +1576,12 @@
     "route": "/help",
     "screen": "ae969cde19096ecb",
     "guide": "822c3e29925c52fd",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "help-missing-feature": {
     "src": "/help/shots/help-missing-feature.webp",
     "width": 1280,
-    "height": 1051,
+    "height": 1079,
     "marks": [1, 3],
     "labels": {
       "1": "দুঃখিত, এই বিষয়ে কোনো নির্দেশিকা পাওয়া যায়নি",
@@ -1505,18 +1589,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1051,
+      "height": 1079,
       "target": "marks"
     },
     "route": "/help",
     "screen": "ae969cde19096ecb",
     "guide": "b7869a9ba945b716",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "help-read-guide": {
     "src": "/help/shots/help-read-guide.webp",
     "width": 1280,
-    "height": 810,
+    "height": 838,
     "marks": [2, 4, 5],
     "labels": {
       "2": "কারা পারবেন",
@@ -1525,31 +1609,31 @@
     },
     "clip": {
       "y": 0,
-      "height": 810,
+      "height": 838,
       "target": "marks"
     },
     "route": "/help/getting-started/sign-in",
     "screen": "ca4220331dfe82ff",
     "guide": "0cb1efe2b20fd620",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "help-screenshots": {
     "src": "/help/shots/help-screenshots.webp",
     "width": 1280,
-    "height": 916,
+    "height": 917,
     "marks": [1],
     "labels": {
       "1": "কীভাবে করবেন, ধাপে ধাপে"
     },
     "clip": {
       "y": 0,
-      "height": 916,
+      "height": 917,
       "target": "marks"
     },
     "route": "/help/sales/sales-quotation",
     "screen": "ca4220331dfe82ff",
     "guide": "f90b3ddb0f8551f3",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "help-search": {
     "src": "/help/shots/help-search.webp",
@@ -1568,7 +1652,7 @@
     "route": "/help",
     "screen": "ae969cde19096ecb",
     "guide": "72633166bdc3d78e",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-360-report": {
     "src": "/help/shots/hr-360-report.webp",
@@ -1584,14 +1668,14 @@
       "target": "marks"
     },
     "route": "/hr/employees",
-    "screen": "772b0718ba121e75",
+    "screen": "7a07655676e9fc5d",
     "guide": "c7d5449154a011ee",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-add-employee": {
     "src": "/help/shots/hr-add-employee.webp",
     "width": 1280,
-    "height": 1571,
+    "height": 1599,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Add an employee",
@@ -1601,18 +1685,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1571,
+      "height": 1599,
       "target": "marks"
     },
     "route": "/hr/employees/new",
-    "screen": "e5b8a65c273a3620",
+    "screen": "69acaf64f325befb",
     "guide": "e4e816324faff35b",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-advances": {
     "src": "/help/shots/hr-advances.webp",
     "width": 1280,
-    "height": 1496,
+    "height": 1524,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Give an advance",
@@ -1622,18 +1706,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1496,
+      "height": 1524,
       "target": "marks"
     },
     "route": "/hr/advances/new",
-    "screen": "bbb637cfeb5ff0bb",
+    "screen": "78b00497659eaed8",
     "guide": "71c8081569abed2a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-attendance": {
     "src": "/help/shots/hr-attendance.webp",
     "width": 1280,
-    "height": 800,
+    "height": 811,
     "marks": [1, 2, 5, 6],
     "labels": {
       "1": "Attendance",
@@ -1643,13 +1727,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 800,
+      "height": 811,
       "target": "marks"
     },
     "route": "/hr/attendance",
-    "screen": "f10a5967bc65e51b",
+    "screen": "7b189516b7693894",
     "guide": "6b7b23168923fcfc",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-claims": {
     "src": "/help/shots/hr-claims.webp",
@@ -1666,9 +1750,9 @@
       "target": "marks"
     },
     "route": "/hr/claims",
-    "screen": "3575816c02861dfa",
+    "screen": "5d35a03bd6881024",
     "guide": "dc744b646a3a2b9f",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-data-vault": {
     "src": "/help/shots/hr-data-vault.webp",
@@ -1685,9 +1769,9 @@
       "target": "marks"
     },
     "route": "/hr/employees",
-    "screen": "772b0718ba121e75",
+    "screen": "7a07655676e9fc5d",
     "guide": "11014bec9b2db32e",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-deactivate": {
     "src": "/help/shots/hr-deactivate.webp",
@@ -1703,9 +1787,9 @@
       "target": "marks"
     },
     "route": "/hr/employees/[employeeId]",
-    "screen": "817a59210bf5963c",
+    "screen": "30d0e9a384ad7cb5",
     "guide": "e90f312430a64ede",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-employee-directory": {
     "src": "/help/shots/hr-employee-directory.webp",
@@ -1724,9 +1808,9 @@
       "target": "marks"
     },
     "route": "/hr/employees",
-    "screen": "772b0718ba121e75",
+    "screen": "7a07655676e9fc5d",
     "guide": "71fa7c700914865b",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-employee-profile": {
     "src": "/help/shots/hr-employee-profile.webp",
@@ -1744,9 +1828,9 @@
       "target": "marks"
     },
     "route": "/hr/employees",
-    "screen": "772b0718ba121e75",
+    "screen": "7a07655676e9fc5d",
     "guide": "85a0fb2fc28c4b6a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-give-login": {
     "src": "/help/shots/hr-give-login.webp",
@@ -1759,19 +1843,19 @@
       "5": "Edit permissions"
     },
     "clip": {
-      "y": 827,
+      "y": 855,
       "height": 400,
       "target": "System access"
     },
     "route": "/hr/employees/[employeeId]",
-    "screen": "817a59210bf5963c",
+    "screen": "30d0e9a384ad7cb5",
     "guide": "4b9567f3c7a86011",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-gps-attendance": {
     "src": "/help/shots/hr-gps-attendance.webp",
     "width": 1280,
-    "height": 1405,
+    "height": 1433,
     "marks": [1, 2, 4],
     "labels": {
       "1": "Change the rules",
@@ -1780,18 +1864,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1405,
+      "height": 1433,
       "target": "marks"
     },
     "route": "/hr/settings",
-    "screen": "d54e26fd722b3692",
+    "screen": "71966a305e4ecac2",
     "guide": "81d5c4275e87e8eb",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-holidays-rules": {
     "src": "/help/shots/hr-holidays-rules.webp",
     "width": 1280,
-    "height": 1147,
+    "height": 1175,
     "marks": [1, 2, 4, 5],
     "labels": {
       "1": "Holidays & rules",
@@ -1801,13 +1885,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1147,
+      "height": 1175,
       "target": "marks"
     },
     "route": "/hr/settings",
-    "screen": "d54e26fd722b3692",
+    "screen": "71966a305e4ecac2",
     "guide": "74d2f9d651d84982",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-items": {
     "src": "/help/shots/hr-items.webp",
@@ -1824,14 +1908,14 @@
       "target": "marks"
     },
     "route": "/hr/items",
-    "screen": "75017d6dd8474b38",
+    "screen": "b8e108c5e546dd43",
     "guide": "8906b8898bc9f456",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-leave": {
     "src": "/help/shots/hr-leave.webp",
     "width": 1280,
-    "height": 1075,
+    "height": 1103,
     "marks": [1, 2, 3],
     "labels": {
       "1": "Record leave",
@@ -1840,13 +1924,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1075,
+      "height": 1103,
       "target": "marks"
     },
     "route": "/hr/leave/new",
-    "screen": "8ef0d17452031926",
+    "screen": "3709193db6a55f55",
     "guide": "f108d6798d9085c1",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-money": {
     "src": "/help/shots/hr-money.webp",
@@ -1863,9 +1947,9 @@
       "target": "marks"
     },
     "route": "/hr/money",
-    "screen": "64dd1b675a67cae5",
+    "screen": "e1e0eb6e9fbaec75",
     "guide": "c08c745d2754f0a9",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-notices": {
     "src": "/help/shots/hr-notices.webp",
@@ -1881,14 +1965,14 @@
       "target": "marks"
     },
     "route": "/hr/notices",
-    "screen": "4536794d4399ad15",
+    "screen": "4a7a046317ad353d",
     "guide": "f40d5a50a1d4177a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-outside-services": {
     "src": "/help/shots/hr-outside-services.webp",
     "width": 1280,
-    "height": 1585,
+    "height": 1600,
     "marks": [1, 2, 3],
     "labels": {
       "1": "Holidays & rules",
@@ -1897,13 +1981,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1585,
+      "height": 1600,
       "target": "marks"
     },
     "route": "/hr/settings",
-    "screen": "d54e26fd722b3692",
+    "screen": "71966a305e4ecac2",
     "guide": "71ba8b1cfe2e6ddc",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-overtime": {
     "src": "/help/shots/hr-overtime.webp",
@@ -1920,14 +2004,14 @@
       "target": "marks"
     },
     "route": "/hr/overtime",
-    "screen": "954d5338696f6fec",
+    "screen": "6a38b3448943ecdb",
     "guide": "235cc4683b05489a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-overview": {
     "src": "/help/shots/hr-overview.webp",
     "width": 1280,
-    "height": 991,
+    "height": 1019,
     "marks": [1, 2, 3, 4, 5, 6],
     "labels": {
       "1": "Overview",
@@ -1939,13 +2023,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 991,
+      "height": 1019,
       "target": "marks"
     },
     "route": "/hr",
-    "screen": "5cdd3befaff2da3a",
+    "screen": "1037ded5bfde76f7",
     "guide": "c34ab036faa2b5f8",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-payroll-approve-pay": {
     "src": "/help/shots/hr-payroll-approve-pay.webp",
@@ -1961,9 +2045,9 @@
       "target": "marks"
     },
     "route": "/hr/payroll",
-    "screen": "d548b6cbe0e2db27",
+    "screen": "29859bcb9cba367a",
     "guide": "75c9997508d0d132",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-payroll-prepare": {
     "src": "/help/shots/hr-payroll-prepare.webp",
@@ -1979,9 +2063,9 @@
       "target": "marks"
     },
     "route": "/hr/payroll",
-    "screen": "d548b6cbe0e2db27",
+    "screen": "29859bcb9cba367a",
     "guide": "ab1920eed1b7a922",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-payslip": {
     "src": "/help/shots/hr-payslip.webp",
@@ -1997,9 +2081,9 @@
       "target": "marks"
     },
     "route": "/hr/payroll",
-    "screen": "d548b6cbe0e2db27",
+    "screen": "29859bcb9cba367a",
     "guide": "5fb5984e6bf4853c",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-staff-map": {
     "src": "/help/shots/hr-staff-map.webp",
@@ -2016,9 +2100,9 @@
       "target": "marks"
     },
     "route": "/hr/map",
-    "screen": "430d09677d0a4757",
+    "screen": "2c642701e0eaca0d",
     "guide": "b01f2a866fd6789d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "hr-terms": {
     "src": "/help/shots/hr-terms.webp",
@@ -2035,9 +2119,9 @@
       "target": "marks"
     },
     "route": "/hr/terms",
-    "screen": "3355fde563ea7e5c",
+    "screen": "e54eff3d3c4e5f03",
     "guide": "a711986c86f19090",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "inbox": {
     "src": "/help/shots/inbox.webp",
@@ -2059,7 +2143,7 @@
     "route": "/inbox",
     "screen": "54f176d2e8e487ec",
     "guide": "713df1162e5578a5",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "integrations-add-shop": {
     "src": "/help/shots/integrations-add-shop.webp",
@@ -2081,7 +2165,7 @@
     "route": "/settings/integrations",
     "screen": "d239779b7fb7e96b",
     "guide": "576a333d9efe876d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "integrations-shop-key": {
     "src": "/help/shots/integrations-shop-key.webp",
@@ -2095,38 +2179,38 @@
       "6": "Revoke key"
     },
     "clip": {
-      "y": 709,
+      "y": 737,
       "height": 800,
       "target": "API key"
     },
     "route": "/settings/integrations/ecommerce/[integrationId]",
     "screen": "f1f342658dec5474",
     "guide": "ae51a675ac6d917f",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "integrations-webhooks": {
     "src": "/help/shots/integrations-webhooks.webp",
     "width": 1280,
-    "height": 1600,
+    "height": 800,
     "marks": [3, 5],
     "labels": {
       "3": "Webhook log",
-      "5": "Status"
+      "5": "Latest API calls"
     },
     "clip": {
-      "y": 1195,
-      "height": 1600,
+      "y": 1223,
+      "height": 800,
       "target": "Webhook log"
     },
     "route": "/settings/integrations/ecommerce/[integrationId]",
     "screen": "f1f342658dec5474",
     "guide": "f2f93934f1832e7d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "materials-add-material": {
     "src": "/help/shots/materials-add-material.webp",
     "width": 1280,
-    "height": 1259,
+    "height": 1287,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Add a material",
@@ -2136,13 +2220,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1259,
+      "height": 1287,
       "target": "marks"
     },
     "route": "/materials/stock/new",
     "screen": "0977df55811df815",
     "guide": "c77de209e2f404d1",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "materials-issue": {
     "src": "/help/shots/materials-issue.webp",
@@ -2163,7 +2247,7 @@
     "route": "/materials/issues/new",
     "screen": "fed8c11f36648bec",
     "guide": "70998df21e7987e2",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "materials-overview": {
     "src": "/help/shots/materials-overview.webp",
@@ -2184,12 +2268,12 @@
     "route": "/materials",
     "screen": "91c31cb88f10375b",
     "guide": "635d8e774bd56bf4",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "materials-purchase-order": {
     "src": "/help/shots/materials-purchase-order.webp",
     "width": 1280,
-    "height": 1137,
+    "height": 1165,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Materials",
@@ -2199,18 +2283,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1137,
+      "height": 1165,
       "target": "marks"
     },
     "route": "/materials/orders/new",
     "screen": "3c6edcb3117dcde9",
     "guide": "6d2b80913c20e4ce",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "materials-receive-goods": {
     "src": "/help/shots/materials-receive-goods.webp",
     "width": 1280,
-    "height": 1179,
+    "height": 1207,
     "marks": [1, 2, 3, 4, 5],
     "labels": {
       "1": "Receive the goods",
@@ -2221,18 +2305,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1179,
+      "height": 1207,
       "target": "marks"
     },
     "route": "/materials/purchases/new",
-    "screen": "005c0ce38df84f50",
+    "screen": "bd9a4e5687cfeeff",
     "guide": "865d9e09cd1c43e9",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "materials-stock-actions": {
     "src": "/help/shots/materials-stock-actions.webp",
     "width": 1280,
-    "height": 1258,
+    "height": 1286,
     "marks": [2, 3, 4, 5],
     "labels": {
       "2": "Count it",
@@ -2242,13 +2326,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1258,
+      "height": 1286,
       "target": "marks"
     },
     "route": "/materials/stock/[materialId]",
-    "screen": "f106818de95184d1",
+    "screen": "bb3e7fc2ea406f50",
     "guide": "6ff5f11d5c4d97dc",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "materials-stock-card": {
     "src": "/help/shots/materials-stock-card.webp",
@@ -2267,7 +2351,7 @@
     "route": "/materials/stock",
     "screen": "363af79faff7343a",
     "guide": "dff436382d2538ae",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "materials-supplier-return": {
     "src": "/help/shots/materials-supplier-return.webp",
@@ -2286,7 +2370,7 @@
     "route": "/materials/returns",
     "screen": "af1162b4e4c23688",
     "guide": "7cb871cae4c6ef66",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-advances": {
     "src": "/help/shots/my-hr-advances.webp",
@@ -2302,9 +2386,9 @@
       "target": "marks"
     },
     "route": "/me/advances",
-    "screen": "66facc3714ee52b3",
+    "screen": "7c4d15ee77b61e6e",
     "guide": "e4a6a71d34196514",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-check-in": {
     "src": "/help/shots/my-hr-check-in.webp",
@@ -2321,9 +2405,9 @@
       "target": "marks"
     },
     "route": "/me",
-    "screen": "d905225cacfb44b5",
+    "screen": "6ed73c423aba65e9",
     "guide": "4fc6cab1f7d8a8b4",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-claims": {
     "src": "/help/shots/my-hr-claims.webp",
@@ -2339,9 +2423,9 @@
       "target": "marks"
     },
     "route": "/me/claims",
-    "screen": "7e76a54214027b7b",
+    "screen": "e0a0a56dde3243fe",
     "guide": "e9f352d1acacac2c",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-dashboard": {
     "src": "/help/shots/my-hr-dashboard.webp",
@@ -2358,9 +2442,9 @@
       "target": "marks"
     },
     "route": "/me",
-    "screen": "d905225cacfb44b5",
+    "screen": "6ed73c423aba65e9",
     "guide": "b05542e673ed7324",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-details": {
     "src": "/help/shots/my-hr-details.webp",
@@ -2376,9 +2460,9 @@
       "target": "marks"
     },
     "route": "/me",
-    "screen": "d905225cacfb44b5",
+    "screen": "6ed73c423aba65e9",
     "guide": "572511d17b777fdc",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-leave": {
     "src": "/help/shots/my-hr-leave.webp",
@@ -2394,9 +2478,9 @@
       "target": "marks"
     },
     "route": "/me/leave",
-    "screen": "84d3fb25e5bfe238",
+    "screen": "c836c40b65be20fe",
     "guide": "f2353f8c714f0fc0",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-ledger": {
     "src": "/help/shots/my-hr-ledger.webp",
@@ -2412,9 +2496,9 @@
       "target": "marks"
     },
     "route": "/me/ledger",
-    "screen": "a50bd6abf8152f31",
+    "screen": "48b597ed42e699b9",
     "guide": "a51565bc228cbff1",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-my-details": {
     "src": "/help/shots/my-hr-my-details.webp",
@@ -2430,9 +2514,9 @@
       "target": "marks"
     },
     "route": "/me/profile",
-    "screen": "1e12a70b68adfeff",
+    "screen": "6d184262a4158702",
     "guide": "53a9626815146db7",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-notices": {
     "src": "/help/shots/my-hr-notices.webp",
@@ -2448,9 +2532,9 @@
       "target": "marks"
     },
     "route": "/me/notices",
-    "screen": "e717ff2bc35dc378",
+    "screen": "0c7f201ad573a9c7",
     "guide": "23c4c9d622fa6775",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-payslips": {
     "src": "/help/shots/my-hr-payslips.webp",
@@ -2466,9 +2550,9 @@
       "target": "marks"
     },
     "route": "/me/payslips",
-    "screen": "d12cdd574c94f125",
+    "screen": "d40b85ca36928e71",
     "guide": "ace02759d4e5c5b2",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-tasks": {
     "src": "/help/shots/my-hr-tasks.webp",
@@ -2486,7 +2570,7 @@
     "route": "/me/tasks",
     "screen": "dbb91bae114d1d2b",
     "guide": "e8b59dd892530e4d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-tell-ai": {
     "src": "/help/shots/my-hr-tell-ai.webp",
@@ -2502,9 +2586,9 @@
       "target": "marks"
     },
     "route": "/me",
-    "screen": "d905225cacfb44b5",
+    "screen": "6ed73c423aba65e9",
     "guide": "f9d72e1916e7a26d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "my-hr-terms": {
     "src": "/help/shots/my-hr-terms.webp",
@@ -2522,7 +2606,7 @@
     "route": "/terms",
     "screen": "211b44fb882b7e87",
     "guide": "7a7066eff444c482",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-buyer-360": {
     "src": "/help/shots/parties-buyer-360.webp",
@@ -2541,7 +2625,7 @@
     "route": "/parties/buyers",
     "screen": "e7789bb34c3706f0",
     "guide": "dd06cf3dac22f3bb",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-buyer-360-pdf": {
     "src": "/help/shots/parties-buyer-360-pdf.webp",
@@ -2558,9 +2642,9 @@
       "target": "marks"
     },
     "route": "/parties/[list]/[partyId]",
-    "screen": "9966bd6aa10d1d19",
+    "screen": "91161e575d8ec479",
     "guide": "eb24d3a569271630",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-dues": {
     "src": "/help/shots/parties-dues.webp",
@@ -2579,7 +2663,7 @@
     "route": "/parties/dues",
     "screen": "3f5931ccf940a589",
     "guide": "2d591ebc57253da8",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-edit-status": {
     "src": "/help/shots/parties-edit-status.webp",
@@ -2596,9 +2680,9 @@
       "target": "marks"
     },
     "route": "/parties/[list]/[partyId]",
-    "screen": "9966bd6aa10d1d19",
+    "screen": "91161e575d8ec479",
     "guide": "ed1cfd9f8b2ead12",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-find": {
     "src": "/help/shots/parties-find.webp",
@@ -2621,12 +2705,12 @@
     "route": "/parties/buyers",
     "screen": "e7789bb34c3706f0",
     "guide": "002acc78c34238e6",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-new": {
     "src": "/help/shots/parties-new.webp",
     "width": 1280,
-    "height": 1567,
+    "height": 1595,
     "marks": [1, 2, 3, 6, 7, 8],
     "labels": {
       "1": "New buyer",
@@ -2638,13 +2722,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1567,
+      "height": 1595,
       "target": "marks"
     },
     "route": "/parties/buyers/new",
     "screen": "b22b881262413488",
     "guide": "597fb691053d436e",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-opening-balance": {
     "src": "/help/shots/parties-opening-balance.webp",
@@ -2662,7 +2746,7 @@
     "route": "/parties/buyers",
     "screen": "e7789bb34c3706f0",
     "guide": "89ea8f0f68450405",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-statement": {
     "src": "/help/shots/parties-statement.webp",
@@ -2681,12 +2765,12 @@
     "route": "/parties/buyers",
     "screen": "e7789bb34c3706f0",
     "guide": "ccc548450251c99f",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-supplier-360": {
     "src": "/help/shots/parties-supplier-360.webp",
     "width": 1280,
-    "height": 909,
+    "height": 937,
     "marks": [1, 4],
     "labels": {
       "1": "Suppliers",
@@ -2694,13 +2778,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 909,
+      "height": 937,
       "target": "marks"
     },
     "route": "/parties/suppliers",
     "screen": "e7789bb34c3706f0",
     "guide": "41f6c9b752f446df",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "parties-supplier-360-pdf": {
     "src": "/help/shots/parties-supplier-360-pdf.webp",
@@ -2717,9 +2801,9 @@
       "target": "marks"
     },
     "route": "/parties/[list]/[partyId]",
-    "screen": "9966bd6aa10d1d19",
+    "screen": "91161e575d8ec479",
     "guide": "eb24d3a569271630",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "pin": {
     "src": "/help/shots/pin.webp",
@@ -2731,14 +2815,14 @@
       "2": "Set a PIN"
     },
     "clip": {
-      "y": 827,
+      "y": 855,
       "height": 800,
       "target": "PIN"
     },
     "route": "/ai/settings",
     "screen": "5951ab758172157a",
     "guide": "92a5b38a819fe53a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "planner-automatic": {
     "src": "/help/shots/planner-automatic.webp",
@@ -2757,7 +2841,7 @@
     "route": "/planner/automatic",
     "screen": "593c7c7140dfc019",
     "guide": "db005f32adada740",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "planner-coming-up": {
     "src": "/help/shots/planner-coming-up.webp",
@@ -2775,7 +2859,7 @@
     "route": "/planner",
     "screen": "8dadb175c8b91121",
     "guide": "5826d18eb1995e0a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "planner-notepad": {
     "src": "/help/shots/planner-notepad.webp",
@@ -2796,7 +2880,7 @@
     "route": "/planner/notepad",
     "screen": "dc9fe77ec04cea71",
     "guide": "677a14bfca1e704b",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "planner-reminders": {
     "src": "/help/shots/planner-reminders.webp",
@@ -2815,7 +2899,7 @@
     "route": "/planner/reminders",
     "screen": "6a0f362ca9ae9047",
     "guide": "d9dbf572b51e4837",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "planner-tasks": {
     "src": "/help/shots/planner-tasks.webp",
@@ -2834,12 +2918,12 @@
     "route": "/planner/tasks",
     "screen": "9e1c0973f79cb619",
     "guide": "0a0bc46bba6ca242",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "privacy-policy": {
     "src": "/help/shots/privacy-policy.webp",
     "width": 1280,
-    "height": 1236,
+    "height": 1264,
     "marks": [1, 2, 3],
     "labels": {
       "1": "Privacy Policy",
@@ -2848,13 +2932,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1236,
+      "height": 1264,
       "target": "marks"
     },
     "route": "/privacy",
     "screen": "9903928d0b7b041b",
     "guide": "de09d14fc3e632f9",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-action-log": {
     "src": "/help/shots/production-action-log.webp",
@@ -2873,7 +2957,7 @@
     "route": "/production/projects/[projectId]/log",
     "screen": "880365022d50a8fb",
     "guide": "b43414f38eaca8f3",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-batch-issue": {
     "src": "/help/shots/production-batch-issue.webp",
@@ -2893,7 +2977,7 @@
     "route": "/production/batches/[batchId]/issue",
     "screen": "adcbbef13526282f",
     "guide": "832ef9a4ba7fbf48",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-batch-money": {
     "src": "/help/shots/production-batch-money.webp",
@@ -2906,14 +2990,14 @@
       "3": "Pay an advance"
     },
     "clip": {
-      "y": 1656,
+      "y": 1704,
       "height": 800,
       "target": "Factory money"
     },
     "route": "/production/batches/[batchId]",
-    "screen": "b2602d4cc893535b",
+    "screen": "86487860c0dc9bf1",
     "guide": "6dfcd96eb41957c7",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-batch-orders": {
     "src": "/help/shots/production-batch-orders.webp",
@@ -2932,12 +3016,12 @@
     "route": "/production/batches/[batchId]/orders/new",
     "screen": "399db0b59a1d6c53",
     "guide": "1ca8c37a9ed28319",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-batch-receive": {
     "src": "/help/shots/production-batch-receive.webp",
     "width": 1280,
-    "height": 1248,
+    "height": 1276,
     "marks": [2, 3, 4, 5],
     "labels": {
       "2": "Challan no. (optional)",
@@ -2947,18 +3031,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1248,
+      "height": 1276,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/receive",
     "screen": "99cc89fa48f6506b",
     "guide": "ea364913c5232c24",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-batch-summary": {
     "src": "/help/shots/production-batch-summary.webp",
     "width": 1280,
-    "height": 1235,
+    "height": 1263,
     "marks": [1, 2, 3, 4, 5, 6],
     "labels": {
       "1": "Batch summary",
@@ -2970,13 +3054,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1235,
+      "height": 1263,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/summary",
     "screen": "0e81e03835f56f4f",
     "guide": "1655a1b6e24260f0",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-batches": {
     "src": "/help/shots/production-batches.webp",
@@ -2996,12 +3080,12 @@
     "route": "/production/batches",
     "screen": "f49e7708d08534e0",
     "guide": "7144abe6bb80c38c",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-bills": {
     "src": "/help/shots/production-bills.webp",
     "width": 1280,
-    "height": 1425,
+    "height": 1453,
     "marks": [1, 2, 3, 4, 5],
     "labels": {
       "1": "Enter a supplier bill",
@@ -3012,13 +3096,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1425,
+      "height": 1453,
       "target": "marks"
     },
     "route": "/production/bills/new",
-    "screen": "0c9edd841fde39c0",
+    "screen": "f87cdbc492147b23",
     "guide": "1df8fdbb76dae5ec",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-booking-approval": {
     "src": "/help/shots/production-booking-approval.webp",
@@ -3039,7 +3123,7 @@
     "route": "/production/bookings/[bookingId]",
     "screen": "bb9788642330ac99",
     "guide": "0812eb1e053d1e6d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-booking-batch": {
     "src": "/help/shots/production-booking-batch.webp",
@@ -3053,19 +3137,19 @@
       "4": "Attach a booking"
     },
     "clip": {
-      "y": 597,
+      "y": 625,
       "height": 1531,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]",
-    "screen": "b2602d4cc893535b",
+    "screen": "86487860c0dc9bf1",
     "guide": "181cfedd1b9f629d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-booking-book": {
     "src": "/help/shots/production-booking-book.webp",
     "width": 1280,
-    "height": 969,
+    "height": 997,
     "marks": [1, 3],
     "labels": {
       "1": "Booking book (PDF)",
@@ -3073,31 +3157,31 @@
     },
     "clip": {
       "y": 0,
-      "height": 969,
+      "height": 997,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]",
-    "screen": "b2602d4cc893535b",
+    "screen": "86487860c0dc9bf1",
     "guide": "0587c4a62be4a3d8",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-booking-change": {
     "src": "/help/shots/production-booking-change.webp",
     "width": 1280,
-    "height": 946,
+    "height": 974,
     "marks": [1],
     "labels": {
       "1": "Change"
     },
     "clip": {
       "y": 0,
-      "height": 946,
+      "height": 974,
       "target": "marks"
     },
     "route": "/production/bookings/[bookingId]/edit",
     "screen": "9d7114579a354e15",
     "guide": "dcc1895216d04cd5",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-booking-collar": {
     "src": "/help/shots/production-booking-collar.webp",
@@ -3115,12 +3199,12 @@
     "route": "/production/bookings/new",
     "screen": "ef6ecb0bb27e66b6",
     "guide": "2b823c6965299e12",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-booking-new": {
     "src": "/help/shots/production-booking-new.webp",
     "width": 1280,
-    "height": 1329,
+    "height": 1357,
     "marks": [1, 2, 3, 5, 8, 9, 10],
     "labels": {
       "1": "New booking",
@@ -3133,13 +3217,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1329,
+      "height": 1357,
       "target": "marks"
     },
     "route": "/production/bookings/new",
     "screen": "ef6ecb0bb27e66b6",
     "guide": "50c7ee6afab611f1",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-booking-print": {
     "src": "/help/shots/production-booking-print.webp",
@@ -3157,7 +3241,7 @@
     "route": "/production/bookings/[bookingId]",
     "screen": "bb9788642330ac99",
     "guide": "f413641d26a7fd5a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-bookings": {
     "src": "/help/shots/production-bookings.webp",
@@ -3178,12 +3262,12 @@
     "route": "/production/bookings",
     "screen": "aae43a71cf6ed1d3",
     "guide": "8b8ceb5d8194c52a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-cm-settlement": {
     "src": "/help/shots/production-cm-settlement.webp",
     "width": 1280,
-    "height": 1200,
+    "height": 1228,
     "marks": [2, 4, 5],
     "labels": {
       "2": "Rejects over the allowance",
@@ -3192,13 +3276,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1200,
+      "height": 1228,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/cm-settlement",
     "screen": "04470cb64fbe9a45",
     "guide": "197413a1deab3897",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-complete-cancel": {
     "src": "/help/shots/production-complete-cancel.webp",
@@ -3215,14 +3299,14 @@
       "target": "menu"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "8fa2390ab57903f3",
+    "screen": "839ac1328f47153e",
     "guide": "9fd6d75e0022c145",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-contracts": {
     "src": "/help/shots/production-contracts.webp",
     "width": 1280,
-    "height": 1504,
+    "height": 1532,
     "marks": [2, 3, 4, 5],
     "labels": {
       "2": "What is made",
@@ -3232,18 +3316,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1504,
+      "height": 1532,
       "target": "marks"
     },
     "route": "/production/batches/[batchId]/contracts/[contractId]",
     "screen": "72485aeb917ef574",
     "guide": "9cc751dc9bf43110",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-cost-guard": {
     "src": "/help/shots/production-cost-guard.webp",
     "width": 1280,
-    "height": 800,
+    "height": 827,
     "marks": [1, 2, 3, 5],
     "labels": {
       "1": "Edit",
@@ -3253,18 +3337,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 800,
+      "height": 827,
       "target": "marks"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "8fa2390ab57903f3",
+    "screen": "839ac1328f47153e",
     "guide": "ab9e298dcfbbd046",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-cost-heads": {
     "src": "/help/shots/production-cost-heads.webp",
     "width": 1280,
-    "height": 1327,
+    "height": 1355,
     "marks": [1, 2, 3, 4],
     "labels": {
       "1": "Cost heads",
@@ -3274,13 +3358,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1327,
+      "height": 1355,
       "target": "marks"
     },
     "route": "/production/cost-heads",
-    "screen": "9e234b95c90d6c2f",
+    "screen": "307cf1f8c7fdb40e",
     "guide": "b7f012c7e46d9540",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-costing": {
     "src": "/help/shots/production-costing.webp",
@@ -3299,7 +3383,7 @@
     "route": "/production/costing",
     "screen": "6ff484c250fe2522",
     "guide": "9540397b739448fc",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-costs": {
     "src": "/help/shots/production-costs.webp",
@@ -3317,12 +3401,12 @@
     "route": "/production/projects",
     "screen": "19842f6af2e48206",
     "guide": "9c0832277e1e9fab",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-cutting": {
     "src": "/help/shots/production-cutting.webp",
     "width": 1280,
-    "height": 1002,
+    "height": 1030,
     "marks": [1, 4, 5, 8, 9],
     "labels": {
       "1": "Cutting and embroidery",
@@ -3333,13 +3417,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1002,
+      "height": 1030,
       "target": "marks"
     },
     "route": "/production/projects/[projectId]/cutting",
     "screen": "06663e41a56a1c99",
     "guide": "7e77b0628640cb87",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-fabric-first": {
     "src": "/help/shots/production-fabric-first.webp",
@@ -3352,14 +3436,14 @@
       "3": "Approve tech pack"
     },
     "clip": {
-      "y": 3059,
+      "y": 3087,
       "height": 800,
       "target": "Tech pack approval"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "8fa2390ab57903f3",
+    "screen": "839ac1328f47153e",
     "guide": "c967526909b1c13c",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-fault-log": {
     "src": "/help/shots/production-fault-log.webp",
@@ -3373,14 +3457,14 @@
       "4": "Supplier report card"
     },
     "clip": {
-      "y": 86,
+      "y": 114,
       "height": 1591,
       "target": "marks"
     },
     "route": "/production/faults",
     "screen": "e27723e1bea527b1",
     "guide": "65c5d6932d115d8b",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-find-projects": {
     "src": "/help/shots/production-find-projects.webp",
@@ -3400,7 +3484,7 @@
     "route": "/production/projects",
     "screen": "19842f6af2e48206",
     "guide": "e8ecbce698a7dc29",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-finishing": {
     "src": "/help/shots/production-finishing.webp",
@@ -3419,7 +3503,7 @@
     "route": "/production/projects/[projectId]/finishing",
     "screen": "286c0c235de6b848",
     "guide": "cc5fccd8bdcfec5e",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-fob": {
     "src": "/help/shots/production-fob.webp",
@@ -3437,7 +3521,7 @@
     "route": "/production/projects",
     "screen": "19842f6af2e48206",
     "guide": "977bb7c922f6c01a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-materials-per-piece": {
     "src": "/help/shots/production-materials-per-piece.webp",
@@ -3460,7 +3544,7 @@
     "route": "/production/projects/[projectId]/materials",
     "screen": "06b591497134114c",
     "guide": "ac685aa4aa4ffa20",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-materials-sent": {
     "src": "/help/shots/production-materials-sent.webp",
@@ -3471,19 +3555,19 @@
       "1": "Send material"
     },
     "clip": {
-      "y": 4367,
+      "y": 4395,
       "height": 791,
       "target": "Materials sent"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "8fa2390ab57903f3",
+    "screen": "839ac1328f47153e",
     "guide": "971b8b68035ab188",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-new-project": {
     "src": "/help/shots/production-new-project.webp",
     "width": 1280,
-    "height": 1469,
+    "height": 1497,
     "marks": [1, 2, 3, 5, 6, 7, 8],
     "labels": {
       "1": "New project",
@@ -3496,18 +3580,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1469,
+      "height": 1497,
       "target": "marks"
     },
     "route": "/production/projects/new",
     "screen": "5ca961ecc6ec7ce6",
     "guide": "122d38f0d28f4a29",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-order-check": {
     "src": "/help/shots/production-order-check.webp",
     "width": 1280,
-    "height": 1056,
+    "height": 1084,
     "marks": [1, 2, 3, 4, 5, 6, 7],
     "labels": {
       "1": "Order check card",
@@ -3520,18 +3604,18 @@
     },
     "clip": {
       "y": 0,
-      "height": 1056,
+      "height": 1084,
       "target": "marks"
     },
     "route": "/production/costing/[costingId]",
     "screen": "c13ab888c9c2b959",
     "guide": "01c5387fbd9939cd",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-overview": {
     "src": "/help/shots/production-overview.webp",
     "width": 1280,
-    "height": 1188,
+    "height": 1239,
     "marks": [1, 2, 3, 4, 6, 7],
     "labels": {
       "1": "Overview",
@@ -3543,13 +3627,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1188,
+      "height": 1239,
       "target": "marks"
     },
     "route": "/production",
     "screen": "d8101486cfbadb3a",
     "guide": "60d34635cdedbdf0",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-receive-goods": {
     "src": "/help/shots/production-receive-goods.webp",
@@ -3567,12 +3651,12 @@
     "route": "/production/deliveries/new",
     "screen": "c904d5e5aa5810ce",
     "guide": "e014c79076e1a5af",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-save-to-tech-pack": {
     "src": "/help/shots/production-save-to-tech-pack.webp",
     "width": 1280,
-    "height": 1246,
+    "height": 1274,
     "marks": [2, 3],
     "labels": {
       "2": "Save to Tech Pack",
@@ -3580,13 +3664,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1246,
+      "height": 1274,
       "target": "marks"
     },
     "route": "/production/save",
     "screen": "d3f2089dfc1e4273",
     "guide": "426494142be9a95f",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-stages": {
     "src": "/help/shots/production-stages.webp",
@@ -3605,7 +3689,7 @@
     "route": "/production/projects",
     "screen": "19842f6af2e48206",
     "guide": "d841aca3d8459df9",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-start-from-sales": {
     "src": "/help/shots/production-start-from-sales.webp",
@@ -3620,14 +3704,14 @@
       "7": "Pieces to make"
     },
     "clip": {
-      "y": 367,
+      "y": 395,
       "height": 1586,
       "target": "marks"
     },
     "route": "/production/projects/new",
     "screen": "5ca961ecc6ec7ce6",
     "guide": "872eb3f1d8e02bb8",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-supplier-settlement": {
     "src": "/help/shots/production-supplier-settlement.webp",
@@ -3638,19 +3722,19 @@
       "1": "Suppliers"
     },
     "clip": {
-      "y": 2229,
+      "y": 2297,
       "height": 800,
       "target": "Suppliers"
     },
     "route": "/production/projects/[projectId]",
-    "screen": "8fa2390ab57903f3",
+    "screen": "839ac1328f47153e",
     "guide": "f59baa1f45f86559",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-tech-pack": {
     "src": "/help/shots/production-tech-pack.webp",
     "width": 1280,
-    "height": 1293,
+    "height": 1321,
     "marks": [1, 2, 3, 4, 6, 10],
     "labels": {
       "1": "Tech pack approval",
@@ -3662,13 +3746,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1293,
+      "height": 1321,
       "target": "marks"
     },
     "route": "/tech-packs/[techPackId]",
     "screen": "8e5e76d418ca0cc5",
     "guide": "d76537a72ad94757",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-tech-pack-colours": {
     "src": "/help/shots/production-tech-pack-colours.webp",
@@ -3679,14 +3763,14 @@
       "1": "Add a colour"
     },
     "clip": {
-      "y": 2904,
+      "y": 2932,
       "height": 400,
       "target": "Colours and lab dips"
     },
     "route": "/tech-packs/[techPackId]",
     "screen": "8e5e76d418ca0cc5",
     "guide": "cc2370570215b9d7",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-tech-pack-logos": {
     "src": "/help/shots/production-tech-pack-logos.webp",
@@ -3697,14 +3781,14 @@
       "1": "Add a logo"
     },
     "clip": {
-      "y": 2904,
+      "y": 2932,
       "height": 400,
       "target": "Logos and embroidery"
     },
     "route": "/tech-packs/[techPackId]",
     "screen": "8e5e76d418ca0cc5",
     "guide": "8ebbe827b283ac76",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "production-undo-delivery": {
     "src": "/help/shots/production-undo-delivery.webp",
@@ -3723,7 +3807,7 @@
     "route": "/production/deliveries",
     "screen": "c251b02980d1dc0b",
     "guide": "8968cb8f47072bcf",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-archived-styles": {
     "src": "/help/shots/products-archived-styles.webp",
@@ -3742,7 +3826,7 @@
     "route": "/products/archived",
     "screen": "96cdc27e0a5f7403",
     "guide": "dc240a7873c3b4d3",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-bad-stock": {
     "src": "/help/shots/products-bad-stock.webp",
@@ -3762,7 +3846,7 @@
     "route": "/products/bad-stock",
     "screen": "fb8a96f667a5e52d",
     "guide": "6822537d558ad16b",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-bulk-update": {
     "src": "/help/shots/products-bulk-update.webp",
@@ -3775,14 +3859,14 @@
       "6": "Upload packing list (AI scan)"
     },
     "clip": {
-      "y": 729,
+      "y": 757,
       "height": 800,
       "target": "Stock matrix"
     },
     "route": "/products/[styleId]",
     "screen": "dec93b59ac7e773b",
     "guide": "5bd36e74ff6976dc",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-edit-sku": {
     "src": "/help/shots/products-edit-sku.webp",
@@ -3800,7 +3884,7 @@
     "route": "/products/[styleId]",
     "screen": "dec93b59ac7e773b",
     "guide": "cd7838c6a6aec24c",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-find-style": {
     "src": "/help/shots/products-find-style.webp",
@@ -3820,7 +3904,7 @@
     "route": "/products",
     "screen": "0c7b37f22816d306",
     "guide": "6cf546f9152a12f4",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-inward-batches": {
     "src": "/help/shots/products-inward-batches.webp",
@@ -3833,19 +3917,19 @@
       "5": "All movements"
     },
     "clip": {
-      "y": 1126,
+      "y": 1154,
       "height": 1277,
       "target": "Stock history"
     },
     "route": "/products/[styleId]",
     "screen": "dec93b59ac7e773b",
     "guide": "f4b1a28afbf644ff",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-new-style": {
     "src": "/help/shots/products-new-style.webp",
     "width": 1280,
-    "height": 1014,
+    "height": 1042,
     "marks": [1, 2, 3],
     "labels": {
       "1": "New style",
@@ -3854,13 +3938,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1014,
+      "height": 1042,
       "target": "marks"
     },
     "route": "/products/new",
     "screen": "d0e5d45d185a6297",
     "guide": "109fbfc5bfbe2ede",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-opening-stock": {
     "src": "/help/shots/products-opening-stock.webp",
@@ -3879,12 +3963,12 @@
     "route": "/products/stock-count",
     "screen": "02cca1db5c181f6f",
     "guide": "c6fbdd4262a9edbd",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-setup": {
     "src": "/help/shots/products-setup.webp",
     "width": 1280,
-    "height": 963,
+    "height": 991,
     "marks": [1, 2, 3, 4, 5],
     "labels": {
       "1": "Setup",
@@ -3895,13 +3979,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 963,
+      "height": 991,
       "target": "marks"
     },
     "route": "/products/setup",
     "screen": "4193179cb6a9c113",
     "guide": "122858a2cb786a84",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "products-stock-count": {
     "src": "/help/shots/products-stock-count.webp",
@@ -3920,7 +4004,7 @@
     "route": "/products/stock-count",
     "screen": "02cca1db5c181f6f",
     "guide": "28d2a0820cf36962",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "reports-letter": {
     "src": "/help/shots/reports-letter.webp",
@@ -3939,12 +4023,12 @@
     "route": "/reports/documents",
     "screen": "a0ac86ddc4837a16",
     "guide": "24ebb06872045c0d",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "reports-make": {
     "src": "/help/shots/reports-make.webp",
     "width": 1280,
-    "height": 1010,
+    "height": 1038,
     "marks": [1, 2, 3, 4, 5],
     "labels": {
       "1": "Make a report",
@@ -3955,13 +4039,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1010,
+      "height": 1038,
       "target": "marks"
     },
     "route": "/reports/new",
     "screen": "d4302c269a485bfd",
     "guide": "c430729ef25b2671",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "reports-printed-documents": {
     "src": "/help/shots/reports-printed-documents.webp",
@@ -3980,7 +4064,7 @@
     "route": "/reports/documents",
     "screen": "a0ac86ddc4837a16",
     "guide": "47e407f4b6e485a7",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "reports-template-add": {
     "src": "/help/shots/reports-template-add.webp",
@@ -3999,7 +4083,7 @@
     "route": "/reports/templates",
     "screen": "1195c10f34c9924f",
     "guide": "85e10abdc54a1168",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "reports-template-tags": {
     "src": "/help/shots/reports-template-tags.webp",
@@ -4019,7 +4103,7 @@
     "route": "/reports/templates/[templateId]",
     "screen": "58af3bf681419ca7",
     "guide": "771b401b4e45bfe1",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-cheques": {
     "src": "/help/shots/sales-cheques.webp",
@@ -4038,7 +4122,7 @@
     "route": "/sales/payments",
     "screen": "06cba0d3cbe90f90",
     "guide": "a855952b7e94ea38",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-counter-sale": {
     "src": "/help/shots/sales-counter-sale.webp",
@@ -4056,12 +4140,12 @@
     "route": "/sales/orders/new",
     "screen": "2f0a0b30a7a481b1",
     "guide": "ee4f694009a702e3",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-edit-cancel-order": {
     "src": "/help/shots/sales-edit-cancel-order.webp",
     "width": 1280,
-    "height": 1090,
+    "height": 1118,
     "marks": [1, 2],
     "labels": {
       "1": "Edit",
@@ -4069,13 +4153,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1090,
+      "height": 1118,
       "target": "marks"
     },
     "route": "/sales/orders/[orderId]",
     "screen": "e6ba40bee06e8173",
     "guide": "9f5fcc0f3f087755",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-force-override": {
     "src": "/help/shots/sales-force-override.webp",
@@ -4115,7 +4199,7 @@
     "route": "/sales/invoices",
     "screen": "f1b6a71f7fd8f4f6",
     "guide": "01cd1d31f75ebe21",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-new-order": {
     "src": "/help/shots/sales-new-order.webp",
@@ -4135,7 +4219,7 @@
     "route": "/sales/orders/new",
     "screen": "2f0a0b30a7a481b1",
     "guide": "4e5e3e909ab575fd",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-order-documents": {
     "src": "/help/shots/sales-order-documents.webp",
@@ -4153,7 +4237,7 @@
     "route": "/sales/orders",
     "screen": "58376d1827ca8282",
     "guide": "de5a17cd8f6a756a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-overview": {
     "src": "/help/shots/sales-overview.webp",
@@ -4174,7 +4258,7 @@
     "route": "/sales/overview",
     "screen": "de68ec13f451a809",
     "guide": "63e1b3c3b43aca51",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-payment-proof": {
     "src": "/help/shots/sales-payment-proof.webp",
@@ -4192,7 +4276,7 @@
     "route": "/sales/payments",
     "screen": "06cba0d3cbe90f90",
     "guide": "2e364e2e4800ad31",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-payments-list": {
     "src": "/help/shots/sales-payments-list.webp",
@@ -4214,12 +4298,12 @@
     "route": "/sales/payments",
     "screen": "06cba0d3cbe90f90",
     "guide": "ac8a4e0ac94ffbd9",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-previous-due": {
     "src": "/help/shots/sales-previous-due.webp",
     "width": 1280,
-    "height": 1220,
+    "height": 1248,
     "marks": [1, 3],
     "labels": {
       "1": "Issue the invoice",
@@ -4227,13 +4311,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1220,
+      "height": 1248,
       "target": "marks"
     },
     "route": "/sales/orders/[orderId]",
     "screen": "e6ba40bee06e8173",
     "guide": "f4a0644a4da2a4a9",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-proforma": {
     "src": "/help/shots/sales-proforma.webp",
@@ -4251,7 +4335,7 @@
     "route": "/sales/proformas",
     "screen": "29bf563213c60b81",
     "guide": "5ba76c459e9fe0c3",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-quotation": {
     "src": "/help/shots/sales-quotation.webp",
@@ -4269,14 +4353,14 @@
       "8": "Styling rules"
     },
     "clip": {
-      "y": 208,
+      "y": 236,
       "height": 1600,
       "target": "marks"
     },
     "route": "/sales/quotations/new",
     "screen": "32e106d8287b3e59",
     "guide": "a2a0ea52daa808b4",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-quotation-status": {
     "src": "/help/shots/sales-quotation-status.webp",
@@ -4295,7 +4379,7 @@
     "route": "/sales/quotations",
     "screen": "85575903d5228dc1",
     "guide": "2deebe863b863fee",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-receive-payment": {
     "src": "/help/shots/sales-receive-payment.webp",
@@ -4315,7 +4399,7 @@
     "route": "/sales/payments",
     "screen": "06cba0d3cbe90f90",
     "guide": "2ddb178323cdfd98",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-refund": {
     "src": "/help/shots/sales-refund.webp",
@@ -4333,7 +4417,7 @@
     "route": "/sales/payments",
     "screen": "06cba0d3cbe90f90",
     "guide": "8f23306cf977bd2e",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-return": {
     "src": "/help/shots/sales-return.webp",
@@ -4352,7 +4436,7 @@
     "route": "/sales/returns",
     "screen": "120efdb15de9974a",
     "guide": "697d0c30fcbdab1e",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sales-use-credit": {
     "src": "/help/shots/sales-use-credit.webp",
@@ -4370,7 +4454,7 @@
     "route": "/sales/orders",
     "screen": "58376d1827ca8282",
     "guide": "0ac08d8ff9228ffe",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "settings-add-person": {
     "src": "/help/shots/settings-add-person.webp",
@@ -4390,7 +4474,7 @@
     "route": "/settings/team",
     "screen": "62ba8059c7e33490",
     "guide": "f697090af32b591b",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "settings-business-rules": {
     "src": "/help/shots/settings-business-rules.webp",
@@ -4404,19 +4488,19 @@
       "4": "Save"
     },
     "clip": {
-      "y": 803,
+      "y": 831,
       "height": 1411,
       "target": "marks"
     },
     "route": "/settings/company",
     "screen": "e036d7ff99a72ca4",
     "guide": "887e6840e1ebfa76",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "settings-company-details": {
     "src": "/help/shots/settings-company-details.webp",
     "width": 1280,
-    "height": 1548,
+    "height": 1576,
     "marks": [1, 2, 3, 4, 5],
     "labels": {
       "1": "Company",
@@ -4427,13 +4511,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1548,
+      "height": 1576,
       "target": "marks"
     },
     "route": "/settings/company",
     "screen": "e036d7ff99a72ca4",
     "guide": "89a1a10e7f0f9ed9",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "settings-edit-role": {
     "src": "/help/shots/settings-edit-role.webp",
@@ -4451,7 +4535,7 @@
     "route": "/settings/roles",
     "screen": "f1749ed7ae94c7cd",
     "guide": "5b5c21a98eba9ee2",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "settings-manage-member": {
     "src": "/help/shots/settings-manage-member.webp",
@@ -4471,7 +4555,7 @@
     "route": "/settings/team",
     "screen": "62ba8059c7e33490",
     "guide": "aa4782d9ccbaeb3b",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "settings-member-permissions": {
     "src": "/help/shots/settings-member-permissions.webp",
@@ -4490,7 +4574,7 @@
     "route": "/settings/team",
     "screen": "62ba8059c7e33490",
     "guide": "668b4b277772f07e",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "settings-new-role": {
     "src": "/help/shots/settings-new-role.webp",
@@ -4511,7 +4595,7 @@
     "route": "/settings/roles",
     "screen": "f1749ed7ae94c7cd",
     "guide": "1e06cc2b53040be8",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sign-in": {
     "src": "/help/shots/sign-in.webp",
@@ -4531,7 +4615,7 @@
     "route": "/sign-in",
     "screen": "f850a1222beb071b",
     "guide": "cb1776645e1003ef",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "sign-out": {
     "src": "/help/shots/sign-out.webp",
@@ -4547,9 +4631,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "fdcd59a78bfb7213",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "switch-company": {
     "src": "/help/shots/switch-company.webp",
@@ -4567,7 +4651,7 @@
     "route": "/select-company",
     "screen": "0518521952f4aa17",
     "guide": "00b4fd5a04c7295a",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "tech-pack-link": {
     "src": "/help/shots/tech-pack-link.webp",
@@ -4589,7 +4673,7 @@
     "route": "/tech-packs/[techPackId]",
     "screen": "8e5e76d418ca0cc5",
     "guide": "93a22baa46879ebd",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "tech-pack-list": {
     "src": "/help/shots/tech-pack-list.webp",
@@ -4610,12 +4694,12 @@
     "route": "/tech-packs",
     "screen": "7d02c027cac67078",
     "guide": "248aabb6f5e2b710",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "tech-pack-new": {
     "src": "/help/shots/tech-pack-new.webp",
     "width": 1280,
-    "height": 1271,
+    "height": 1299,
     "marks": [1, 2, 3, 4, 5, 6],
     "labels": {
       "1": "New tech pack",
@@ -4627,13 +4711,13 @@
     },
     "clip": {
       "y": 0,
-      "height": 1271,
+      "height": 1299,
       "target": "marks"
     },
     "route": "/tech-packs/new",
     "screen": "91fdf5af7e14a09b",
     "guide": "03fcffeb16ebf4de",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "top-bar": {
     "src": "/help/shots/top-bar.webp",
@@ -4651,9 +4735,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "2c04e3f0f85dd47e",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "whats-new-v62": {
     "src": "/help/shots/whats-new-v62.webp",
@@ -4670,9 +4754,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "2b50c89e85a7ec12",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   },
   "whats-new-v63": {
     "src": "/help/shots/whats-new-v63.webp",
@@ -4688,8 +4772,8 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "39e5020043fbf1c7",
+    "screen": "28d3f8b15e1d2d64",
     "guide": "5e16c44fa8773b44",
-    "taken": "2026-10-30"
+    "taken": "2026-10-31"
   }
 }

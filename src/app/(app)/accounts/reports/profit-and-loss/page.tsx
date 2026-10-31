@@ -224,6 +224,28 @@ export default async function ProfitAndLossPage({
                     currency={currency}
                     strong
                   />
+                  {r.keptLoans.lines.length > 0 && (
+                    <>
+                      <ReportBlock
+                        title="Loan installments paid"
+                        lines={r.keptLoans.lines.map((l) => ({
+                          accountId: null,
+                          code: null,
+                          name: `${l.name} (kept in capital)`,
+                          amount: l.amount,
+                        }))}
+                        total={r.keptLoans.total}
+                        totalLabel="Repaid out of profit"
+                        currency={currency}
+                      />
+                      <ReportResult
+                        label="Left after installments"
+                        amount={r.keptLoans.leftAfter}
+                        currency={currency}
+                        strong
+                      />
+                    </>
+                  )}
                 </div>
               </Panel>
             </>

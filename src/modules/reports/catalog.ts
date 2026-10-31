@@ -14,6 +14,7 @@ export const REPORT_METRICS = [
   "SALES",
   "PROFIT_AND_LOSS",
   "TOP_SELLERS",
+  "PRODUCTION_VS_READY",
   "STOCK_ALERTS",
 ] as const;
 
@@ -75,6 +76,14 @@ export const METRIC_INFO: Record<
     needs: "dashboard.view, inventory.view or sales.view",
     // Sales values, margins and the stock left.
     extras: ["salesAmounts", "financials", "stock"],
+  },
+  PRODUCTION_VS_READY: {
+    label: "Production vs ready stock",
+    description:
+      "What came in from production and what was bought as ready stock in the period, and the pieces, sales, cost and profit of each, style by style.",
+    allowed: canSeeFinancials,
+    needs: "dashboard.financials or accounts.view",
+    extras: [],
   },
   STOCK_ALERTS: {
     label: "Stock alerts",

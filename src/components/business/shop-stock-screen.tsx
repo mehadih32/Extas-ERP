@@ -4,7 +4,6 @@ import { PencilIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { PinField } from "@/components/ai/pin-prompt";
 import { useWhen } from "@/components/ai/when";
 import { Field } from "@/components/forms/field";
 import { Fact, Panel } from "@/components/sales/detail-bits";
@@ -13,7 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import type { ShopStockPage } from "@/modules/retail/shop-stock.service";
-import { buyReadyStockAction, setReserveAction } from "@/server/actions/retail.actions";
+import { setReserveAction } from "@/server/actions/retail.actions";
+
+import { BuyReadyStockDialog } from "./buy-ready-stock-dialog";
 
 /*
  * Business > Shop stock (plan v6 sec 3 and 3a): the pieces held for the shops
@@ -152,7 +153,7 @@ export function ShopStockScreen({ page }: { page: ShopStockPage }) {
       {dialog?.kind === "reserve" && (
         <ReserveDialog page={page} reserve={dialog.reserve} onClose={close} />
       )}
-      {dialog?.kind === "buy" && <BuyDialog page={page} onClose={close} />}
+      {dialog?.kind === "buy" && <BuyReadyStockDialog page={page} onClose={close} />}
     </div>
   );
 }
@@ -241,162 +242,3 @@ function ReserveDialog({
     </FormDialog>
   );
 }
-
-function BuyDialog({ page, onClose }: { page: ShopStockPage; onClose: () => void }) {
-  const router = useRouter();
-  const [styleId, setStyleId] = useState(page.styles[0]?.id ?? "");
-  const [priceMode, setPriceMode] = useState("RULE");
-  const style = page.styles.find((s) => s.id === styleId);
-  return (
-    <FormDialog
-      title="Buy ready stock"
-      description="Pieces of one style from one supplier. They come into stock at cost and the bill is due to the supplier."
-      submitLabel="Save the purchase"
-      pendingLabel="Saving"
-      errorTitle="The purchase was not saved"
-      className="sm:max-w-2xl"
-      onClose={onClose}
-      onSubmit={async (form) => {
-        const text = (name: string) => String(form.get(name) ?? "").trim();
-        const lines = (style?.variants ?? []).flatMap((v) => {
-          const quantity = text(`qty-${v.id}`);
-          return quantity ? [{ variantId: v.id, quantity, unitPrice: text(`price-${v.id}`) }] : [];
-        });
-        const result = await buyReadyStockAction({
-          supplierId: text("supplierId"),
-          styleId,
-          warehouseId: text("warehouseId"),
-          purchaseDate: text("purchaseDate"),
-          supplierRef: text("supplierRef"),
-          lines,
-          extraCost: text("extraCost"),
-          retailOnly: form.get("retailOnly") === "on",
-          priceMode,
-          fixedPrice: text("fixedPrice"),
-          note: text("note"),
-          pin: text("pin"),
-        });
-        if (!result.ok) return result.error;
-        router.refresh();
-        onClose();
-        return undefined;
-      }}
-    >
-      {(fieldError) => (
-        <>
-          <Field id="buy-supplier" label="Supplier" error={fieldError("supplierId")}>
-            <NativeSelect id="buy-supplier" name="supplierId" containerClassName="sm:w-full">
-              {page.suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </NativeSelect>
-          </Field>
-          <Field id="buy-style" label="Style" error={fieldError("styleId")}>
-            <NativeSelect
-              id="buy-style"
-              value={styleId}
-              onChange={(e) => setStyleId(e.target.value)}
-              containerClassName="sm:w-full"
-            >
-              {page.styles.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </NativeSelect>
-          </Field>
-          <Field id="buy-warehouse" label="Warehouse" error={fieldError("warehouseId")}>
-            <NativeSelect id="buy-warehouse" name="warehouseId" containerClassName="sm:w-full">
-              {page.warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </NativeSelect>
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="buy-date" label="Date" error={fieldError("purchaseDate")}>
-              <Input id="buy-date" name="purchaseDate" type="date" />
-            </Field>
-            <Field id="buy-ref" label="Supplier's bill no." error={fieldError("supplierRef")}>
-              <Input id="buy-ref" name="supplierRef" />
-            </Field>
-          </div>
-          <fieldset className="grid gap-2">
-            <legend className="text-sm font-medium">Pieces and price per piece</legend>
-            {fieldError("lines") && (
-              <p className="text-sm text-destructive">{fieldError("lines")}</p>
-            )}
-            {style?.variants.map((v) => (
-              <div
-                key={v.id}
-                className="grid grid-cols-[minmax(0,1fr)_5rem_6rem] items-center gap-2 text-sm"
-              >
-                <span className="min-w-0 break-words">
-                  {v.colour} {v.size}
-                </span>
-                <Input
-                  name={`qty-${v.id}`}
-                  inputMode="numeric"
-                  placeholder="Pieces"
-                  aria-label={`Pieces of ${v.sku}`}
-                />
-                <Input
-                  name={`price-${v.id}`}
-                  inputMode="decimal"
-                  placeholder={currencyHint(page.currency)}
-                  aria-label={`Price per piece of ${v.sku}`}
-                />
-              </div>
-            ))}
-          </fieldset>
-          <Field
-            id="buy-extra"
-            label={`Transport and other costs (${page.currency})`}
-            hint="Optional. On the same bill; shared per piece into the cost"
-            error={fieldError("extraCost")}
-          >
-            <Input id="buy-extra" name="extraCost" inputMode="decimal" placeholder="0" />
-          </Field>
-          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              name="retailOnly"
-              className="size-4 cursor-pointer accent-primary"
-            />
-            Retail only: hold every piece for the shops
-          </label>
-          <Field id="buy-mode" label="Shops' price" error={fieldError("priceMode")}>
-            <NativeSelect
-              id="buy-mode"
-              value={priceMode}
-              onChange={(e) => setPriceMode(e.target.value)}
-              containerClassName="sm:w-full"
-            >
-              <option value="RULE">{PRICE_MODE.RULE}</option>
-              <option value="FIXED">{PRICE_MODE.FIXED}</option>
-              <option value="AT_COST">{PRICE_MODE.AT_COST}</option>
-            </NativeSelect>
-          </Field>
-          {priceMode === "FIXED" && (
-            <Field
-              id="buy-fixed"
-              label={`Price for the shops (${page.currency})`}
-              error={fieldError("fixedPrice")}
-            >
-              <Input id="buy-fixed" name="fixedPrice" inputMode="decimal" placeholder="650" />
-            </Field>
-          )}
-          <Field id="buy-note" label="Note (optional)" error={fieldError("note")}>
-            <Input id="buy-note" name="note" />
-          </Field>
-          <PinField id="buy-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
-        </>
-      )}
-    </FormDialog>
-  );
-}
-
-const currencyHint = (currency: string) => `${currency} each`;

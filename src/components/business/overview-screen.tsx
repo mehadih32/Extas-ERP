@@ -51,7 +51,7 @@ export function OverviewScreen({ page }: { page: OverviewPage }) {
           <PeriodPicker period={page.period} />
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
-              <Link href="/business/returns">Returns</Link>
+              <Link href="/business/retail/returns">Returns</Link>
             </Button>
             <DownloadButton scope="overview" period={page.period} />
           </div>
@@ -63,7 +63,10 @@ export function OverviewScreen({ page }: { page: OverviewPage }) {
               <p key={s.id} className="flex items-start gap-1.5">
                 <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
                 <span>
-                  <Link href={`/business/stores/${s.id}`} className="font-medium hover:underline">
+                  <Link
+                    href={`/business/retail/stores/${s.id}`}
+                    className="font-medium hover:underline"
+                  >
                     {s.name}
                   </Link>
                   : figures missing for {s.days.join(", ")}
@@ -93,6 +96,20 @@ export function OverviewScreen({ page }: { page: OverviewPage }) {
             />
           ))}
         </div>
+        <Link
+          href={
+            page.period.key === "all"
+              ? "/reports/production-vs-ready-stock?period=ONE_YEAR"
+              : `/reports/production-vs-ready-stock?from=${page.period.from}&to=${page.period.to}`
+          }
+          className="grid gap-1 rounded-lg border bg-card p-4 text-sm transition-colors hover:bg-muted/40"
+        >
+          <span className="font-medium text-primary">Production vs ready stock</span>
+          <span className="text-muted-foreground">
+            What came from production and what was bought as ready stock in these days, and the
+            sales and profit of each, style by style.
+          </span>
+        </Link>
         {(page.fixedMissing.length > 0 || page.incomplete.length > 0) && (
           <p className="text-sm text-amber-700 dark:text-amber-400">
             {page.fixedMissing.length > 0 &&

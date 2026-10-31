@@ -240,7 +240,7 @@ async function analyse(
   const { message } = await askClaude(ctx.company.id, {
     task: "report.daily",
     userId,
-    screen: userId ? "/business/stores/[storeId]" : undefined,
+    screen: userId ? "/business/retail/stores/[storeId]" : undefined,
     why: `Retail analysis of ${store.name} (${d.period.from} to ${d.period.to})`,
     record: { type: "RetailStore", id: storeId, label: store.name },
     system: ANALYSIS_SYSTEM(ctx.company.name),

@@ -68,7 +68,10 @@ export function StoreScreen({ page }: { page: StorePage }) {
     <div className="grid min-w-0 gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <Link href="/business/stores" className="text-sm text-muted-foreground hover:underline">
+          <Link
+            href="/business/retail/stores"
+            className="text-sm text-muted-foreground hover:underline"
+          >
             Retail stores
           </Link>
           <h2 className="mt-1 font-serif text-2xl break-words text-primary">{store.name}</h2>

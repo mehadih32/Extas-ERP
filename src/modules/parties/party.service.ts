@@ -27,10 +27,14 @@ import { assertNotWalkIn, isWalkIn, WALK_IN_NOT_A_BUYER } from "@/modules/partie
 const CODE_PREFIX: Record<PartyKind, string> = { BUYER: "BUY", SUPPLIER: "SUP", BOTH: "BS" };
 
 /** Next free code for the kind, e.g. BUY-0007. */
-async function nextPartyCode(ctx: CompanyContext, kind: PartyKind): Promise<string> {
+export async function nextPartyCode(
+  db: Prisma.TransactionClient,
+  companyId: string,
+  kind: PartyKind,
+): Promise<string> {
   const prefix = `${CODE_PREFIX[kind]}-`;
-  const rows = await ctx.db.party.findMany({
-    where: { code: { startsWith: prefix } },
+  const rows = await db.party.findMany({
+    where: { companyId, code: { startsWith: prefix } },
     select: { code: true },
   });
   const max = rows.reduce((m, r) => {
@@ -82,7 +86,7 @@ export async function createParty(ctx: CompanyContext, raw: unknown, meta?: Requ
 
   // Two people creating at once can pick the same generated code: retry.
   for (let attempt = 0; ; attempt++) {
-    const code = requestedCode ?? (await nextPartyCode(ctx, input.kind));
+    const code = requestedCode ?? (await nextPartyCode(prisma, ctx.company.id, input.kind));
     try {
       const party = await ctx.db.party.create({
         data: {
@@ -173,6 +177,7 @@ export async function listParties(ctx: CompanyContext, raw: unknown = {}) {
     ...(q.status ? { status: q.status } : {}),
     ...(q.category ? { supplierCategories: { has: q.category } } : {}),
     ...(q.verified !== undefined ? { isVerified: q.verified } : {}),
+    ...(q.oneTime !== undefined ? { oneTime: q.oneTime } : {}),
     ...(q.city ? { city: { equals: q.city, mode: "insensitive" } } : {}),
     ...(q.search
       ? {

@@ -209,6 +209,19 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-10-31 (Business menu, ready stock, size charts): Business holds Overview and Retail; Retail's tabs are
+  E-commerce, POS, Retail stores, Shop stock and Returns (old addresses lead to the new ones). "Buy ready stock" is
+  one form: supplier optional (pick one, add a new one there, or tick "Random supplier": a one-time supplier with
+  its own account, listed under "Other suppliers" in Buyers & suppliers, never in the regular list); style picked
+  or added there; colours and sizes picked, then pieces per colour and size; one price for the style (per piece or
+  the total, the other worked out); extra costs (transport and others) are part of the same bill; cost per piece =
+  bill total / pieces. Payment Due, Part paid or Paid in full from one cash or bank account for the whole bill
+  (goods and extra costs), shown only to those who record payments; it posts to Accounts at once. Ready stock goes
+  into Products like any stock. Reports has "Production vs ready stock" (pieces in, cost, pieces sold, sales,
+  profit, by period and style); a style that came both ways splits by the pieces that came in each way. Every
+  style can have a "Size chart" (a measurement per size, in inches with cm beside; points by garment, editable;
+  filled from the tech pack with one button), sent to the shops, whose own edits on their site are never
+  overwritten by a later ERP change.
 - 2026-10-31 (where loans show): Home's money card is "Loans & capital owed" (with the next installment and a link
   to the page), Home's Action Zone has a "Loan installments" card (late or due within 7 days; owner and Accounts),
   and Business > Overview has a "Left after installments" card. The nightly clock tells everyone who records

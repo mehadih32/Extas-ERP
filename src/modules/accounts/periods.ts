@@ -16,6 +16,7 @@ export const PERIOD_PRESETS = [
   "LAST_FINANCIAL_YEAR",
   "ONE_WEEK",
   "ONE_MONTH",
+  "SIX_MONTHS",
   "ONE_YEAR",
 ] as const;
 
@@ -114,6 +115,8 @@ export function presetRange(
       return { from: addDays(today, -6), to: today };
     case "ONE_MONTH":
       return { from: addDays(addMonths(today, -1), 1), to: today };
+    case "SIX_MONTHS":
+      return { from: addDays(addMonths(today, -6), 1), to: today };
     case "ONE_YEAR":
       return { from: addDays(addMonths(today, -12), 1), to: today };
   }

@@ -125,6 +125,8 @@ export async function getPartyScreen(ctx: CompanyContext, partyId: string) {
       statusChangedOn: profile.statusChangedAt ? localDay(profile.statusChangedAt, tz) : null,
       notes: profile.notes,
       isWalkIn: isWalkIn(profile),
+      /** A one-time supplier (Other suppliers). */
+      oneTime: profile.oneTime,
       addedOn: localDay(profile.createdAt, tz),
     },
     money: {

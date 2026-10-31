@@ -9,6 +9,7 @@ import * as catalog from "@/modules/inventory/catalog.service";
 import * as lots from "@/modules/inventory/lot.service";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as screens from "@/modules/inventory/screens.service";
+import * as sizeCharts from "@/modules/inventory/size-chart.service";
 import * as stock from "@/modules/inventory/stock.service";
 import * as styles from "@/modules/inventory/style.service";
 
@@ -174,3 +175,13 @@ export const listStockLotsAction = async (query: unknown) =>
   runAction(async () => lots.listLots(await view(), query));
 export const getStockSummaryAction = async () =>
   runAction(async () => stock.getStockSummary(await view()));
+
+// --- Size chart --------------------------------------------------------------------
+export const getSizeChartAction = async (styleId: string) =>
+  runAction(async () => sizeCharts.getSizeChart(await view(), styleId));
+export const saveSizeChartAction = async (styleId: string, input: unknown) =>
+  change(async () =>
+    sizeCharts.saveSizeChart(await manage(), styleId, input, await getRequestMeta()),
+  );
+export const sizeChartFromTechPackAction = async (styleId: string) =>
+  runAction(async () => sizeCharts.sizeChartFromTechPack(await manage(), styleId));

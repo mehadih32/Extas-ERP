@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { SectionError } from "@/components/dashboard/section-error";
 import { PrintDocumentButton } from "@/components/documents/print-button";
 import { FormAlert } from "@/components/forms/field";
-import { amountCell, drCr, money, partyHref } from "@/components/parties/labels";
+import { amountCell, drCr, money } from "@/components/parties/labels";
 import { PartiesNoAccess } from "@/components/parties/no-access";
 import { dayParam, listName } from "@/components/parties/route";
 import { StatementRange } from "@/components/parties/statement-range";
@@ -238,9 +238,7 @@ export default async function StatementPage({
 
   return (
     <div className="grid gap-6">
-      <BackLink
-        href={partyHref({ id: partyId, kind: list === "suppliers" ? "SUPPLIER" : "BUYER" })}
-      >
+      <BackLink href={`/parties/${list}/${encodeURIComponent(partyId)}`}>
         {screen ? screen.party.name : "Back to the profile"}
       </BackLink>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

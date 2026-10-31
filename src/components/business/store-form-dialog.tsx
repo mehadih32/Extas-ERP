@@ -69,7 +69,7 @@ export function StoreFormDialog({
           ? await createStoreAction(input)
           : await updateStoreAction(store.id, input);
         if (!result.ok) return result.error;
-        if (adding && result.data) router.push(`/business/stores/${result.data.id}`);
+        if (adding && result.data) router.push(`/business/retail/stores/${result.data.id}`);
         else router.refresh();
         onClose();
         return undefined;

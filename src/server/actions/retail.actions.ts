@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
+import { assertCanPayMoney } from "@/modules/accounts/money-guards";
 import { requireCompany } from "@/modules/auth/context";
 import { fileFromForm } from "@/modules/files/file.service";
 import * as account from "@/modules/retail/account.service";
@@ -22,8 +23,8 @@ import * as summaries from "@/modules/retail/summaries.service";
  */
 
 const refresh = (id?: string) => {
-  revalidatePath("/business/stores");
-  if (id) revalidatePath(`/business/stores/${id}`);
+  revalidatePath("/business/retail/stores");
+  if (id) revalidatePath(`/business/retail/stores/${id}`);
 };
 
 export async function listStoresAction() {
@@ -122,7 +123,7 @@ export async function returnsPageAction() {
 export async function resolveHoldAction(parcelId: string, input: unknown) {
   return runAction(async () => {
     await returns.resolveHold(await requireCompany(), parcelId, input, await getRequestMeta());
-    revalidatePath("/business/returns");
+    revalidatePath("/business/retail/returns");
     return null;
   });
 }
@@ -130,7 +131,7 @@ export async function resolveHoldAction(parcelId: string, input: unknown) {
 export async function checkParcelAction(parcelId: string, input: unknown) {
   return runAction(async () => {
     await returns.checkParcel(await requireCompany(), parcelId, input, await getRequestMeta());
-    revalidatePath("/business/returns");
+    revalidatePath("/business/retail/returns");
     return null;
   });
 }
@@ -143,7 +144,7 @@ export async function undoDecisionAction(pieceId: string, input: unknown) {
       input,
       await getRequestMeta(),
     );
-    revalidatePath("/business/returns");
+    revalidatePath("/business/retail/returns");
     return result;
   });
 }
@@ -157,20 +158,22 @@ export async function shopStockPageAction() {
 export async function setReserveAction(input: unknown) {
   return runAction(async () => {
     await shopStock.setReserve(await requireCompany(), input, await getRequestMeta());
-    revalidatePath("/business/shop-stock");
+    revalidatePath("/business/retail/shop-stock");
     return null;
   });
 }
 
 export async function buyReadyStockAction(input: unknown) {
   return runAction(async () => {
-    const purchase = await shopStock.buyReadyStock(
-      await requireCompany(),
-      input,
-      await getRequestMeta(),
-    );
-    revalidatePath("/business/shop-stock");
-    revalidatePath("/business/stores", "layout");
+    const ctx = await requireCompany();
+    // Money paid now is checked here and again in the service (money rule).
+    const payment = (input as { payment?: { mode?: string } } | null)?.payment;
+    if (payment?.mode && payment.mode !== "DUE") {
+      assertCanPayMoney(ctx, "Only Accounts can pay the supplier now: save it as Due instead.");
+    }
+    const purchase = await shopStock.buyReadyStock(ctx, input, await getRequestMeta());
+    revalidatePath("/business/retail/shop-stock");
+    revalidatePath("/business/retail/stores", "layout");
     return { number: purchase.number };
   });
 }

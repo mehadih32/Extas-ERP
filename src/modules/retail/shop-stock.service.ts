@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { PaymentMethod, Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { toInstant } from "@/lib/dates";
@@ -8,16 +8,25 @@ import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { lockRows } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
+import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry } from "@/modules/accounts/journal.service";
+import { assertCanPayMoney } from "@/modules/accounts/money-guards";
+import { listMoneyAccounts } from "@/modules/accounts/screens.service";
 import { lockSupplierAccount, settleSupplierBills } from "@/modules/accounts/supplier-settlement";
 import { PIN_CHECKED, requirePin } from "@/modules/ai/settings.service";
 import { auditInCompany, recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSeeFinancials } from "@/modules/dashboard/access";
 import { openLots } from "@/modules/inventory/lot.service";
+import { buildSku } from "@/modules/inventory/matrix.service";
+import { saveSizeChartTx, sizeChartSchema } from "@/modules/inventory/size-chart.service";
 import { receiveAtCostTx, stockByVariant } from "@/modules/inventory/stock.service";
-import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
+import {
+  assertPartyCanTransact,
+  nextPartyCode,
+  recordPartyActivity,
+} from "@/modules/parties/party.service";
 import { activeMembers } from "@/modules/reminders/audience";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
@@ -36,6 +45,8 @@ import { setHandPrice } from "./stores.service";
 
 const IDLE_DAYS = 60;
 const DAY = 24 * 60 * 60 * 1000;
+const ZERO = new Prisma.Decimal(0);
+const money = (v: Prisma.Decimal) => v.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
 const id = z.string().trim().min(1).max(40);
 const amount = (message: string) =>
@@ -65,10 +76,65 @@ export const reserveSchema = z.object({
     .transform((v) => v || null),
 });
 
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max, `At most ${max} characters`)
+    .optional()
+    .transform((v) => v || null);
+
+/** Who sold the pieces: a supplier from the list, a new one, or a one-time ("random") one. */
+const supplierChoice = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("PICK"), supplierId: id }),
+  z.object({
+    mode: z.literal("NEW"),
+    name: z.string().trim().min(2, "The supplier's name").max(120, "At most 120 characters"),
+    phone: optionalText(30),
+    address: optionalText(300),
+  }),
+  z.object({
+    mode: z.literal("RANDOM"),
+    name: optionalText(120),
+    phone: optionalText(30),
+    address: optionalText(300),
+  }),
+]);
+
+/** Which style: one from Products, or a new one made here. */
+const styleChoice = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("PICK"), styleId: id }),
+  z.object({
+    mode: z.literal("NEW"),
+    code: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9][A-Z0-9-]{0,39}$/, "Use letters, numbers and dashes (e.g. EX-PL-001)"),
+    name: z.string().trim().min(1, "The style's name").max(200, "At most 200 characters"),
+    categoryId: id,
+    sizeChart: sizeChartSchema.optional(),
+  }),
+]);
+
+/** How much is paid now, from which cash, bank or wallet account (for the whole bill). */
+const paymentChoice = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("DUE") }),
+  z.object({
+    mode: z.enum(["PART", "FULL"]),
+    amount: amount("An amount like 5000")
+      .optional()
+      .or(z.literal("").transform(() => undefined)),
+    accountId: id,
+    method: z.enum(PaymentMethod).default("CASH"),
+    reference: optionalText(120),
+  }),
+]);
+
 export const purchaseSchema = z
   .object({
-    supplierId: id,
-    styleId: id,
+    supplier: supplierChoice,
+    style: styleChoice,
     warehouseId: id,
     purchaseDate: z
       .string()
@@ -76,50 +142,80 @@ export const purchaseSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, "A date")
       .optional()
       .or(z.literal("").transform(() => undefined)),
-    supplierRef: z
-      .string()
-      .trim()
-      .max(60, "At most 60 characters")
-      .optional()
-      .transform((v) => v || null),
+    supplierRef: optionalText(60),
+    /** Pieces per colour and size. */
     lines: z
       .array(
         z.object({
-          variantId: id,
+          colorId: id,
+          sizeId: id,
           quantity: z.coerce.number().int("Whole pieces").min(1).max(100_000),
-          unitPrice: amount("A price like 420 or 419.50").refine(
-            (v) => Number(v) > 0,
-            "A price above 0",
-          ),
         }),
       )
       .min(1, "Enter the pieces of at least one colour and size")
       .max(400),
-    extraCost: amount("An amount like 1500")
-      .optional()
-      .or(z.literal("").transform(() => undefined)),
+    /** One price for the whole style: per piece, or the total for all the pieces. */
+    priceBasis: z.enum(["PIECE", "TOTAL"]).default("PIECE"),
+    price: amount("A price like 420 or 419.50").refine((v) => Number(v) > 0, "A price above 0"),
+    /** Transport and other costs on the same bill, shared per piece into the cost. */
+    extraCosts: z
+      .array(
+        z.object({
+          label: z.string().trim().min(1, "Say what it was for").max(60, "At most 60 characters"),
+          amount: amount("An amount like 1500").refine((v) => Number(v) > 0, "Above 0"),
+        }),
+      )
+      .max(10, "At most 10 extra costs")
+      .default([]),
+    payment: paymentChoice.default({ mode: "DUE" }),
     retailOnly: z.boolean().default(false),
     priceMode: z.enum(["RULE", "FIXED", "AT_COST"]).default("RULE"),
     fixedPrice: amount("A price like 650")
       .optional()
       .or(z.literal("").transform(() => undefined)),
-    note: z
-      .string()
-      .trim()
-      .max(300, "At most 300 characters")
-      .optional()
-      .transform((v) => v || null),
+    note: optionalText(300),
     pin: z.string().trim().max(20).optional(),
   })
   .superRefine((input, issue) => {
     if (input.priceMode === "FIXED" && !(Number(input.fixedPrice ?? 0) > 0)) {
       issue.addIssue({ code: "custom", path: ["fixedPrice"], message: "Give the shops' price" });
     }
-    const ids = input.lines.map((l) => l.variantId);
-    if (new Set(ids).size !== ids.length) {
-      issue.addIssue({ code: "custom", path: ["lines"], message: "Each SKU once" });
+    const cells = input.lines.map((l) => `${l.colorId}:${l.sizeId}`);
+    if (new Set(cells).size !== cells.length) {
+      issue.addIssue({ code: "custom", path: ["lines"], message: "Each colour and size once" });
+    }
+    if (input.payment.mode === "PART" && !(Number(input.payment.amount ?? 0) > 0)) {
+      issue.addIssue({
+        code: "custom",
+        path: ["payment", "amount"],
+        message: "How much is paid now",
+      });
     }
   });
+
+/** The bill's figures from the pieces, the one price and the extra costs. */
+export function purchaseFigures(input: {
+  lines: Array<{ quantity: number }>;
+  priceBasis: "PIECE" | "TOTAL";
+  price: string;
+  extraCosts: Array<{ amount: string }>;
+}) {
+  const pieces = input.lines.reduce((t, l) => t + l.quantity, 0);
+  const price = new Prisma.Decimal(input.price);
+  const goods = money(input.priceBasis === "PIECE" ? price.times(pieces) : price);
+  const extra = money(input.extraCosts.reduce((t, c) => t.plus(c.amount), ZERO));
+  const total = goods.plus(extra);
+  return {
+    pieces,
+    goods,
+    extra,
+    total,
+    /** The supplier's price per piece (4 places; the bill keeps the exact total). */
+    unitPrice: pieces ? goods.dividedBy(pieces).toDecimalPlaces(4) : ZERO,
+    /** What each piece cost with its share of the extra costs. */
+    unitCost: pieces ? total.dividedBy(pieces).toDecimalPlaces(4) : ZERO,
+  };
+}
 
 function assertCanSee(ctx: CompanyContext) {
   if (!ctx.can("retail.view") && !ctx.can("retail.manage") && !ctx.can("retail.purchases")) {
@@ -229,9 +325,6 @@ export async function remindIdleReserves(now: Date = new Date()) {
 // Buy ready stock
 // ---------------------------------------------------------------------------
 
-const ZERO = new Prisma.Decimal(0);
-const money = (v: Prisma.Decimal) => v.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-
 /** Records ready stock bought from a supplier, with the PIN. */
 export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   if (!ctx.can("retail.purchases")) {
@@ -241,72 +334,134 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
   if (input.priceMode !== "RULE" && !ctx.can("retail.manage")) {
     throw new AppError("FORBIDDEN", "Setting the shops' price also needs the right to set prices.");
   }
+  // Money paid now: only those who record payments (checked in the action too).
+  if (input.payment.mode !== "DUE") {
+    assertCanPayMoney(ctx, "Only Accounts can pay the supplier now: save it as Due instead.");
+  }
+  if (input.supplier.mode === "NEW" && !ctx.can("parties.manage")) {
+    throw new AppError("FORBIDDEN", "Adding a supplier needs the right to manage suppliers.", {
+      "supplier.name": ["Pick a supplier, or tick Random supplier"],
+    });
+  }
   const companyId = ctx.company.id;
-  const supplier = await assertPartyCanTransact(ctx, input.supplierId, "PURCHASE");
-  const style = await ctx.db.style.findUnique({
-    where: { id: input.styleId },
-    select: {
-      id: true,
-      code: true,
-      name: true,
-      isActive: true,
-      variants: { where: { removedAt: null }, select: { id: true, sku: true, colorId: true } },
-    },
-  });
-  if (!style || !style.isActive) throw new AppError("NOT_FOUND", "There is no such style.");
-  const variants = new Map(style.variants.map((v) => [v.id, v]));
-  input.lines.forEach((l, i) => {
-    if (!variants.has(l.variantId)) {
-      throw new AppError("VALIDATION", "A SKU is not of this style.", {
-        [`lines.${i}.variantId`]: ["Pick a colour and size of this style"],
+  const supplier =
+    input.supplier.mode === "PICK"
+      ? await assertPartyCanTransact(ctx, input.supplier.supplierId, "PURCHASE")
+      : null;
+  const pickedStyle =
+    input.style.mode === "PICK"
+      ? await ctx.db.style.findUnique({
+          where: { id: input.style.styleId },
+          select: { id: true, code: true, name: true, isActive: true },
+        })
+      : null;
+  if (input.style.mode === "PICK" && (!pickedStyle || !pickedStyle.isActive)) {
+    throw new AppError("NOT_FOUND", "There is no such style.");
+  }
+  if (input.style.mode === "NEW") {
+    if (!ctx.can("inventory.manage")) {
+      throw new AppError("FORBIDDEN", "Adding a style needs the right to manage products.");
+    }
+    const code = input.style.code;
+    if (await ctx.db.style.findFirst({ where: { code } })) {
+      throw new AppError("CONFLICT", `Style code ${code} is already used.`, {
+        "style.code": ["This code is taken"],
       });
     }
-  });
+    if (!(await ctx.db.category.findUnique({ where: { id: input.style.categoryId } }))) {
+      throw new AppError("NOT_FOUND", "There is no such category.");
+    }
+  }
+  const colorIds = [...new Set(input.lines.map((l) => l.colorId))];
+  const sizeIds = [...new Set(input.lines.map((l) => l.sizeId))];
+  const [colors, sizes] = await Promise.all([
+    ctx.db.color.findMany({ where: { id: { in: colorIds } }, select: { id: true, name: true } }),
+    ctx.db.size.findMany({ where: { id: { in: sizeIds } }, select: { id: true, name: true } }),
+  ]);
+  if (colors.length !== colorIds.length || sizes.length !== sizeIds.length) {
+    throw new AppError("NOT_FOUND", "A colour or size was not found.");
+  }
   const warehouse = await ctx.db.warehouse.findUnique({ where: { id: input.warehouseId } });
   if (!warehouse) throw new AppError("NOT_FOUND", "There is no such warehouse.");
+  const paidFromId =
+    input.payment.mode === "DUE"
+      ? null
+      : await cashAccountFor(prisma, companyId, input.payment.method, input.payment.accountId);
   await requirePin(ctx, input.pin, "buy ready stock");
 
-  // The extra costs are shared per piece: each piece costs its price plus the share.
-  const pieces = input.lines.reduce((t, l) => t + l.quantity, 0);
-  const extra = new Prisma.Decimal(input.extraCost ?? 0);
-  const share = extra.dividedBy(pieces);
-  const lines = input.lines.map((l) => {
-    const unitPrice = new Prisma.Decimal(l.unitPrice);
-    return { ...l, unitPrice, unitCost: unitPrice.plus(share).toDecimalPlaces(4) };
-  });
-  const goods = lines.reduce((t, l) => t.plus(l.unitPrice.times(l.quantity)), ZERO);
-  const total = money(goods.plus(extra));
+  const figures = purchaseFigures(input);
+  const { pieces, extra, total } = figures;
+  const paidNow =
+    input.payment.mode === "DUE"
+      ? ZERO
+      : input.payment.mode === "FULL"
+        ? total
+        : money(new Prisma.Decimal(input.payment.amount!));
+  if (paidNow.gt(total)) {
+    throw new AppError("VALIDATION", "More than the bill: choose Paid in full instead.", {
+      "payment.amount": [`At most ${total.toFixed(2)}`],
+    });
+  }
   const purchaseDate = input.purchaseDate
     ? toInstant(input.purchaseDate, ctx.company.timezone)
     : new Date();
+  const colorName = new Map(colors.map((c) => [c.id, c.name]));
+  const sizeName = new Map(sizes.map((s) => [s.id, s.name]));
 
-  const purchase = await runTransaction(async (tx) => {
+  const result = await runTransaction(async (tx) => {
+    // A new or one-time supplier first: its account is locked like any other below.
+    const seller = supplier ?? (await newSupplierTx(tx, ctx, input.supplier as NewSupplierChoice));
     // Lock order: the supplier's account first, then the SKUs' costs.
-    await lockSupplierAccount(tx, companyId, supplier.id);
+    await lockSupplierAccount(tx, companyId, seller.id);
+    const style =
+      pickedStyle ??
+      (await tx.style.create({
+        data: {
+          companyId,
+          code: (input.style as { code: string }).code,
+          name: (input.style as { name: string }).name,
+          categoryId: (input.style as { categoryId: string }).categoryId,
+        },
+        select: { id: true, code: true, name: true, isActive: true },
+      }));
+    const variants = await skusForTx(tx, ctx, style, input.lines, colorName, sizeName);
+    if (input.style.mode === "NEW" && input.style.sizeChart) {
+      await saveSizeChartTx(tx, companyId, style.id, input.style.sizeChart, ctx.user.id);
+    }
+    const lines = input.lines.map((l) => ({
+      variantId: variants.get(`${l.colorId}:${l.sizeId}`)!.id,
+      quantity: l.quantity,
+      unitPrice: figures.unitPrice,
+      unitCost: figures.unitCost,
+    }));
     await lockRows(
       tx,
       "ProductVariant",
       lines.map((l) => l.variantId),
     );
+    const byId = new Map([...variants.values()].map((v) => [v.id, v]));
     const number = await nextDocumentNumber(tx, companyId, "READY_STOCK_PURCHASE");
+    const extras = input.extraCosts.map((c) => `${c.label} ${c.amount}`).join(", ");
     const bill = await tx.supplierBill.create({
       data: {
         companyId,
         number: await nextDocumentNumber(tx, companyId, "SUPPLIER_BILL"),
         supplierRef: input.supplierRef,
-        supplierId: supplier.id,
+        supplierId: seller.id,
         billDate: purchaseDate,
         totalAmount: total,
         paymentType: "DUE",
         dueAmount: total,
-        notes: `Ready stock ${number}: ${style.code} ${style.name}, ${pieces} pieces`,
+        notes: `Ready stock ${number}: ${style.code} ${style.name}, ${pieces} pieces${
+          extras ? ` (with ${extras})` : ""
+        }`,
       },
     });
     const created = await tx.readyStockPurchase.create({
       data: {
         companyId,
         number,
-        supplierId: supplier.id,
+        supplierId: seller.id,
         billId: bill.id,
         styleId: style.id,
         warehouseId: warehouse.id,
@@ -315,20 +470,15 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
         retailOnly: input.retailOnly,
         priceMode: input.priceMode,
         fixedPrice: input.priceMode === "FIXED" ? input.fixedPrice : null,
-        extraCost: money(extra),
+        extraCost: extra,
+        extraCosts: input.extraCosts.length
+          ? (input.extraCosts as unknown as Prisma.InputJsonArray)
+          : undefined,
         pieces,
         totalAmount: total,
         note: input.note,
         createdById: ctx.user.id,
-        lines: {
-          create: lines.map((l) => ({
-            companyId,
-            variantId: l.variantId,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-            unitCost: l.unitCost,
-          })),
-        },
+        lines: { create: lines.map((l) => ({ companyId, ...l })) },
       },
     });
     const lots = await openLots(tx, ctx, {
@@ -345,7 +495,7 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
       return value;
     });
     for (const l of lines) {
-      const variant = variants.get(l.variantId)!;
+      const variant = byId.get(l.variantId)!;
       const costs = await tx.productVariant.findUniqueOrThrow({
         where: { id: l.variantId },
         select: { avgCost: true },
@@ -370,7 +520,7 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
           referenceType: "ReadyStockPurchase",
           referenceId: created.id,
           lotId: lots.get(l.variantId),
-          note: `Bought ready: ${number} from ${supplier.name}`,
+          note: `Bought ready: ${number} from ${seller.name}`,
           createdById: ctx.user.id,
         },
       });
@@ -388,7 +538,7 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
     const entry = await postJournalEntry(tx, {
       companyId,
       date: purchaseDate,
-      description: `Bill ${bill.number} — ${supplier.name}${
+      description: `Bill ${bill.number} — ${seller.name}${
         input.supplierRef ? ` (${input.supplierRef})` : ""
       }: ready stock ${number} into ${warehouse.name}`,
       sourceType: "SUPPLIER_BILL",
@@ -398,18 +548,51 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
         ...lines.map((l, i) => ({
           accountId: acc.INVENTORY,
           debit: values[i]!,
-          memo: `${variants.get(l.variantId)!.sku} × ${l.quantity}`,
+          memo: `${byId.get(l.variantId)!.sku} × ${l.quantity}`,
         })),
         {
           accountId: acc.PAYABLE,
-          partyId: supplier.id,
+          partyId: seller.id,
           credit: total,
           memo: input.supplierRef ?? undefined,
         },
       ],
     });
     await tx.supplierBill.update({ where: { id: bill.id }, data: { journalEntryId: entry.id } });
-    if (input.retailOnly) await holdForShopsTx(tx, ctx, style.id, lines, variants);
+    // Paid now: one payment voucher against this bill, from the account chosen.
+    let voucher: string | null = null;
+    if (paidNow.gt(0) && paidFromId && input.payment.mode !== "DUE") {
+      const payment = await tx.payment.create({
+        data: {
+          companyId,
+          number: await nextDocumentNumber(tx, companyId, "PAYMENT_VOUCHER"),
+          direction: "PAID",
+          method: input.payment.method,
+          partyId: seller.id,
+          supplierBillId: bill.id,
+          amount: paidNow,
+          paymentDate: purchaseDate,
+          accountId: paidFromId,
+          reference: input.payment.reference,
+          notes: `Ready stock ${number}`,
+        },
+      });
+      const paid = await postJournalEntry(tx, {
+        companyId,
+        date: purchaseDate,
+        description: `Payment ${payment.number} to ${seller.name} for bill ${bill.number} (ready stock ${number})`,
+        sourceType: "PAYMENT",
+        sourceId: payment.id,
+        postedById: ctx.user.id,
+        lines: [
+          { accountId: acc.PAYABLE, partyId: seller.id, debit: paidNow, memo: bill.number },
+          { accountId: paidFromId, credit: paidNow, memo: input.payment.reference ?? undefined },
+        ],
+      });
+      await tx.payment.update({ where: { id: payment.id }, data: { journalEntryId: paid.id } });
+      voucher = payment.number;
+    }
+    if (input.retailOnly) await holdForShopsTx(tx, ctx, style.id, lines, byId);
     await auditInCompany(
       ctx,
       meta,
@@ -417,17 +600,24 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
         action: "CREATE",
         entityType: "ReadyStockPurchase",
         entityId: created.id,
-        summary: `Ready stock ${number} (bill ${bill.number}) from ${supplier.name}: ${style.code} × ${pieces} into ${
-          warehouse.name
-        }, ${total.toFixed(2)} due${input.retailOnly ? ", retail only" : ""}`,
+        summary: `Ready stock ${number} (bill ${bill.number}) from ${seller.name}${
+          seller.oneTime ? " (one-time supplier)" : ""
+        }: ${style.code} × ${pieces} into ${warehouse.name}, ${total.toFixed(2)}${
+          extras ? ` with ${extras}` : ""
+        }; ${voucher ? `paid ${paidNow.toFixed(2)} (${voucher})` : "due"}${
+          input.retailOnly ? ", retail only" : ""
+        }`,
       },
       tx,
     );
-    // An advance already paid to the supplier settles the bill straight away.
-    await settleSupplierBills(tx, companyId, supplier.id);
-    await recordPartyActivity(supplier.id, purchaseDate, tx);
-    return created;
+    // The payment, or an advance already paid to the supplier, settles the bill.
+    await settleSupplierBills(tx, companyId, seller.id);
+    await recordPartyActivity(seller.id, purchaseDate, tx);
+    return { created, style, lines, byId };
   });
+  const purchase = result.created;
+  const { style, lines } = result;
+  const variants = result.byId;
 
   // The shops' price for these pieces, at every open shop (the PIN was asked above).
   if (input.priceMode !== "RULE") {
@@ -463,6 +653,119 @@ export async function buyReadyStock(ctx: CompanyContext, raw: unknown, meta?: Re
     }
   }
   return purchase;
+}
+
+type NewSupplierChoice = Exclude<z.infer<typeof supplierChoice>, { mode: "PICK" }>;
+
+/** A supplier added from the form: a regular one, or a one-time one (Other suppliers). */
+async function newSupplierTx(
+  tx: Prisma.TransactionClient,
+  ctx: CompanyContext,
+  choice: NewSupplierChoice,
+) {
+  const oneTime = choice.mode === "RANDOM";
+  const name =
+    choice.name ??
+    `Random supplier ${new Date().toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: ctx.company.timezone,
+    })}`;
+  const party = await tx.party.create({
+    data: {
+      companyId: ctx.company.id,
+      code: await nextPartyCode(tx, ctx.company.id, "SUPPLIER"),
+      kind: "SUPPLIER",
+      name,
+      phone: choice.phone,
+      address: choice.address,
+      oneTime,
+      notes: oneTime ? "One-time supplier, added while buying ready stock." : null,
+    },
+    select: { id: true, name: true, oneTime: true },
+  });
+  await auditInCompany(
+    ctx,
+    undefined,
+    {
+      action: "CREATE",
+      entityType: "Party",
+      entityId: party.id,
+      summary: `Created ${oneTime ? "one-time supplier" : "supplier"} "${party.name}" from Buy ready stock`,
+    },
+    tx,
+  );
+  return party;
+}
+
+/**
+ * The style's SKU of each colour and size bought: an existing one, one taken
+ * off the matrix earlier (brought back), or a new one. Adding or bringing back
+ * a SKU needs the right to manage products.
+ */
+async function skusForTx(
+  tx: Prisma.TransactionClient,
+  ctx: CompanyContext,
+  style: { id: string; code: string },
+  cells: Array<{ colorId: string; sizeId: string }>,
+  colorName: Map<string, string>,
+  sizeName: Map<string, string>,
+) {
+  const existing = await tx.productVariant.findMany({
+    where: { styleId: style.id },
+    select: { id: true, sku: true, colorId: true, sizeId: true, removedAt: true },
+  });
+  const byCell = new Map(existing.map((v) => [`${v.colorId}:${v.sizeId}`, v]));
+  const back = cells.flatMap((c) => {
+    const v = byCell.get(`${c.colorId}:${c.sizeId}`);
+    return v?.removedAt ? [v.id] : [];
+  });
+  const missing = cells.filter((c) => !byCell.has(`${c.colorId}:${c.sizeId}`));
+  if ((back.length || missing.length) && !ctx.can("inventory.manage")) {
+    throw new AppError(
+      "FORBIDDEN",
+      "A colour or size is not on this style yet: adding it needs the right to manage products.",
+      { lines: ["Use the style's own colours and sizes"] },
+    );
+  }
+  if (back.length) {
+    await tx.productVariant.updateMany({
+      where: { id: { in: back } },
+      data: { removedAt: null, isActive: true },
+    });
+  }
+  if (missing.length) {
+    // Two colours can shorten to the same code ("Navy Blue" / "Navy Blush"): add a suffix.
+    const taken = new Set(
+      (
+        await tx.productVariant.findMany({
+          where: { companyId: ctx.company.id, sku: { startsWith: `${style.code}-` } },
+          select: { sku: true },
+        })
+      ).map((v) => v.sku),
+    );
+    await tx.productVariant.createMany({
+      data: missing.map((c) => {
+        const base = buildSku(style.code, colorName.get(c.colorId)!, sizeName.get(c.sizeId)!);
+        let sku = base;
+        for (let i = 2; taken.has(sku); i++) sku = `${base}-${i}`;
+        taken.add(sku);
+        return {
+          companyId: ctx.company.id,
+          styleId: style.id,
+          colorId: c.colorId,
+          sizeId: c.sizeId,
+          sku,
+        };
+      }),
+    });
+  }
+  const variants = await tx.productVariant.findMany({
+    where: { styleId: style.id, removedAt: null },
+    select: { id: true, sku: true, colorId: true, sizeId: true },
+  });
+  return new Map(variants.map((v) => [`${v.colorId}:${v.sizeId}`, v]));
 }
 
 /** "Retail only": every piece goes on the shops' reserve (per colour where the style has those). */
@@ -503,53 +806,79 @@ async function holdForShopsTx(
 export async function shopStockPage(ctx: CompanyContext, now: Date = new Date()) {
   assertCanSee(ctx);
   const costs = canSeeCosts(ctx);
-  const [reserves, purchases, styles, suppliers, warehouses] = await Promise.all([
-    ctx.db.retailReserve.findMany({
-      where: { quantity: { gt: 0 } },
-      include: { style: { select: { code: true, name: true } } },
-      orderBy: [{ style: { code: "asc" } }, { createdAt: "asc" }],
-    }),
-    ctx.db.readyStockPurchase.findMany({
-      include: {
-        supplier: { select: { name: true } },
-        style: { select: { code: true, name: true } },
-        warehouse: { select: { name: true } },
-        bill: { select: { number: true, dueAmount: true } },
-        lines: true,
-      },
-      orderBy: { purchaseDate: "desc" },
-      take: 50,
-    }),
-    ctx.db.style.findMany({
-      where: { isActive: true, variants: { some: { removedAt: null } } },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        variants: {
-          where: { removedAt: null },
-          select: {
-            id: true,
-            sku: true,
-            colorId: true,
-            color: { select: { name: true } },
-            size: { select: { name: true } },
-          },
-          orderBy: [{ color: { sortOrder: "asc" } }, { size: { sortOrder: "asc" } }],
+  const buying = ctx.can("retail.purchases");
+  const canPay = buying && ctx.can("accounts.payments.record");
+  const canAddStyle = buying && ctx.can("inventory.manage");
+  const [reserves, purchases, styles, suppliers, warehouses, colours, sizes, categories, accounts] =
+    await Promise.all([
+      ctx.db.retailReserve.findMany({
+        where: { quantity: { gt: 0 } },
+        include: { style: { select: { code: true, name: true } } },
+        orderBy: [{ style: { code: "asc" } }, { createdAt: "asc" }],
+      }),
+      ctx.db.readyStockPurchase.findMany({
+        include: {
+          supplier: { select: { name: true } },
+          style: { select: { code: true, name: true } },
+          warehouse: { select: { name: true } },
+          bill: { select: { number: true, dueAmount: true } },
+          lines: true,
         },
-      },
-      orderBy: { code: "asc" },
-      take: 300,
-    }),
-    ctx.can("retail.purchases")
-      ? ctx.db.party.findMany({
-          where: { kind: { in: ["SUPPLIER", "BOTH"] } },
-          select: { id: true, name: true },
-          orderBy: { name: "asc" },
-        })
-      : Promise.resolve([]),
-    ctx.db.warehouse.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-  ]);
+        orderBy: { purchaseDate: "desc" },
+        take: 50,
+      }),
+      ctx.db.style.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          variants: {
+            where: { removedAt: null },
+            select: {
+              id: true,
+              sku: true,
+              colorId: true,
+              sizeId: true,
+              color: { select: { name: true } },
+              size: { select: { name: true } },
+            },
+            orderBy: [{ color: { sortOrder: "asc" } }, { size: { sortOrder: "asc" } }],
+          },
+        },
+        orderBy: { code: "asc" },
+        take: 300,
+      }),
+      buying
+        ? ctx.db.party.findMany({
+            // One-time suppliers stay under Other suppliers, out of this list.
+            where: {
+              kind: { in: ["SUPPLIER", "BOTH"] },
+              oneTime: false,
+              status: { not: "CLOSED" },
+            },
+            select: { id: true, name: true },
+            orderBy: { name: "asc" },
+          })
+        : Promise.resolve([]),
+      ctx.db.warehouse.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      buying
+        ? ctx.db.color.findMany({
+            select: { id: true, name: true, hexCode: true },
+            orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          })
+        : Promise.resolve([]),
+      buying
+        ? ctx.db.size.findMany({
+            select: { id: true, name: true },
+            orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          })
+        : Promise.resolve([]),
+      canAddStyle
+        ? ctx.db.category.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } })
+        : Promise.resolve([]),
+      canPay ? listMoneyAccounts(ctx) : Promise.resolve([]),
+    ]);
   const colourName = new Map(
     styles.flatMap((s) => s.variants.map((v) => [v.colorId, v.color.name] as const)),
   );
@@ -584,7 +913,10 @@ export async function shopStockPage(ctx: CompanyContext, now: Date = new Date())
     currency: ctx.company.currency,
     canSeeCosts: costs,
     canSetReserve: ctx.can("retail.manage") || ctx.can("retail.purchases"),
-    canBuy: ctx.can("retail.purchases"),
+    canBuy: buying,
+    canPay,
+    canAddStyle,
+    canAddSupplier: buying && ctx.can("parties.manage"),
     reserves: reserves.map((r) => {
       const ids = reservedVariants
         .filter((v) => v.styleId === r.styleId && (r.colorId === null || v.colorId === r.colorId))
@@ -644,12 +976,18 @@ export async function shopStockPage(ctx: CompanyContext, now: Date = new Date())
       variants: s.variants.map((v) => ({
         id: v.id,
         sku: v.sku,
+        colorId: v.colorId,
+        sizeId: v.sizeId,
         colour: v.color.name,
         size: v.size.name,
       })),
     })),
     suppliers,
     warehouses,
+    colours,
+    sizes,
+    categories,
+    accounts,
   };
 }
 

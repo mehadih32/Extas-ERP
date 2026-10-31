@@ -729,3 +729,27 @@ All of them will be in the final `openapi.yaml` that comes with the ERP build.
 - **Calls to the site:** `GET /erp-api/customers` refuses a request with a bad signature, or one more than 5 minutes old.
 - **Catalog:** import by style code brings all SKUs with their colours, sizes, grade and `shopPrice`, and no `retailPrice` or `avgCost`.
 - **Old calls:** `POST /payments`, `POST /returns`, `POST /ad-spend` and `PATCH` with `DELIVERED` get the `410` answers after the switch date.
+
+## Addendum (2026-10-31): size charts
+
+Every style in the ERP can now have a size chart: a measurement per size (Chest, Body length… for tops; Waist, Hip, Inseam… for bottoms), in inches or cm. The site creates its own size chart from it, and **the site's own edits are never overwritten by a later ERP change** (the owner's decision).
+
+- **Read:** `GET /api/v1/ecommerce/catalog/size-charts?updatedSince=&styleCode=&cursor=&limit=` (same key, paging and `updatedSince` as `/catalog/variants`). Each row:
+  ```json
+  {
+    "styleCode": "EX-PL-001",
+    "styleName": "Classic Polo",
+    "unit": "inch",
+    "sizes": ["S", "M", "L"],
+    "points": [{ "name": "Chest", "values": { "S": 38, "M": 40, "L": null } }],
+    "updatedAt": "2026-10-31T10:00:00.000Z"
+  }
+  ```
+  `unit` is `inch` or `cm`; a value is `null` where the ERP has none. The site shows the other unit by converting (1 in = 2.54 cm).
+- **Webhook:** `size_chart.changed` (one per style, `data` as above), sent when the ERP saves a chart. It is sent once per change.
+- **What the site does:**
+  1. A style with no chart on the site: create it from the ERP's chart.
+  2. A style whose chart the site has never edited: replace it with the ERP's newer chart.
+  3. A style whose chart was edited on the site: keep the site's chart; show the admin "The ERP has a newer size chart" with a button to take it. Never replace it by itself.
+     Keep, per style, the ERP's `updatedAt` last taken and whether the site edited the chart since.
+- **Test on the site:** save a chart in the ERP → the site creates it; edit it on the site, change it again in the ERP → the site keeps its edit and shows the notice; take the ERP's chart from the notice → it replaces the site's.

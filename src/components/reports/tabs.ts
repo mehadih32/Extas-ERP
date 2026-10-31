@@ -15,6 +15,11 @@ export type ReportsTab = {
  */
 export const REPORTS_TABS: readonly ReportsTab[] = [
   { href: "/reports", label: "Reports", anyOf: ["reports.export"] },
+  {
+    href: "/reports/production-vs-ready-stock",
+    label: "Production vs ready stock",
+    anyOf: ["dashboard.financials", "accounts.view"],
+  },
   { href: "/reports/documents", label: "Printed documents", anyOf: DOCUMENT_KEYS },
   { href: "/reports/templates", label: "Templates", anyOf: ["templates.manage"] },
 ];

@@ -1032,7 +1032,7 @@
       "height": 800,
       "target": "Pad and year-end summaries"
     },
-    "route": "/business/stores/[storeId]",
+    "route": "/business/retail/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "7cef8bc301953a81",
     "taken": "2026-10-31"
@@ -1088,7 +1088,7 @@
       "height": 507,
       "target": "Shops' reserve"
     },
-    "route": "/business/shop-stock",
+    "route": "/business/retail/shop-stock",
     "screen": "fdbd6406309b9d27",
     "guide": "d44ec8ae52376c34",
     "taken": "2026-10-31"
@@ -1107,7 +1107,7 @@
       "height": 800,
       "target": "Account"
     },
-    "route": "/business/stores/[storeId]",
+    "route": "/business/retail/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "c6acd17cf2d89b4f",
     "taken": "2026-10-31"
@@ -1127,7 +1127,7 @@
       "height": 1248,
       "target": "Daily figures"
     },
-    "route": "/business/stores/[storeId]",
+    "route": "/business/retail/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "895922720a14428a",
     "taken": "2026-10-31"
@@ -1150,7 +1150,7 @@
       "height": 1108,
       "target": "Store dashboard"
     },
-    "route": "/business/stores/[storeId]",
+    "route": "/business/retail/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "f2b6678d9bf27f8d",
     "taken": "2026-10-31"
@@ -1172,7 +1172,7 @@
       "height": 1175,
       "target": "Price rules"
     },
-    "route": "/business/stores/[storeId]",
+    "route": "/business/retail/stores/[storeId]",
     "screen": "ffff743861219937",
     "guide": "5fbd21d28cb984f0",
     "taken": "2026-10-31"
@@ -1190,7 +1190,7 @@
       "height": 800,
       "target": "marks"
     },
-    "route": "/business/stores",
+    "route": "/business/retail/stores",
     "screen": "34245fc204796796",
     "guide": "bbe376c12b3b2edb",
     "taken": "2026-10-31"

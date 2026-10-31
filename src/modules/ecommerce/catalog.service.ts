@@ -6,6 +6,12 @@ import { EcommerceApiError } from "./errors";
 import type { ShopCall } from "./route";
 import type { RetailStore } from "@prisma/client";
 
+import { prisma } from "@/lib/prisma";
+import {
+  presentSizeChartForShop,
+  type ShopSizeChart,
+  styleSizes,
+} from "@/modules/inventory/size-chart.service";
 import { storePrices } from "@/modules/retail/stores.service";
 
 import {
@@ -186,6 +192,55 @@ export async function listStoreCatalog(
     return price ? [storeCatalogVariantOf(v, price)] : [];
   });
   return { data, nextCursor: more ? encodeCursor(kept[kept.length - 1]!.id) : null };
+}
+
+/** The shop's view of size charts: values by size name, in the style's size order. */
+export async function shopSizeCharts(
+  charts: Array<{
+    styleId: string;
+    unit: string;
+    points: Prisma.JsonValue;
+    updatedAt: Date;
+    style: { code: string; name: string };
+  }>,
+): Promise<ShopSizeChart[]> {
+  const out: ShopSizeChart[] = [];
+  for (const chart of charts) {
+    // The chart was read through the company's own client (or for this company's shop).
+    const sizes = (await styleSizes(prisma, chart.styleId)).map(({ id, name }) => ({ id, name }));
+    out.push(presentSizeChartForShop(chart, chart.style, sizes));
+  }
+  return out;
+}
+
+/**
+ * GET /catalog/size-charts (2026-10-31): each style's size chart, a page at a
+ * time, with updatedSince to poll for changes. What a shop changes on its own
+ * site stays there: the shop decides whether a newer chart replaces its own.
+ */
+export async function listSizeCharts(
+  ctx: CompanyContext,
+  query: URLSearchParams,
+): Promise<Page<ShopSizeChart>> {
+  const q = catalogQuerySchema.parse(fieldsOf(query));
+  const after = decodeCursor(q.cursor);
+  const since = q.updatedSince ? new Date(q.updatedSince) : undefined;
+  const rows = await ctx.db.styleSizeChart.findMany({
+    where: {
+      ...(since ? { updatedAt: { gt: since } } : {}),
+      ...(q.styleCode ? { style: { code: q.styleCode } } : {}),
+      ...(after ? { id: { gt: after } } : {}),
+    },
+    include: { style: { select: { code: true, name: true } } },
+    orderBy: { id: "asc" },
+    take: q.limit + 1,
+  });
+  const more = rows.length > q.limit;
+  const kept = more ? rows.slice(0, q.limit) : rows;
+  return {
+    data: await shopSizeCharts(kept),
+    nextCursor: more ? encodeCursor(kept[kept.length - 1]!.id) : null,
+  };
 }
 
 const balanceInclude = {

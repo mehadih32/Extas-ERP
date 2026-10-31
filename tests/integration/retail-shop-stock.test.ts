@@ -15,6 +15,8 @@ import * as parties from "@/modules/parties/party.service";
 import { checkParcel, returnsPage } from "@/modules/retail/returns.service";
 import * as shopStock from "@/modules/retail/shop-stock.service";
 import * as stores from "@/modules/retail/stores.service";
+import { resolvePeriod } from "@/modules/accounts/periods";
+import { productionVsReadyStock } from "@/modules/reports/source-compare.service";
 import * as orders from "@/modules/sales/order.service";
 
 import { callShop, type Shop, setupShop } from "./ecommerce-helpers";
@@ -188,16 +190,23 @@ run("Shop stock: the shops' reserve and ready stock bought for them (plan v6 sec
       kind: "SUPPLIER",
       name: "Narayanganj Garments",
     });
+    const cell = (colour: string, size: string, quantity: number) => ({
+      colorId: variant(colour, size).colorId,
+      sizeId: variant(colour, size).sizeId,
+      quantity,
+    });
     const input = {
-      supplierId: supplier.id,
-      styleId: shop.polo.id,
+      supplier: { mode: "PICK", supplierId: supplier.id },
+      style: { mode: "PICK", styleId: shop.polo.id },
       warehouseId: shop.warehouse.id,
       supplierRef: "NG-77",
-      lines: [
-        { variantId: variant("White", "S").id, quantity: 20, unitPrice: "400" },
-        { variantId: variant("White", "M").id, quantity: 10, unitPrice: "400" },
+      lines: [cell("White", "S", 20), cell("White", "M", 10)],
+      priceBasis: "TOTAL",
+      price: "12000",
+      extraCosts: [
+        { label: "Transport", amount: "450" },
+        { label: "Loading", amount: "150" },
       ],
-      extraCost: "600",
       retailOnly: true,
       priceMode: "AT_COST",
     };
@@ -238,5 +247,173 @@ run("Shop stock: the shops' reserve and ready stock bought for them (plan v6 sec
       due: "12600.00",
       retailOnly: true,
     });
+  });
+
+  it("buys from a one-time supplier with a new style and its size chart, paid in full from one account", async () => {
+    const acc = await prisma.ledgerAccount.findFirstOrThrow({
+      where: { companyId: shop.owner.company.id, subType: "CASH" },
+    });
+    const category = await prisma.category.findFirstOrThrow({
+      where: { companyId: shop.owner.company.id },
+    });
+    const navy = colourId("Navy");
+    const sizeOf = (name: string) => shop.variants.find((v) => v.size.name === name)!.sizeId;
+    const input = {
+      supplier: { mode: "RANDOM", name: "Gulistan wholesaler", phone: "01700000000" },
+      style: {
+        mode: "NEW",
+        code: "ex-pn-001",
+        name: "Cotton chino pant",
+        categoryId: category.id,
+        sizeChart: {
+          garment: "BOTTOM",
+          unit: "INCH",
+          points: [{ name: "Waist", values: { [sizeOf("S")]: "30", [sizeOf("M")]: 32 } }],
+        },
+      },
+      warehouseId: shop.warehouse.id,
+      lines: [
+        { colorId: navy, sizeId: sizeOf("S"), quantity: 200 },
+        { colorId: navy, sizeId: sizeOf("M"), quantity: 100 },
+      ],
+      priceBasis: "TOTAL",
+      price: "9000",
+      extraCosts: [{ label: "Transport", amount: "2000" }],
+      payment: { mode: "FULL", accountId: acc.id, method: "CASH" },
+      pin: PIN,
+    };
+
+    // Paying now is for those who record payments.
+    const noPay = { ...shop.owner, can: (key: string) => key !== "accounts.payments.record" };
+    expect((await appError(shopStock.buyReadyStock(noPay as typeof shop.owner, input))).code).toBe(
+      "FORBIDDEN",
+    );
+
+    const bought = await shopStock.buyReadyStock(shop.owner, input);
+    // 9,000 + 2,000 transport = 11,000, all paid: 300 pieces cost 36.6667 each.
+    const bill = await prisma.supplierBill.findUniqueOrThrow({ where: { id: bought.billId } });
+    expect(Number(bill.totalAmount)).toBe(11000);
+    expect(Number(bill.dueAmount)).toBe(0);
+    expect(bill.status).toBe("PAID");
+    const supplier = await prisma.party.findUniqueOrThrow({ where: { id: bought.supplierId } });
+    expect(supplier).toMatchObject({
+      name: "Gulistan wholesaler",
+      kind: "SUPPLIER",
+      oneTime: true,
+    });
+    const payment = await prisma.payment.findFirstOrThrow({ where: { supplierBillId: bill.id } });
+    expect(Number(payment.amount)).toBe(11000);
+    expect(payment.accountId).toBe(acc.id);
+
+    const style = await prisma.style.findUniqueOrThrow({
+      where: { id: bought.styleId },
+      include: { variants: true, sizeChart: true },
+    });
+    expect(style.code).toBe("EX-PN-001");
+    expect(style.variants).toHaveLength(2);
+    expect(style.variants.map((v) => Number(v.avgCost))).toEqual([36.6667, 36.6667]);
+    expect(style.sizeChart?.garment).toBe("BOTTOM");
+    expect(style.sizeChart?.points).toEqual([
+      { name: "Waist", values: { [sizeOf("S")]: 30, [sizeOf("M")]: 32 } },
+    ]);
+    const purchase = await prisma.readyStockPurchase.findUniqueOrThrow({
+      where: { id: bought.id },
+    });
+    expect(purchase.extraCosts).toEqual([{ label: "Transport", amount: "2000" }]);
+    expect(Number(purchase.extraCost)).toBe(2000);
+
+    // Listed under Other suppliers, not in the regular suppliers list.
+    const other = await parties.listParties(shop.owner, { kind: "SUPPLIER", oneTime: true });
+    expect(other.items.map((p) => p.name)).toEqual(["Gulistan wholesaler"]);
+    const regular = await parties.listParties(shop.owner, { kind: "SUPPLIER", oneTime: false });
+    expect(regular.items.map((p) => p.name)).not.toContain("Gulistan wholesaler");
+
+    // Part paid: what is left stays due on that supplier's own account.
+    const again = await shopStock.buyReadyStock(shop.owner, {
+      ...input,
+      supplier: { mode: "PICK", supplierId: supplier.id },
+      style: { mode: "PICK", styleId: style.id },
+      extraCosts: [],
+      payment: { mode: "PART", amount: "4000", accountId: acc.id, method: "CASH" },
+    });
+    const second = await prisma.supplierBill.findUniqueOrThrow({ where: { id: again.billId } });
+    expect(Number(second.dueAmount)).toBe(5000);
+    expect(
+      (
+        await appError(
+          shopStock.buyReadyStock(shop.owner, {
+            ...input,
+            payment: { mode: "PART", amount: "99999", accountId: acc.id, method: "CASH" },
+            style: { mode: "PICK", styleId: style.id },
+          }),
+        )
+      ).code,
+    ).toBe("VALIDATION");
+  });
+
+  it("compares production with ready stock: pieces in, sales and profit, a style that came both ways shared", async () => {
+    // The polo: 60 pieces of opening stock (setup), 60 made by a factory at 400, 40 bought ready at 300.
+    const owner = shop.owner;
+    const lot = await prisma.stockLot.create({
+      data: {
+        companyId: owner.company.id,
+        number: "LOT-TEST-PROD",
+        styleId: shop.polo.id,
+        warehouseId: shop.warehouse.id,
+        source: "PRODUCTION",
+      },
+    });
+    const navyM = variant("Navy", "M");
+    await prisma.stockMovement.create({
+      data: {
+        companyId: owner.company.id,
+        variantId: navyM.id,
+        warehouseId: shop.warehouse.id,
+        type: "PRODUCTION_IN",
+        quantity: 60,
+        unitCost: 400,
+        lotId: lot.id,
+      },
+    });
+    const { party: supplier } = await parties.createParty(owner, {
+      kind: "SUPPLIER",
+      name: "Ready Co",
+    });
+    await shopStock.buyReadyStock(owner, {
+      supplier: { mode: "PICK", supplierId: supplier.id },
+      style: { mode: "PICK", styleId: shop.polo.id },
+      warehouseId: shop.warehouse.id,
+      lines: [{ colorId: navyM.colorId, sizeId: navyM.sizeId, quantity: 40 }],
+      priceBasis: "PIECE",
+      price: "300",
+      pin: PIN,
+    });
+    // 10 pieces sold at 900.
+    await wholesale(10);
+
+    const period = resolvePeriod({ period: "ONE_MONTH" }, owner.company);
+    const report = await productionVsReadyStock(owner, period);
+    expect(report.totals.PRODUCTION).toMatchObject({ piecesIn: 60, costIn: "24000.00" });
+    expect(report.totals.READY_STOCK).toMatchObject({ piecesIn: 40, costIn: "12000.00" });
+    // Shares by the pieces that came in each way: 60 opening, 60 made, 40 bought.
+    const polo = report.styles.find((r) => r.styleId === shop.polo.id)!;
+    expect(polo.shared).toBe(true);
+    expect(polo.shareNote).toBe("38% production, 25% ready stock, 38% opening and other stock");
+    const sold = Object.values(polo.sources).reduce((a, f) => a + f.piecesSold, 0);
+    const sales = Object.values(polo.sources).reduce((a, f) => a + Number(f.sales), 0);
+    expect(sold).toBe(10);
+    expect(sales).toBe(9000);
+    expect(polo.sources.READY_STOCK).toMatchObject({ piecesSold: 3, sales: "2250.00" });
+    expect(polo.sources.PRODUCTION).toMatchObject({ piecesSold: 4, sales: "3375.00" });
+    expect(report.totals.READY_STOCK.profitPct).not.toBeNull();
+
+    // Costs and profit are for those who see the financials.
+    const noMoney = {
+      ...owner,
+      can: (k: string) => k !== "dashboard.financials" && k !== "accounts.view",
+    };
+    expect((await appError(productionVsReadyStock(noMoney as typeof owner, period))).code).toBe(
+      "FORBIDDEN",
+    );
   });
 });

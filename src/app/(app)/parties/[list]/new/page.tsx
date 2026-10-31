@@ -22,7 +22,8 @@ export async function generateMetadata({
 export default async function NewPartyPage({ params }: { params: Promise<{ list: string }> }) {
   const ctx = await requireCompanyPage();
   const name = listName((await params).list);
-  if (!name) notFound();
+  // Other suppliers are added from "Buy ready stock" only.
+  if (!name || name === "other-suppliers") notFound();
   const noun = name === "buyers" ? "buyer" : "supplier";
   if (!ctx.can("parties.manage")) {
     return (

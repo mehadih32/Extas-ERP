@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
-import { requirePermission } from "@/modules/auth/context";
+import { requireCompany, requirePermission } from "@/modules/auth/context";
 import * as reports from "@/modules/reports/export.service";
 import * as screens from "@/modules/reports/screens.service";
+import { productionVsReadyScreen } from "@/modules/reports/source-compare.service";
 
 /*
  * Report Builder Server Actions (reports.export). Each returns { ok: true, data } or
@@ -52,3 +53,7 @@ export const getReportBuilderScreenAction = async (query: unknown, options: { sh
   runAction(async () => screens.getReportBuilderScreen(await exporter(), query, options));
 export const getSavedReportScreenAction = async (exportId: string) =>
   runAction(async () => screens.getSavedReportScreen(await exporter(), exportId));
+
+/** Production vs ready stock on screen: needs the financials (costs and profit), not reports.export. */
+export const getProductionVsReadyAction = async (query: unknown) =>
+  runAction(async () => productionVsReadyScreen(await requireCompany(), query));

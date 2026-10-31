@@ -198,6 +198,7 @@ export const PERIOD_LABELS: Record<PeriodPreset, string> = {
   LAST_FINANCIAL_YEAR: "Last financial year",
   ONE_WEEK: "Last 7 days",
   ONE_MONTH: "Last 30 days",
+  SIX_MONTHS: "Last 6 months",
   ONE_YEAR: "Last 12 months",
 };
 

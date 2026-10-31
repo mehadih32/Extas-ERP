@@ -311,6 +311,9 @@ run("Reports & documents screens", () => {
       const tabs = visibleReportsTabs(ctx.permissions).map((t) => t.href);
       expect(tabs, who).toEqual([
         ...(k.reports ? ["/reports"] : []),
+        ...(ctx.can("dashboard.financials") || ctx.can("accounts.view")
+          ? ["/reports/production-vs-ready-stock"]
+          : []),
         ...(k.documents ? ["/reports/documents"] : []),
         ...(k.templates ? ["/reports/templates"] : []),
       ]);

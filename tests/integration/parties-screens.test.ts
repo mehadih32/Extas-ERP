@@ -209,7 +209,7 @@ run("Buyers & suppliers screens", () => {
       expect(inMenu, who).toBe(view || ledgerView);
       const tabs = visiblePartiesTabs(ctx.permissions).map((t) => t.href);
       expect(tabs, who).toEqual([
-        ...(view ? ["/parties/buyers", "/parties/suppliers"] : []),
+        ...(view ? ["/parties/buyers", "/parties/suppliers", "/parties/other-suppliers"] : []),
         ...(ledgerView ? ["/parties/dues"] : []),
       ]);
 

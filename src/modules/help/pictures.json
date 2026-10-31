@@ -4200,7 +4200,7 @@
       "target": "marks"
     },
     "route": "/sales/orders/new",
-    "screen": "b9b6fada5d8569a6",
+    "screen": "988130b735467889",
     "guide": "ee4f694009a702e3",
     "taken": "2026-10-31"
   },
@@ -4227,15 +4227,17 @@
     "src": "/help/shots/sales-force-override.webp",
     "width": 1280,
     "height": 800,
-    "marks": [],
-    "labels": {},
+    "marks": [1],
+    "labels": {
+      "1": "Products"
+    },
     "clip": {
       "y": 0,
       "height": 800,
       "target": "marks"
     },
     "route": "/sales/orders/new",
-    "screen": "b9b6fada5d8569a6",
+    "screen": "988130b735467889",
     "guide": "ec8c14986f030613",
     "taken": "2026-10-31"
   },
@@ -4265,11 +4267,14 @@
     "src": "/help/shots/sales-new-order.webp",
     "width": 1280,
     "height": 800,
-    "marks": [1, 2, 3],
+    "marks": [1, 2, 3, 4, 7, 9],
     "labels": {
       "1": "New order",
       "2": "Channel",
-      "3": "Find a buyer"
+      "3": "Find a buyer",
+      "4": "Products",
+      "7": "Charges & delivery",
+      "9": "Review & place"
     },
     "clip": {
       "y": 0,
@@ -4277,7 +4282,7 @@
       "target": "marks"
     },
     "route": "/sales/orders/new",
-    "screen": "b9b6fada5d8569a6",
+    "screen": "988130b735467889",
     "guide": "4e5e3e909ab575fd",
     "taken": "2026-10-31"
   },

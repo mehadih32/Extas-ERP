@@ -186,6 +186,7 @@ function Steps({ step, onGo }: { step: number; onGo: (step: number) => void }) {
                 type="button"
                 onClick={() => done && onGo(index)}
                 disabled={!done}
+                aria-label={`Step ${index + 1}: ${label}`}
                 aria-current={index === step ? "step" : undefined}
                 className={cn(
                   "grid w-full gap-1.5 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",

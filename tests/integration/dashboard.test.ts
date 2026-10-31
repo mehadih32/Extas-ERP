@@ -633,6 +633,7 @@ run("report builder", () => {
       "SALES",
       "PROFIT_AND_LOSS",
       "TOP_SELLERS",
+      "PRODUCTION_VS_READY",
       "STOCK_ALERTS",
     ]);
     expect(doc).toMatchObject({
@@ -745,7 +746,14 @@ run("report builder", () => {
       period: "TODAY",
       from: today(),
       to: today(),
-      metrics: ["SUMMARY", "SALES", "PROFIT_AND_LOSS", "TOP_SELLERS", "STOCK_ALERTS"],
+      metrics: [
+        "SUMMARY",
+        "SALES",
+        "PROFIT_AND_LOSS",
+        "TOP_SELLERS",
+        "PRODUCTION_VS_READY",
+        "STOCK_ALERTS",
+      ],
       options: { topLimit: 20, alertLimit: 50, slowDays: 90, coverDays: 180 },
       downloadable: true,
       fileName: `Extras - Business report - ${today()}.pdf`,

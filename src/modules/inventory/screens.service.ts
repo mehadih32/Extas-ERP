@@ -1,5 +1,3 @@
-import type { StockGrade } from "@prisma/client";
-
 import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
@@ -31,10 +29,11 @@ import {
   canDeleteWarehouse,
 } from "@/modules/inventory/rules";
 import {
+  addStockBalance,
   costMask,
   DEFAULT_WAREHOUSE_NAME,
+  emptyStockCell,
   listWarehouses,
-  type StockCell,
   warehouseHolds,
 } from "@/modules/inventory/stock.service";
 import {
@@ -345,18 +344,6 @@ export type StyleScreen = Awaited<ReturnType<typeof getStyleScreen>>;
 
 // --- One SKU -----------------------------------------------------------------------
 
-const emptyCell = (): StockCell => ({ aGrade: 0, bGrade: 0, reserved: 0, available: 0 });
-
-function addTo(cell: StockCell, grade: StockGrade, quantity: number, reserved: number) {
-  if (grade === "A_GRADE") {
-    cell.aGrade += quantity;
-    cell.reserved += reserved;
-  } else {
-    cell.bGrade += quantity;
-  }
-  cell.available = cell.aGrade - cell.reserved;
-}
-
 /**
  * One SKU: its prices (its own or the style's), barcode, and its stock in each
  * warehouse by grade, for the matrix cell window and the bad stock form.
@@ -387,12 +374,12 @@ export async function getVariantDetails(ctx: CompanyContext, variantId: string) 
       select: { warehouseId: true, grade: true, quantity: true, reserved: true },
     }),
   ]);
-  const total = emptyCell();
-  const byWarehouse = new Map(warehouses.map((w) => [w.id, emptyCell()]));
+  const total = emptyStockCell();
+  const byWarehouse = new Map(warehouses.map((w) => [w.id, emptyStockCell()]));
   for (const b of balances) {
-    addTo(total, b.grade, b.quantity, b.reserved);
+    addStockBalance(total, b.grade, b.quantity, b.reserved);
     const cell = byWarehouse.get(b.warehouseId);
-    if (cell) addTo(cell, b.grade, b.quantity, b.reserved);
+    if (cell) addStockBalance(cell, b.grade, b.quantity, b.reserved);
   }
   const { style } = variant;
   const cost = costMask(ctx);
@@ -429,7 +416,7 @@ export async function getVariantDetails(ctx: CompanyContext, variantId: string) 
             isDefault: w.isDefault,
             ...byWarehouse.get(w.id)!,
           }))
-        : [{ id: null, name: DEFAULT_WAREHOUSE_NAME, isDefault: true, ...emptyCell() }],
+        : [{ id: null, name: DEFAULT_WAREHOUSE_NAME, isDefault: true, ...emptyStockCell() }],
     /** What a piece cost on average, by grade: only for people who see the financials. */
     averageCost: { aGrade: cost(variant.avgCost), bGrade: cost(variant.bGradeAvgCost) },
     showsCosts: canSeeFinancials(ctx),

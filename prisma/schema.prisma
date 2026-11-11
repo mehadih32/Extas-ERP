@@ -7434,6 +7434,10 @@ model RetailStore {
   /// B-grade rule on the B-grade cost (PERCENT or AMOUNT) or one price (FIXED).
   bRule             RetailPriceRule?
   bValue            Decimal?         @db.Decimal(14, 4)
+  /// B-grade pieces are offered to this store (B rows in its catalog and stock,
+  /// B lines on its orders). Off until the owner turns it on with the PIN, once
+  /// the store's site reads the grade (2026-11-11).
+  sellsBGrade       Boolean          @default(false)
   closedAt          DateTime?
   /// The ERP last asked the site for missing daily summaries (summary.missing, at most hourly).
   summaryAskedAt    DateTime?

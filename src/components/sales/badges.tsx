@@ -159,6 +159,11 @@ export function OverrideBadge() {
   return <StatusBadge tone="warn">Force override</StatusBadge>;
 }
 
+/** A retail store's B-grade line: its pieces come from (and go back to) B-grade stock. */
+export function BGradeBadge() {
+  return <StatusBadge tone="warn">B-grade</StatusBadge>;
+}
+
 /** An invoice edited after it was issued (Smart Edit): same number, "(Revised)" on the PDF. */
 export function RevisedBadge({ revision }: { revision: number }) {
   if (revision <= 0) return null;

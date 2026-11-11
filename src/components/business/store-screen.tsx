@@ -165,11 +165,16 @@ export function StoreScreen({ page }: { page: StorePage }) {
           Every SKU without a hand price is priced by the rule, from its cost. With no rule or no
           cost it has no price, and the store is not shown it. A B-grade piece costs the
           style&apos;s own B-grade price, set on the product; without one, its A-grade price.
+          B-grade pieces reach the store only when they are offered to it: turn that on once the
+          store&apos;s site shows them apart.
         </p>
         <dl className="mt-4 grid gap-4 sm:grid-cols-2">
           <Fact label="A-grade price">{store.aRuleText}</Fact>
           <Fact label="B-grade price">
             The product&apos;s B-grade price, else the A-grade price
+          </Fact>
+          <Fact label="B-grade pieces">
+            {store.sellsBGrade ? "Offered to this store" : "Not offered to this store"}
           </Fact>
         </dl>
       </Panel>
@@ -451,8 +456,8 @@ function RulesDialog({ page, onClose }: { page: StorePage; onClose: () => void }
   const { store, currency } = page;
   return (
     <FormDialog
-      title="Change the price rule"
-      description="The rule prices every SKU that has no hand price, from its cost."
+      title="Change the price rules"
+      description="The rule prices every SKU that has no hand price, from its cost. B-grade pieces take the product's B-grade price."
       submitLabel="Save the rules"
       pendingLabel="Saving"
       errorTitle="The rules were not saved"
@@ -462,9 +467,7 @@ function RulesDialog({ page, onClose }: { page: StorePage; onClose: () => void }
         const result = await setPriceRulesAction(store.id, {
           aRule: text("aRule"),
           aValue: text("aValue"),
-          // B-grade pieces are priced on the product now: the old rule stays as it is.
-          bRule: store.bRule ?? "NONE",
-          bValue: store.bValue ?? "",
+          sellsBGrade: form.get("sellsBGrade") === "on",
           pin: text("pin"),
         });
         if (!result.ok) return result.error;
@@ -496,6 +499,15 @@ function RulesDialog({ page, onClose }: { page: StorePage; onClose: () => void }
               placeholder="25"
             />
           </Field>
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="sellsBGrade"
+              defaultChecked={store.sellsBGrade}
+              className="size-4 cursor-pointer accent-primary"
+            />
+            Offer B-grade pieces to this store
+          </label>
           <PinField id="rule-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
         </>
       )}

@@ -15,7 +15,7 @@ import {
   listStylesSchema,
   updateStyleSchema,
 } from "@/modules/inventory/schemas";
-import { stockTotalsByStyle } from "@/modules/inventory/stock.service";
+import { emptyStockCell, stockTotalsByStyle } from "@/modules/inventory/stock.service";
 
 const styleInclude = {
   category: { select: { id: true, name: true } },
@@ -80,7 +80,7 @@ export async function listStyles(ctx: CompanyContext, raw: unknown = {}) {
     items: page.map(({ _count, ...s }) => ({
       ...s,
       variantCount: _count.variants,
-      stock: totals.get(s.id) ?? { aGrade: 0, bGrade: 0, reserved: 0, available: 0 },
+      stock: totals.get(s.id) ?? emptyStockCell(),
     })),
     nextCursor: hasMore ? page[page.length - 1]?.id : undefined,
   };

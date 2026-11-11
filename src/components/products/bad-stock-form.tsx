@@ -18,7 +18,7 @@ import { moveToBadStockAction } from "@/server/actions/inventory.actions";
 
 import { readPieces } from "./count-sheet";
 import { BAD_STOCK_SOURCE_CHOICES, money, pieces } from "./labels";
-import { GradeToggle, onShelf, shelfKey, WarehousePicker } from "./stock-pickers";
+import { GradeToggle, onShelf, setAside, shelfKey, WarehousePicker } from "./stock-pickers";
 
 export type MovedToBadStock = { sku: string; quantity: number; lossValue: string | null };
 
@@ -67,17 +67,14 @@ export function BadStockForm({
 
   const shelf = details.warehouses.find((s) => shelfKey(s) === shelfId) ?? start;
   const there = onShelf(shelf, grade);
+  const held = setAside(shelf, grade);
   const typed = readPieces(quantity);
   const cost = grade === "A_GRADE" ? details.averageCost.aGrade : details.averageCost.bGrade;
   const loss =
     cost !== null && typed.kind === "pieces" && typed.value > 0
       ? (Number(cost) * typed.value).toFixed(2)
       : null;
-  const intoReserved =
-    grade === "A_GRADE" &&
-    shelf.reserved > 0 &&
-    typed.kind === "pieces" &&
-    typed.value > shelf.aGrade - shelf.reserved;
+  const intoReserved = held > 0 && typed.kind === "pieces" && typed.value > there - held;
   const fieldError = problem ?? error?.fieldErrors?.quantity?.[0];
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -154,9 +151,7 @@ export function BadStockForm({
         id="bad-quantity"
         label="Pieces"
         hint={`${pieces(there, currency)} on the shelf${
-          grade === "A_GRADE" && shelf.reserved > 0
-            ? `, ${formatCount(shelf.reserved, currency)} of them set aside for orders`
-            : ""
+          held > 0 ? `, ${formatCount(held, currency)} of them set aside for orders` : ""
         }.`}
         error={fieldError}
       >

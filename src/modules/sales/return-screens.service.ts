@@ -276,6 +276,8 @@ export async function getSalesReturnForm(ctx: CompanyContext, invoiceId: string)
     lines: position.lines.map((l) => ({
       id: l.id,
       sku: l.variant.sku,
+      /** Sold on a retail store's B-grade line: its pieces come back into B-grade stock. */
+      bGrade: l.grade === "B_GRADE",
       style: l.variant.style.name,
       color: l.variant.color.name,
       size: l.variant.size.name,

@@ -176,14 +176,20 @@ const storeOfShop = (shop: Shop) =>
 
 async function stockChanges(shop: Shop, since: Date, now: Date): Promise<Planned[]> {
   if (!shop.warehouseId) return [];
-  // B-grade rows only for a retail store's shop: no other shop can order B-grade lines.
+  // B-grade rows only for a retail store offered B-grade pieces (no other
+  // shop can order B-grade lines); when the store changed (the switch turned
+  // on), every B-grade row, each sent only if the shop does not have it yet.
   const store = await storeOfShop(shop);
+  const bGrade = Boolean(store?.sellsBGrade);
+  const storeChanged = store ? store.updatedAt > since && store.updatedAt <= now : false;
   const balances = await prisma.stockBalance.findMany({
     where: {
       companyId: shop.companyId,
       warehouseId: shop.warehouseId,
-      ...(store ? {} : { grade: "A_GRADE" }),
-      updatedAt: { gt: since, lte: now },
+      ...(bGrade ? {} : { grade: "A_GRADE" }),
+      ...(bGrade && storeChanged
+        ? { OR: [{ updatedAt: { gt: since, lte: now } }, { grade: "B_GRADE" as const }] }
+        : { updatedAt: { gt: since, lte: now } }),
       warehouse: { deletedAt: null },
     },
     include: {
@@ -254,7 +260,7 @@ async function variantChanges(shop: Shop, since: Date, now: Date): Promise<Plann
     since,
   );
   const changed = rows.filter(({ row }) => sent.get(rowKey(row)) !== comparable(row));
-  const bRows = store ? await bGradeListings(shop, store, variants, window) : [];
+  const bRows = store?.sellsBGrade ? await bGradeListings(shop, store, variants, window) : [];
   // New: made since the last pass, and never sent to this shop before.
   const candidates = changed
     .filter(({ variant }) => variant.createdAt > since)
@@ -312,6 +318,7 @@ async function bGradeListings(
   const graded = await withBGradeStock(
     shop.companyId,
     all.map((v) => v.id),
+    shop.warehouseId,
   );
   const listed = all.filter((v) => graded.has(v.id));
   if (listed.length === 0) return [];

@@ -227,7 +227,7 @@ export async function templateData(
           values,
           items: inv.items.map((item, i) => ({
             "item.no": String(i + 1),
-            "item.description": `${item.style} – ${item.color} / ${item.size}`,
+            "item.description": `${item.style} – ${item.color} / ${item.size}${item.bGrade ? " (B-grade)" : ""}`,
             "item.style": item.style,
             "item.sku": item.sku,
             "item.color": item.color,
@@ -272,7 +272,7 @@ export async function templateData(
           values,
           items: ch.items.map((item, i) => ({
             "item.no": String(i + 1),
-            "item.description": `${item.style} – ${item.color} / ${item.size}`,
+            "item.description": `${item.style} – ${item.color} / ${item.size}${item.bGrade ? " (B-grade)" : ""}`,
             "item.style": item.style,
             "item.sku": item.sku,
             "item.color": item.color,

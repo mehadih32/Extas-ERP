@@ -592,9 +592,12 @@ export async function proformaDocument(
 
 type InvoiceData = Awaited<ReturnType<typeof getInvoiceDocument>>;
 
+/** What a retail store's B-grade line says after its SKU or item, so the packers take B-grade pieces. */
+const bGradeTag = (item: { bGrade: boolean }) => (item.bGrade ? " (B-grade)" : "");
+
 /**
- * The invoice's lines as billed: one row per style, colour and price, with its
- * sizes and pieces under it, in the order the SKUs were added.
+ * The invoice's lines as billed: one row per style, colour, grade and price,
+ * with its sizes and pieces under it, in the order the SKUs were added.
  */
 function invoiceLineRows(
   items: InvoiceData["items"],
@@ -608,6 +611,7 @@ function invoiceLineRows(
       styleCode: string;
       style: string;
       color: string;
+      bGrade: boolean;
       unitPrice: Prisma.Decimal;
       quantity: number;
       discount: Prisma.Decimal;
@@ -616,11 +620,12 @@ function invoiceLineRows(
     }
   >();
   for (const item of items) {
-    const key = [item.styleCode, item.color, item.unitPrice.toFixed(2)].join("\u0000");
+    const key = [item.styleCode, item.color, item.bGrade, item.unitPrice.toFixed(2)].join("\u0000");
     const group = groups.get(key) ?? {
       styleCode: item.styleCode,
       style: item.style,
       color: item.color,
+      bGrade: item.bGrade,
       unitPrice: item.unitPrice,
       quantity: 0,
       discount: new Prisma.Decimal(0),
@@ -636,7 +641,7 @@ function invoiceLineRows(
   return [...groups.values()].map((g, i) => ({
     cells: [
       String(i + 1),
-      `${g.style} – ${g.color}`,
+      `${g.style} – ${g.color}${bGradeTag(g)}`,
       count(g.quantity, currency),
       money(g.unitPrice, currency),
       ...(withDiscount ? [isPositive(g.discount) ? money(g.discount, currency) : "–"] : []),
@@ -673,13 +678,14 @@ function packingListPart(
       colors: new Map(),
     };
     if (!entry.sizes.includes(size.name)) entry.sizes.push(size.name);
-    const row = entry.colors.get(color.name) ?? {
-      name: color.name,
+    const name = `${color.name}${bGradeTag(item)}`;
+    const row = entry.colors.get(name) ?? {
+      name,
       hex: color.hexCode,
       pieces: new Map<string, number>(),
     };
     row.pieces.set(size.name, (row.pieces.get(size.name) ?? 0) + item.quantity);
-    entry.colors.set(color.name, row);
+    entry.colors.set(name, row);
     styles.set(style.code, entry);
   }
 
@@ -921,7 +927,7 @@ export async function packingListDocument(
       rows.push({
         cells: [
           byCarton ? (item.carton ?? "Loose") : String(line),
-          item.variant.sku,
+          `${item.variant.sku}${bGradeTag(item)}`,
           item.variant.style.name,
           item.variant.color.name,
           item.variant.size.name,
@@ -1068,7 +1074,7 @@ export async function challanDocument(
           ...ch.items.map((item, i) => ({
             cells: [
               String(i + 1),
-              item.sku,
+              `${item.sku}${bGradeTag(item)}`,
               item.style,
               item.color,
               item.size,

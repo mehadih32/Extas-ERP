@@ -15,6 +15,7 @@ import type { ActionError } from "@/lib/result";
 import type { SalesReturnForm as SalesReturnFormData } from "@/modules/sales/return-screens.service";
 import { createSalesReturnAction } from "@/server/actions/sales.actions";
 
+import { BGradeBadge } from "./badges";
 import { Totals } from "./detail-bits";
 import { money, salesHref } from "./labels";
 import { wholeNumber } from "./order-style-card";
@@ -152,9 +153,12 @@ export function SalesReturnForm({
                 className="grid min-w-0 gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
               >
                 <div className="min-w-0 text-sm">
-                  <label htmlFor={id} className="font-medium break-words">
-                    {line.style} · {line.color} · {line.size}
-                  </label>
+                  <p className="flex flex-wrap items-center gap-x-2">
+                    <label htmlFor={id} className="min-w-0 font-medium break-words">
+                      {line.style} · {line.color} · {line.size}
+                    </label>
+                    {line.bGrade && <BGradeBadge />}
+                  </p>
                   <p className="text-[0.8125rem] text-muted-foreground">
                     {line.sku} · {money(line.priceBilled, currency)} a piece
                   </p>

@@ -147,13 +147,25 @@ export async function listCatalogVariants(
   return pageOf(rows, q.limit, catalogVariantOf);
 }
 
-/** The SKUs (of these) with B-grade pieces on hand in any warehouse: they have a B-grade listing. */
-export async function withBGradeStock(companyId: string, variantIds: string[]) {
+/**
+ * The SKUs (of these) with B-grade pieces on hand in the shop's warehouse
+ * (any warehouse when it has none): they have a B-grade listing.
+ */
+export async function withBGradeStock(
+  companyId: string,
+  variantIds: string[],
+  warehouseId?: string | null,
+) {
   if (variantIds.length === 0) return new Set<string>();
   // Read straight from the company's own rows (also for the webhooks, which have no user).
   const rows = await prisma.stockBalance.groupBy({
     by: ["variantId"],
-    where: { companyId, variantId: { in: variantIds }, grade: "B_GRADE" },
+    where: {
+      companyId,
+      variantId: { in: variantIds },
+      grade: "B_GRADE",
+      ...(warehouseId ? { warehouseId } : {}),
+    },
     _sum: { quantity: true },
   });
   return new Set(rows.filter((r) => (r._sum.quantity ?? 0) > 0).map((r) => r.variantId));
@@ -170,7 +182,7 @@ export async function withBGradeStock(companyId: string, variantIds: string[]) {
  */
 export async function listStoreCatalog(
   ctx: CompanyContext,
-  store: Pick<RetailStore, "id" | "updatedAt">,
+  store: Pick<RetailStore, "id" | "updatedAt" | "sellsBGrade" | "warehouseId">,
   query: URLSearchParams,
 ): Promise<Page<StoreCatalogVariant>> {
   const q = catalogQuerySchema.parse(fieldsOf(query));
@@ -187,7 +199,15 @@ export async function listStoreCatalog(
               { updatedAt: { gt: since } },
               { style: { updatedAt: { gt: since } } },
               { style: { retailPrices: { some: priced } } },
-              { stockBalances: { some: { grade: "B_GRADE", updatedAt: { gt: since } } } },
+              ...(store.sellsBGrade
+                ? [
+                    {
+                      stockBalances: {
+                        some: { grade: "B_GRADE" as const, updatedAt: { gt: since } },
+                      },
+                    },
+                  ]
+                : []),
             ],
           }
         : {}),
@@ -206,10 +226,14 @@ export async function listStoreCatalog(
     kept.map((v) => v.id),
     "A",
   );
-  const graded = await withBGradeStock(
-    ctx.company.id,
-    kept.map((v) => v.id),
-  );
+  // B-grade rows only once the owner offers B-grade pieces to the store.
+  const graded = store.sellsBGrade
+    ? await withBGradeStock(
+        ctx.company.id,
+        kept.map((v) => v.id),
+        store.warehouseId,
+      )
+    : new Set<string>();
   const bPrices = await storePrices(ctx, store.id, [...graded], "B");
   const data = kept.flatMap((v): StoreCatalogVariant[] => {
     const price = prices.get(v.id);
@@ -293,12 +317,14 @@ export function stockRowOf(b: BalanceRow): StockRow {
 
 /**
  * GET /stock: A-grade stock per SKU per warehouse (warehouses not deleted),
- * and B-grade stock too for a retail store's shop (`bGrade`).
+ * and B-grade stock too for a retail store offered B-grade pieces (`bGrade`;
+ * `bGradeSince`: when that was last switched on or the store changed, so
+ * `updatedSince` before it brings every B-grade row).
  */
 export async function listStock(
   ctx: CompanyContext,
   query: URLSearchParams,
-  options: { bGrade?: boolean } = {},
+  options: { bGrade?: boolean; bGradeSince?: Date } = {},
 ): Promise<Page<StockRow>> {
   const q = stockQuerySchema.parse(fieldsOf(query));
   const after = decodeCursor(q.cursor);
@@ -316,7 +342,11 @@ export async function listStock(
       ...(options.bGrade ? {} : { grade: "A_GRADE" }),
       warehouse: { deletedAt: null },
       ...(q.warehouseId ? { warehouseId: q.warehouseId } : {}),
-      ...(q.updatedSince ? { updatedAt: { gt: new Date(q.updatedSince) } } : {}),
+      ...(q.updatedSince
+        ? options.bGrade && options.bGradeSince && options.bGradeSince > new Date(q.updatedSince)
+          ? { OR: [{ updatedAt: { gt: new Date(q.updatedSince) } }, { grade: "B_GRADE" as const }] }
+          : { updatedAt: { gt: new Date(q.updatedSince) } }
+        : {}),
       ...(after ? { id: { gt: after } } : {}),
     },
     include: balanceInclude,
@@ -346,12 +376,12 @@ export async function stockOfSku(call: Pick<ShopCall, "ctx" | "integration">, ra
   if (!variant) throw new EcommerceApiError(404, "NOT_FOUND", `There is no SKU ${sku} in the ERP.`);
   const store = await call.ctx.db.retailStore.findFirst({
     where: { integrationId: call.integration.id },
-    select: { id: true },
+    select: { sellsBGrade: true },
   });
   const balances = await call.ctx.db.stockBalance.findMany({
     where: {
       variantId: variant.id,
-      ...(store ? {} : { grade: "A_GRADE" }),
+      ...(store?.sellsBGrade ? {} : { grade: "A_GRADE" }),
       warehouse: { deletedAt: null },
     },
     include: balanceInclude,

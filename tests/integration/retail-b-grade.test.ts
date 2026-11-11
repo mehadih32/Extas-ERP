@@ -13,15 +13,21 @@ import { GET as skuStockRoute } from "@/app/api/v1/ecommerce/stock/[sku]/route";
 import { GET as stockRoute } from "@/app/api/v1/ecommerce/stock/route";
 import { prisma } from "@/lib/prisma";
 import { setPin } from "@/modules/ai/settings.service";
+import { buildDocument } from "@/modules/documents/builders";
+import { printRequestSchema } from "@/modules/documents/schemas";
 import { returnUndeliveredTx } from "@/modules/ecommerce/orders.service";
 import { scanShopChanges } from "@/modules/ecommerce/webhooks";
 import * as stock from "@/modules/inventory/stock.service";
+import { createStyle, updateStyle } from "@/modules/inventory/style.service";
 import { getPartyBalance } from "@/modules/parties/ledger.service";
 import { createParty } from "@/modules/parties/party.service";
 import { checkParcel, returnsPage } from "@/modules/retail/returns.service";
 import * as stores from "@/modules/retail/stores.service";
-import { createOrder, updateOrder } from "@/modules/sales/order.service";
+import { createPackingList } from "@/modules/sales/documents.service";
+import { cancelOrder, createOrder, updateOrder } from "@/modules/sales/order.service";
+import { getSalesReturnForm } from "@/modules/sales/return-screens.service";
 import { createSalesReturn } from "@/modules/sales/return.service";
+import { getInvoiceScreen, getOrderScreen } from "@/modules/sales/screens.service";
 
 import { callShop, type Shop, setupShop } from "./ecommerce-helpers";
 import { resetDb } from "./helpers";
@@ -53,6 +59,7 @@ run("Retail store's B-grade lines", () => {
       warehouseId: shop.warehouse.id,
       integrationId: shop.integration.id,
     });
+    await prisma.retailStore.update({ where: { id: store.id }, data: { sellsBGrade: true } });
     await stores.setPriceRules(shop.owner, store.id, { aRule: "PERCENT", aValue: "25", pin: PIN });
     await prisma.style.update({ where: { id: shop.polo.id }, data: { bGradePrice: 400 } });
     await stock.adjustStock(shop.owner, {
@@ -541,5 +548,365 @@ run("Retail store's B-grade lines", () => {
     expect(Number(item.unitCost)).toBe(500);
     expect(await balanceOf(navyS, "A_GRADE")).toMatchObject({ quantity: 8, reserved: 0 });
     expect(await balanceOf(navyS, "B_GRADE")).toMatchObject({ quantity: 3, reserved: 0 });
+  });
+  it("asks for the PIN when a style's B-grade price is set, changed or cleared, never when unchanged", async () => {
+    const base = { code: "EX-PL-009", name: "Pique Polo", categoryId: shop.polo.categoryId };
+    // Set on a new style: the PIN is asked.
+    await expect(createStyle(shop.owner, { ...base, bGradePrice: 350 })).rejects.toMatchObject({
+      code: "VALIDATION",
+      details: { pin: expect.any(Array) },
+    });
+    await expect(
+      createStyle(shop.owner, { ...base, bGradePrice: 350, pin: "0000" }),
+    ).rejects.toMatchObject({ code: "VALIDATION", details: { pin: ["The PIN is not right"] } });
+    expect(await prisma.style.count({ where: { code: base.code } })).toBe(0);
+    // Without a B-grade price, no PIN is needed.
+    const plain = await createStyle(shop.owner, { ...base, code: "EX-PL-010" });
+    expect(plain.bGradePrice).toBeNull();
+    const style = await createStyle(shop.owner, { ...base, bGradePrice: 350, pin: PIN });
+    expect(Number(style.bGradePrice)).toBe(350);
+
+    // The same price sent again (with other changes) needs no PIN.
+    await updateStyle(shop.owner, style.id, { name: "Pique Polo II", bGradePrice: 350 });
+    // Changed or cleared: the PIN is asked, and nothing changes without it.
+    await expect(updateStyle(shop.owner, style.id, { bGradePrice: 380 })).rejects.toMatchObject({
+      code: "VALIDATION",
+      details: { pin: expect.any(Array) },
+    });
+    await expect(updateStyle(shop.owner, style.id, { bGradePrice: null })).rejects.toMatchObject({
+      code: "VALIDATION",
+      details: { pin: expect.any(Array) },
+    });
+    const kept = await prisma.style.findUniqueOrThrow({ where: { id: style.id } });
+    expect([kept.name, Number(kept.bGradePrice)]).toEqual(["Pique Polo II", 350]);
+    await updateStyle(shop.owner, style.id, { bGradePrice: 380, pin: PIN });
+    expect(
+      Number((await prisma.style.findUniqueOrThrow({ where: { id: style.id } })).bGradePrice),
+    ).toBe(380);
+    await updateStyle(shop.owner, style.id, { bGradePrice: null, pin: PIN });
+    expect((await prisma.style.findUniqueOrThrow({ where: { id: style.id } })).bGradePrice).toBe(
+      null,
+    );
+    // Setting it on a style that had none asks too.
+    await expect(updateStyle(shop.owner, plain.id, { bGradePrice: 300 })).rejects.toMatchObject({
+      code: "VALIDATION",
+      details: { pin: expect.any(Array) },
+    });
+  });
+
+  it("replaces an A line by the same SKU as B-grade: the A reservation freed, B-grade reserved", async () => {
+    const navyS = sku("Navy", "S");
+    const navyM = sku("Navy", "M");
+    await stock.adjustStock(shop.owner, {
+      variantId: variantOf(navyM).id,
+      quantity: 2,
+      grade: "B_GRADE",
+      type: "OPENING",
+      unitCost: 180,
+    });
+    const placed = await order("WEB-1", [
+      { sku: navyS, quantity: 1 },
+      { sku: navyM, quantity: 1 },
+    ]);
+    expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+    expect(await balanceOf(navyM, "A_GRADE")).toMatchObject({ quantity: 10, reserved: 1 });
+    await prisma.retailOrderLine.updateMany({
+      where: { lineId: "WEB-1-2" },
+      data: { waitingStock: true },
+    });
+    const replaced = await callShop(shop, lineRoute, {
+      method: "PATCH",
+      path: "/orders/WEB-1/lines/WEB-1-2",
+      params: { externalOrderId: "WEB-1", lineId: "WEB-1-2" },
+      body: { action: "REPLACE", sku: navyM, grade: "B" },
+    });
+    expect(replaced.status, JSON.stringify(replaced.body)).toBe(200);
+    expect(replaced.body.lines[1]).toMatchObject({ sku: navyM, grade: "B", shopPrice: 400 });
+    expect(replaced.body.erpTotal).toBe(1025);
+    const items = await prisma.salesOrderItem.findMany({
+      where: { orderId: placed.body.erpOrderId },
+      include: { variant: { select: { sku: true } } },
+    });
+    expect(Object.fromEntries(items.map((i) => [i.variant.sku, i.grade]))).toEqual({
+      [navyS]: "A_GRADE",
+      [navyM]: "B_GRADE",
+    });
+    expect(await balanceOf(navyM, "A_GRADE")).toMatchObject({ quantity: 10, reserved: 0 });
+    expect(await balanceOf(navyM, "B_GRADE")).toMatchObject({ quantity: 2, reserved: 1 });
+    expect(await balanceOf(navyS, "A_GRADE")).toMatchObject({ reserved: 1 });
+    // The stock screens show the B-grade piece set aside, as they do A-grade ones.
+    const id = variantOf(navyM).id;
+    expect((await stock.stockByVariant(shop.owner, [id])).get(id)).toEqual({
+      aGrade: 10,
+      bGrade: 2,
+      reserved: 0,
+      available: 10,
+      bReserved: 1,
+    });
+  });
+
+  it("takes an exchange's old B-grade piece back into B-grade stock at the B-grade cost", async () => {
+    const navyS = sku("Navy", "S");
+    const navyM = sku("Navy", "M");
+    const deliver = (id: string) =>
+      callShop(shop, deliveryRoute, {
+        method: "PUT",
+        path: `/orders/${id}/delivery`,
+        params: { externalOrderId: id },
+        body: {
+          status: "DELIVERED",
+          courier: "Pathao",
+          consignmentId: `PTH-${id}`,
+          at: "2026-11-03T12:00:00+06:00",
+        },
+      });
+    const placed = await order("WEB-1", [{ sku: navyS, quantity: 1, grade: "B" }]);
+    expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+    expect((await ship("WEB-1")).status).toBe(201);
+    expect((await deliver("WEB-1")).status).toBe(200);
+    expect(await storeOwes()).toBe(400);
+    expect(await balanceOf(navyS, "B_GRADE")).toMatchObject({ quantity: 2 });
+
+    // The customer swaps the B-grade Navy S for an A-grade Navy M.
+    const swap = await callShop(shop, ordersRoute, {
+      path: "/orders",
+      body: {
+        externalOrderId: "WEB-1-X1",
+        customer: { name: "Rahim", phone: "01711000000" },
+        shippingAddress: "Dhanmondi, Dhaka",
+        paymentMethod: "cod",
+        exchange: { ofExternalOrderId: "WEB-1", note: "size M for size S" },
+        items: [
+          {
+            lineId: "WEB-1-X1-1",
+            replacesLineId: "WEB-1-1",
+            sku: navyM,
+            quantity: 1,
+            unitPrice: 0,
+            customerPrice: 0,
+          },
+        ],
+      },
+    });
+    expect(swap.status, JSON.stringify(swap.body)).toBe(201);
+    expect((await ship("WEB-1-X1")).status).toBe(201);
+    expect((await deliver("WEB-1-X1")).status).toBe(200);
+    const list = await callShop(shop, returnListsRoute, {
+      path: "/return-lists",
+      body: {
+        returnListId: "RL-X1",
+        courier: "Pathao",
+        handedBackAt: "2026-11-05",
+        parcels: [{ consignmentId: "PICK-WEB-1-X1", externalOrderId: "WEB-1-X1" }],
+      },
+    });
+    expect(list.status, JSON.stringify(list.body)).toBe(201);
+    const parcel = (await returnsPage(shop.owner)).waiting[0]!;
+    expect(parcel.pieces).toHaveLength(1);
+    await checkParcel(shop.owner, parcel.id, {
+      decisions: [{ pieceId: parcel.pieces[0]!.id, decision: "APPROVE" as const }],
+    });
+
+    // The old piece is back in B-grade stock, never in A-grade stock.
+    expect(await balanceOf(navyS, "B_GRADE")).toMatchObject({ quantity: 3 });
+    expect(await balanceOf(navyS, "A_GRADE")).toMatchObject({ quantity: 10 });
+    const back = await prisma.stockMovement.findFirstOrThrow({
+      where: { type: "RETURN_RESTOCK", variantId: variantOf(navyS).id },
+    });
+    expect([back.grade, back.quantity, Number(back.unitCost)]).toEqual(["B_GRADE", 1, 200]);
+    const v = await prisma.productVariant.findUniqueOrThrow({ where: { id: variantOf(navyS).id } });
+    expect([Number(v.avgCost), Number(v.bGradeAvgCost)]).toEqual([500, 200]);
+    // Only the difference is billed: 400 for the B piece, then 625 - 400 for the A piece.
+    expect(await storeOwes()).toBe(625);
+  });
+
+  it("puts a delivered B line back into B-grade stock when the order is cancelled (Safe Void)", async () => {
+    const navyS = sku("Navy", "S");
+    const navyM = sku("Navy", "M");
+    const placed = await order("WEB-1", [
+      { sku: navyS, quantity: 2, grade: "B" },
+      { sku: navyM, quantity: 1 },
+    ]);
+    expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+    expect((await ship("WEB-1")).status).toBe(201);
+    expect(await balanceOf(navyS, "B_GRADE")).toMatchObject({ quantity: 1, reserved: 0 });
+    expect(await balanceOf(navyM, "A_GRADE")).toMatchObject({ quantity: 9 });
+
+    await cancelOrder(shop.owner, placed.body.erpOrderId, {
+      reason: "Parcel never left",
+      returnDelivered: true,
+    });
+    expect(await balanceOf(navyS, "B_GRADE")).toMatchObject({ quantity: 3, reserved: 0 });
+    expect(await balanceOf(navyS, "A_GRADE")).toMatchObject({ quantity: 10, reserved: 0 });
+    expect(await balanceOf(navyM, "A_GRADE")).toMatchObject({ quantity: 10, reserved: 0 });
+    const back = await prisma.stockMovement.findMany({
+      where: { referenceId: placed.body.erpOrderId, type: "RETURN_RESTOCK" },
+      include: { variant: { select: { sku: true } } },
+    });
+    expect(
+      back.map((m) => [m.variant.sku, m.grade, m.quantity, Number(m.unitCost)]).sort(),
+    ).toEqual(
+      [
+        [navyS, "B_GRADE", 2, 200],
+        [navyM, "A_GRADE", 1, 500],
+      ].sort(),
+    );
+    const v = await prisma.productVariant.findUniqueOrThrow({ where: { id: variantOf(navyS).id } });
+    expect([Number(v.avgCost), Number(v.bGradeAvgCost)]).toEqual([500, 200]);
+  });
+
+  it("refuses a hand price for B-grade pieces: they are priced on the product", async () => {
+    await expect(
+      stores.setHandPrice(shop.owner, {
+        storeId: store.id,
+        grade: "B",
+        styleId: shop.polo.id,
+        price: "350",
+        pin: PIN,
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION", details: { grade: expect.any(Array) } });
+    expect(await prisma.retailPrice.count({ where: { storeId: store.id, grade: "B" } })).toBe(0);
+  });
+
+  it("sends B-grade rows only once the owner offers B-grade pieces, and only of the store's warehouse", async () => {
+    const navyS = sku("Navy", "S");
+    const navyM = sku("Navy", "M");
+    await prisma.retailStore.update({ where: { id: store.id }, data: { sellsBGrade: false } });
+    const bRows = <T extends { grade: string }>(rows: T[]) => rows.filter((r) => r.grade === "B");
+    const later = () => new Promise((resolve) => setTimeout(resolve, 5));
+    const before = new Date(Date.now() - 1000).toISOString();
+
+    // Off: no B-grade row anywhere, and a B line is refused.
+    const catalog = await callShop(shop, variantsRoute, { path: "/catalog/variants" });
+    expect(catalog.status).toBe(200);
+    expect(catalog.body.data).toHaveLength(6);
+    expect(bRows(catalog.body.data)).toEqual([]);
+    const all = await callShop(shop, stockRoute, { path: "/stock" });
+    expect(all.body.data).toHaveLength(6);
+    expect(bRows(all.body.data)).toEqual([]);
+    const one = await callShop<{ sku: string }>(shop, skuStockRoute, {
+      path: `/stock/${navyS}`,
+      params: { sku: navyS },
+    });
+    expect(one.status).toBe(200);
+    expect(bRows(one.body.warehouses)).toEqual([]);
+    await scanShopChanges();
+    const sentB = () =>
+      prisma.webhookEvent.findMany({
+        where: {
+          integrationId: shop.integration.id,
+          direction: "OUTGOING",
+          externalId: { endsWith: ":B" },
+        },
+      });
+    expect(await sentB()).toEqual([]);
+    const refused = await order("WEB-1", [{ sku: navyS, quantity: 1, grade: "B" }]);
+    expect(refused.status).toBe(422);
+    expect(refused.body.error).toMatchObject({
+      code: "VALIDATION",
+      details: { grade: expect.any(Array) },
+    });
+    expect(await balanceOf(navyS, "B_GRADE")).toMatchObject({ reserved: 0 });
+
+    // B-grade stock of Navy M only in another warehouse: never the store's.
+    const other = await stock.createWarehouse(shop.owner, { name: "Gazipur store room" });
+    await stock.adjustStock(shop.owner, {
+      variantId: variantOf(navyM).id,
+      warehouseId: other.id,
+      quantity: 4,
+      grade: "B_GRADE",
+      type: "OPENING",
+      unitCost: 180,
+    });
+
+    // On (the owner's switch, with the PIN): Navy S's B-grade row appears everywhere.
+    await later();
+    await stores.setPriceRules(shop.owner, store.id, {
+      aRule: "PERCENT",
+      aValue: "25",
+      sellsBGrade: true,
+      pin: PIN,
+    });
+    const on = await callShop(shop, variantsRoute, { path: "/catalog/variants" });
+    expect(bRows(on.body.data)).toEqual([
+      expect.objectContaining({ sku: navyS, grade: "B", shopPrice: 400 }),
+    ]);
+    const since = await callShop(shop, stockRoute, {
+      path: `/stock?updatedSince=${encodeURIComponent(before)}`,
+    });
+    expect(since.status, JSON.stringify(since.body)).toBe(200);
+    // The stock list goes by warehouse (as for A-grade): the store's warehouse has Navy S's row.
+    const ownWarehouse = (rows: Array<{ grade: string; warehouseId: string }>) =>
+      bRows(rows).filter((r) => r.warehouseId === shop.warehouse.id);
+    expect(ownWarehouse(since.body.data)).toEqual([
+      expect.objectContaining({ sku: navyS, grade: "B", onHand: 3, available: 3 }),
+    ]);
+    await scanShopChanges();
+    const pushed = await sentB();
+    expect(pushed.map((e) => [e.eventType, e.externalId]).sort()).toEqual(
+      [
+        ["stock.changed", `${navyS}:B`],
+        ["variant.changed", `${navyS}:B`],
+      ].sort(),
+    );
+    const placed = await order("WEB-2", [{ sku: navyS, quantity: 1, grade: "B" }]);
+    expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+  });
+  it('tags a B line "B-grade" on the order, invoice, packing list, challan and return form', async () => {
+    const navyS = sku("Navy", "S");
+    const navyM = sku("Navy", "M");
+    const placed = await order("WEB-1", [
+      { sku: navyS, quantity: 2, grade: "B" },
+      { sku: navyM, quantity: 1 },
+    ]);
+    expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+    const orderId = placed.body.erpOrderId as string;
+    if (!(await prisma.packingList.findUnique({ where: { orderId } }))) {
+      await createPackingList(shop.owner, orderId);
+    }
+    expect((await ship("WEB-1")).status).toBe(201);
+    const bOf = (lines: Array<{ sku: string; bGrade: boolean }>) =>
+      Object.fromEntries(lines.map((l) => [l.sku, l.bGrade]));
+    const want = { [navyS]: true, [navyM]: false };
+
+    const screen = await getOrderScreen(shop.owner, orderId);
+    expect(bOf(screen.order.styles.flatMap((s) => s.lines))).toEqual(want);
+    const invoice = await prisma.invoice.findFirstOrThrow({ where: { orderId } });
+    const hub = await getInvoiceScreen(shop.owner, invoice.id);
+    expect(bOf(hub.invoice.items)).toEqual(want);
+    const form = await getSalesReturnForm(shop.owner, invoice.id);
+    expect(bOf(form.lines)).toEqual(want);
+
+    /** The rows of a document's first table, as text. */
+    const rowsOf = async (type: string, id: string) => {
+      const { model } = await buildDocument(
+        shop.owner,
+        printRequestSchema.parse({ type, id }),
+        new Date(),
+      );
+      const table = model.blocks.find((b) => b.kind === "table");
+      return table && table.kind === "table" ? table.rows.map((r) => r.cells.join(" | ")) : [];
+    };
+    const list = await prisma.packingList.findUniqueOrThrow({ where: { orderId } });
+    const challan = await prisma.deliveryChallan.findFirstOrThrow({ where: { orderId } });
+    for (const [type, id] of [
+      ["PACKING_LIST", list.id],
+      ["DELIVERY_CHALLAN", challan.id],
+    ] as const) {
+      const rows = await rowsOf(type, id);
+      expect(
+        rows.find((r) => r.includes(navyS)),
+        type,
+      ).toContain(`${navyS} (B-grade)`);
+      expect(
+        rows.find((r) => r.includes(navyM)),
+        type,
+      ).not.toContain("B-grade");
+    }
+    const billed = await rowsOf("COMMERCIAL_INVOICE", invoice.id);
+    expect(billed.filter((r) => r.includes("(B-grade)"))).toEqual([
+      expect.stringContaining("Classic Polo – Navy (B-grade)"),
+    ]);
+    expect(billed.filter((r) => r.includes("Classic Polo – Navy |"))).toHaveLength(1);
   });
 });

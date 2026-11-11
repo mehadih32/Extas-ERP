@@ -851,6 +851,8 @@ function orderLines(order: OrderData, facts: Awaited<ReturnType<typeof variantFa
           id: i.id,
           variantId: i.variantId,
           sku: i.variant.sku,
+          /** A retail store's B-grade line: its pieces are packed from B-grade stock. */
+          bGrade: i.grade === "B_GRADE",
           color: { name: i.variant.color.name, hexCode: i.variant.color.hexCode },
           size: i.variant.size.name,
           quantity: i.quantity,
@@ -1414,6 +1416,7 @@ export async function getInvoiceScreen(ctx: CompanyContext, invoiceId: string) {
       items: doc.items.map((i, index) => ({
         key: `${i.sku}:${index}`,
         sku: i.sku,
+        bGrade: i.bGrade,
         style: i.style,
         color: i.color,
         size: i.size,

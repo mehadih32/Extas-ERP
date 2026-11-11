@@ -81,22 +81,17 @@ export const rulesSchema = z
       .default("NONE")
       .transform((v) => (v === "NONE" ? null : v)),
     aValue: ruleValue,
-    bRule: z
-      .enum(["NONE", "PERCENT", "AMOUNT", "FIXED"])
-      .default("NONE")
-      .transform((v) => (v === "NONE" ? null : v)),
-    bValue: ruleValue,
+    /**
+     * B-grade pieces offered to the store (2026-11-11); left out: unchanged.
+     * The old B-grade rule is no longer used: a B-grade piece costs the
+     * style's B-grade price, else the A-grade price; old rules stay stored.
+     */
+    sellsBGrade: z.boolean().optional(),
     pin,
   })
   .superRefine((input, issue) => {
     if (input.aRule && input.aValue === null) {
       issue.addIssue({ code: "custom", path: ["aValue"], message: "Give the A-grade number" });
-    }
-    if (input.bRule && input.bValue === null) {
-      issue.addIssue({ code: "custom", path: ["bValue"], message: "Give the B-grade number" });
-    }
-    if (input.bRule === "FIXED" && input.bValue !== null && Number(input.bValue) <= 0) {
-      issue.addIssue({ code: "custom", path: ["bValue"], message: "A price above 0" });
     }
   });
 
@@ -295,30 +290,23 @@ export async function setPriceRules(
   const input = rulesSchema.parse(raw);
   await requirePin(ctx, proof ?? input.pin, "change a store's prices");
   const currency = ctx.company.currency;
-  const before = {
-    a: ruleText({ rule: store.aRule, value: store.aValue }, currency),
-    b: ruleText({ rule: store.bRule, value: store.bValue }, currency),
-  };
-  const after = {
-    a: ruleText({ rule: input.aRule, value: input.aValue }, currency),
-    b: ruleText({ rule: input.bRule, value: input.bValue }, currency),
-  };
+  const before = ruleText({ rule: store.aRule, value: store.aValue }, currency);
+  const after = ruleText({ rule: input.aRule, value: input.aValue }, currency);
+  const sellsBGrade = input.sellsBGrade ?? store.sellsBGrade;
   await ctx.db.retailStore.update({
     where: { id: store.id },
-    data: {
-      aRule: input.aRule,
-      aValue: input.aRule ? input.aValue : null,
-      bRule: input.bRule,
-      bValue: input.bRule ? input.bValue : null,
-    },
+    data: { aRule: input.aRule, aValue: input.aRule ? input.aValue : null, sellsBGrade },
   });
-  if (before.a !== after.a) await logChange(ctx, store.id, "A-grade rule", before.a, after.a);
-  if (before.b !== after.b) await logChange(ctx, store.id, "B-grade rule", before.b, after.b);
+  const onOff = (on: boolean) => (on ? "Offered" : "Not offered");
+  if (before !== after) await logChange(ctx, store.id, "A-grade rule", before, after);
+  if (sellsBGrade !== store.sellsBGrade) {
+    await logChange(ctx, store.id, "B-grade pieces", onOff(store.sellsBGrade), onOff(sellsBGrade));
+  }
   await auditInCompany(ctx, meta, {
     action: "UPDATE",
     entityType: "RetailStore",
     entityId: store.id,
-    summary: `Changed the price rules of "${store.name}": A-grade ${after.a}, B-grade ${after.b}`,
+    summary: `Changed the price rules of "${store.name}": A-grade ${after}, B-grade pieces ${onOff(sellsBGrade).toLowerCase()}`,
   });
 }
 
@@ -563,6 +551,7 @@ export async function listStores(ctx: CompanyContext) {
         : null,
       aRule: ruleText({ rule: s.aRule, value: s.aValue }, currency),
       bRule: ruleText({ rule: s.bRule, value: s.bValue }, currency),
+      sellsBGrade: s.sellsBGrade,
       handPrices: hand.filter((h) => h.storeId === s.id).length,
       costChanged: hand.filter((h) => h.storeId === s.id && h.costChanged).length,
     })),
@@ -707,6 +696,7 @@ export async function getStore(ctx: CompanyContext, storeId: string, raw: unknow
           : new Prisma.Decimal(store.bValue).toDecimalPlaces(2).toString(),
       aRuleText: ruleText(rules.a, currency),
       bRuleText: ruleText(rules.b, currency),
+      sellsBGrade: store.sellsBGrade,
     },
     handPrices: hand,
     history: history.map((h) => ({

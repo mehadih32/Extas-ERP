@@ -251,6 +251,24 @@ function assertOneGradePerSku(lines: Array<{ sku: string; grade?: RetailGrade }>
 }
 
 /**
+ * B lines only for a store the owner has opened to B-grade pieces (its
+ * "Sell B-grade pieces" switch, 2026-11-11), so a site that does not read the
+ * grade yet never takes B stock by mistake.
+ */
+function assertBGradeOffered(
+  store: { name: string; sellsBGrade: boolean },
+  grades: Array<RetailGrade | undefined>,
+) {
+  if (store.sellsBGrade || !grades.includes("B")) return;
+  throw new EcommerceApiError(
+    422,
+    "VALIDATION",
+    `B-grade pieces are not offered to the store "${store.name}": the owner turns them on in the ERP.`,
+    { grade: ["B-grade pieces are not offered to this store"] },
+  );
+}
+
+/**
  * The shop's items as ERP SKUs, a SKU sent twice taken as one line (as the
  * order screens do). Unknown and inactive SKUs are refused, all in one answer.
  * Only a retail store's order is `graded`: its B lines take B-grade stock (a
@@ -670,6 +688,10 @@ async function createStoreOrder(
   if (!exchange && siteLines.some((l) => l.replacesLineId)) {
     throw new EcommerceApiError(422, "VALIDATION", "replacesLineId is only for an exchange order.");
   }
+  assertBGradeOffered(
+    store,
+    siteLines.map((l) => l.grade),
+  );
   const lines = await resolveItems(
     ctx,
     siteLines.map((l) => ({
@@ -1419,6 +1441,12 @@ export async function updateStoreLine(
     grade: RetailGrade;
   } | null = null;
   if (input.action === "REPLACE") {
+    if (input.grade === "B") {
+      assertBGradeOffered(
+        await ctx.db.retailStore.findUniqueOrThrow({ where: { id: retail.storeId } }),
+        [input.grade],
+      );
+    }
     // The new piece may not make one SKU both grades on this order.
     assertOneGradePerSku([
       ...retail.lines

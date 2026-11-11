@@ -89,7 +89,8 @@ The owner has decided on a new business model:
   - **Open from the ERP release of November 2026 (owner, 11 November 2026).** An order line with `grade: "B"` takes the ERP's B-grade stock and is billed at the B row's `shopPrice`.
   - The B `shopPrice` is the product's own B-grade price, or the A-grade `shopPrice` when the product has none. Read it from the catalog like any price; never work it out on the site.
   - One SKU may not be on one order in both grades: such an order answers 422. Send them as two orders.
-  - The catalog sends a SKU's B row only while it has B-grade stock and a price; the stock list and stock webhooks carry `grade` on every row, and a B row's webhook goes by the key `<sku>:B`.
+  - B-grade pieces reach a store only after the owner ticks "Offer B-grade pieces to this store" in the ERP (off at first). Until then no B rows come and a B line answers 422. Make the site read `grade` first, then ask the owner to switch it on.
+  - The catalog sends a SKU's B row only while it has B-grade stock in the store's warehouse and a price. Every stock row (the stock list, a SKU's stock and the stock webhook) carries `grade`: keep stock by SKU, warehouse and grade, so a B row never overwrites the A row. Keep catalog rows by SKU and grade too.
   - A returned B piece that the owner approves goes back to the ERP's B-grade stock, and the site is credited the price it paid, as for A.
   - Sell them as separate listings, for example a "B-grade / outlet" section.
   - Skip them if the admin turns that off.

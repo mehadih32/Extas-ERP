@@ -36,6 +36,7 @@ export function SkuMatchCard({ sku, currency }: { sku: SkuMatch; currency: strin
         <p className="mt-2 text-sm tabular-nums">
           {count(sku.stock.available)} available · {count(sku.stock.reserved)} set aside ·{" "}
           {count(sku.stock.bGrade)} B-grade
+          {sku.stock.bReserved > 0 ? ` (${count(sku.stock.bReserved)} set aside)` : ""}
         </p>
       </div>
       <Button asChild className="w-full sm:w-auto">

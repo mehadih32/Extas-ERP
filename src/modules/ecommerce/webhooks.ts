@@ -21,6 +21,7 @@ import {
   shopSizeCharts,
   stockRowOf,
   storeCatalogVariantOf,
+  withBGradeStock,
 } from "./catalog.service";
 import { assertCanManageShops, privateAddress } from "./integration.service";
 import type { CatalogVariant, StockRow, StoreCatalogVariant } from "./schemas";
@@ -38,15 +39,19 @@ import {
  * last pass:
  *   - stock.changed: an A-grade stock row of the shop's warehouse changed
  *     (pieces in or out, a reservation made or released), with onHand,
- *     reserved and available;
+ *     reserved and available; for a retail store's shop B-grade rows too;
  *   - variant.changed: a variant or its style changed (price, active, a new
- *     variant: isNew), as GET /catalog/variants shows it;
+ *     variant: isNew), as GET /catalog/variants shows it; for a retail
+ *     store's shop also a SKU's B-grade listing, when it changes or first
+ *     comes with B-grade stock (isNew: the shop never heard of it);
  *   - size_chart.changed: a style's size chart was saved, as GET
  *     /catalog/size-charts shows it (one per style; the shop keeps its own
  *     edits and decides whether to take the new one).
- * One WebhookEvent per SKU per pass, holding the exact body that is sent, and
- * a background job that sends it, signed like the API (signature.ts), retried
- * by the queue (30 s, 1 min, 2 min... then hourly) until 24 hours have gone.
+ * One WebhookEvent per SKU per pass (a B-grade row is its own, "<sku>:B", so
+ * it never replaces or hides the SKU's A-grade one), holding the exact body
+ * that is sent, and a background job that sends it, signed like the API
+ * (signature.ts), retried by the queue (30 s, 1 min, 2 min... then hourly)
+ * until 24 hours have gone.
  * After that the event is FAILED: the shop's own polling with updatedSince
  * catches up, so a missed webhook never leaves its stock wrong.
  *
@@ -124,7 +129,7 @@ const comparable = (data: unknown) => {
 type Shop = SalesChannelIntegration;
 type Planned = {
   type: "stock.changed" | "variant.changed" | "size_chart.changed";
-  /** The SKU, or the style code for a size chart. */
+  /** The SKU ("<sku>:B" for a B-grade row), or the style code for a size chart. */
   sku: string;
   data: StockRow | VariantChanged | ShopSizeChart;
 };
@@ -135,8 +140,15 @@ const usable = (cursor: Date | null, now: Date) =>
   cursor.getTime() <= now.getTime() &&
   now.getTime() - cursor.getTime() <= GIVE_UP_AFTER_MS;
 
-/** The latest event the shop was given for each SKU since `since` (to leave out repeats). */
-async function lastSent(shop: Shop, type: Planned["type"], skus: string[], since: Date) {
+/** The key a row's events go by: the SKU for an A-grade row (as always), "<sku>:B" for a B-grade one. */
+const rowKey = (row: { sku: string; grade?: "A" | "B" }) =>
+  row.grade === "B" ? `${row.sku}:B` : row.sku;
+
+/**
+ * The latest event the shop was given for each SKU since `since` (to leave
+ * out repeats); with `since` null, the latest ever.
+ */
+async function lastSent(shop: Shop, type: Planned["type"], skus: string[], since: Date | null) {
   const sent = new Map<string, string>();
   for (let i = 0; i < skus.length; i += CHUNK) {
     const rows = await prisma.webhookEvent.findMany({
@@ -146,7 +158,7 @@ async function lastSent(shop: Shop, type: Planned["type"], skus: string[], since
         eventType: type,
         externalId: { in: skus.slice(i, i + CHUNK) },
         // A minute more, for the app's and the database's clocks.
-        receivedAt: { gte: new Date(since.getTime() - 60_000) },
+        ...(since ? { receivedAt: { gte: new Date(since.getTime() - 60_000) } } : {}),
       },
       orderBy: { receivedAt: "asc" },
       select: { externalId: true, payload: true },
@@ -158,14 +170,26 @@ async function lastSent(shop: Shop, type: Planned["type"], skus: string[], since
   return sent;
 }
 
+/** The retail store a shop sells for, if it is one. */
+const storeOfShop = (shop: Shop) =>
+  prisma.retailStore.findFirst({ where: { companyId: shop.companyId, integrationId: shop.id } });
+
 async function stockChanges(shop: Shop, since: Date, now: Date): Promise<Planned[]> {
   if (!shop.warehouseId) return [];
+  // B-grade rows only for a retail store offered B-grade pieces (no other
+  // shop can order B-grade lines); when the store changed (the switch turned
+  // on), every B-grade row, each sent only if the shop does not have it yet.
+  const store = await storeOfShop(shop);
+  const bGrade = Boolean(store?.sellsBGrade);
+  const storeChanged = store ? store.updatedAt > since && store.updatedAt <= now : false;
   const balances = await prisma.stockBalance.findMany({
     where: {
       companyId: shop.companyId,
       warehouseId: shop.warehouseId,
-      grade: "A_GRADE",
-      updatedAt: { gt: since, lte: now },
+      ...(bGrade ? {} : { grade: "A_GRADE" }),
+      ...(bGrade && storeChanged
+        ? { OR: [{ updatedAt: { gt: since, lte: now } }, { grade: "B_GRADE" as const }] }
+        : { updatedAt: { gt: since, lte: now } }),
       warehouse: { deletedAt: null },
     },
     include: {
@@ -175,15 +199,10 @@ async function stockChanges(shop: Shop, since: Date, now: Date): Promise<Planned
     orderBy: { updatedAt: "asc" },
   });
   const rows = balances.map(stockRowOf);
-  const sent = await lastSent(
-    shop,
-    "stock.changed",
-    rows.map((r) => r.sku),
-    since,
-  );
+  const sent = await lastSent(shop, "stock.changed", rows.map(rowKey), since);
   return rows
-    .filter((row) => sent.get(row.sku) !== comparable(row))
-    .map((row) => ({ type: "stock.changed" as const, sku: row.sku, data: row }));
+    .filter((row) => sent.get(rowKey(row)) !== comparable(row))
+    .map((row) => ({ type: "stock.changed" as const, sku: rowKey(row), data: row }));
 }
 
 async function variantChanges(shop: Shop, since: Date, now: Date): Promise<Planned[]> {
@@ -191,9 +210,7 @@ async function variantChanges(shop: Shop, since: Date, now: Date): Promise<Plann
   // A retail store's site hears only its own buying prices (plan v6): a
   // change of the store's prices or rules is a change too, and the ERP's cost
   // and price list are never sent.
-  const store = await prisma.retailStore.findFirst({
-    where: { companyId: shop.companyId, integrationId: shop.id },
-  });
+  const store = await storeOfShop(shop);
   const storeChanged = store ? store.updatedAt > since && store.updatedAt <= now : false;
   const variants = await prisma.productVariant.findMany({
     where: {
@@ -239,14 +256,15 @@ async function variantChanges(shop: Shop, since: Date, now: Date): Promise<Plann
   const sent = await lastSent(
     shop,
     "variant.changed",
-    rows.map((r) => r.row.sku),
+    rows.map((r) => rowKey(r.row)),
     since,
   );
-  const changed = rows.filter(({ row }) => sent.get(row.sku) !== comparable(row));
+  const changed = rows.filter(({ row }) => sent.get(rowKey(row)) !== comparable(row));
+  const bRows = store?.sellsBGrade ? await bGradeListings(shop, store, variants, window) : [];
   // New: made since the last pass, and never sent to this shop before.
   const candidates = changed
     .filter(({ variant }) => variant.createdAt > since)
-    .map((r) => r.row.sku);
+    .map((r) => rowKey(r.row));
   const known = new Set(
     candidates.length
       ? (
@@ -263,11 +281,64 @@ async function variantChanges(shop: Shop, since: Date, now: Date): Promise<Plann
         ).map((e) => e.externalId!)
       : [],
   );
-  return changed.map(({ variant, row }) => ({
-    type: "variant.changed" as const,
-    sku: row.sku,
-    data: { ...row, isNew: variant.createdAt > since && !known.has(row.sku) },
-  }));
+  return [
+    ...changed.map(({ variant, row }) => ({
+      type: "variant.changed" as const,
+      sku: rowKey(row),
+      data: { ...row, isNew: variant.createdAt > since && !known.has(rowKey(row)) },
+    })),
+    ...bRows,
+  ];
+}
+
+/**
+ * A retail store's B-grade listings that changed: those of the SKUs that
+ * changed (`variants`) and of the SKUs whose B-grade stock moved in the
+ * window, for each SKU with B-grade stock. Each is compared with the last one
+ * ever sent, so a B-grade stock change alone sends nothing the shop has
+ * already; isNew when the shop never had that B-grade listing.
+ */
+async function bGradeListings(
+  shop: Shop,
+  store: NonNullable<Awaited<ReturnType<typeof storeOfShop>>>,
+  variants: Array<Parameters<typeof storeCatalogVariantOf>[0] & { id: string }>,
+  window: { gt: Date; lte: Date },
+): Promise<Planned[]> {
+  const known = new Set(variants.map((v) => v.id));
+  const moved = await prisma.productVariant.findMany({
+    where: {
+      companyId: shop.companyId,
+      id: { notIn: [...known] },
+      stockBalances: { some: { grade: "B_GRADE", updatedAt: window } },
+    },
+    include: { style: true, color: true, size: true },
+    orderBy: { updatedAt: "asc" },
+  });
+  const all = [...variants, ...moved];
+  const graded = await withBGradeStock(
+    shop.companyId,
+    all.map((v) => v.id),
+    shop.warehouseId,
+  );
+  const listed = all.filter((v) => graded.has(v.id));
+  if (listed.length === 0) return [];
+  const prices = await pricesOfStore(
+    store,
+    listed.map((v) => v.id),
+    "B",
+  );
+  const rows = listed.flatMap((variant) => {
+    const price = prices.get(variant.id);
+    return price ? [storeCatalogVariantOf(variant, price, "B")] : [];
+  });
+  const sent = await lastSent(shop, "variant.changed", rows.map(rowKey), null);
+  return rows
+    .filter((row) => sent.get(rowKey(row)) !== comparable(row))
+    .map((row) => ({
+      type: "variant.changed" as const,
+      sku: rowKey(row),
+      data: { ...row, isNew: !sent.has(rowKey(row)) },
+    }));
 }
 
 async function sizeChartChanges(shop: Shop, since: Date, now: Date): Promise<Planned[]> {

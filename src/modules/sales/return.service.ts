@@ -137,6 +137,7 @@ export async function returnPosition(db: Db | Tx, orderId: string) {
       select: {
         id: true,
         variantId: true,
+        grade: true,
         quantity: true,
         unitPrice: true,
         discount: true,
@@ -355,6 +356,17 @@ export async function createSalesReturn(
       earlier: position.earlier,
       last: position.returned + pieces >= position.ordered,
     });
+    // A piece sold as B-grade (a retail store's B line) never comes back as A-grade.
+    const bAsGood = picked.find(
+      ({ line, parts }) => line.grade === "B_GRADE" && parts.some((p) => p.qc === "GOOD"),
+    );
+    if (bAsGood) {
+      throw new AppError(
+        "VALIDATION",
+        `${bAsGood.line.variant.sku} was sold as B-grade: check it back as B-grade or damaged.`,
+        { qc: ["A piece sold as B-grade comes back as B-grade or damaged"] },
+      );
+    }
     // Each line's credit shared over its QC results by pieces (the last takes what is left).
     const rows = picked.flatMap(({ line, take, parts }, i) => {
       const lineAmount = totals.amounts[i]!;
@@ -470,14 +482,15 @@ export async function createSalesReturn(
       });
     }
 
-    // Damaged: in from the buyer, out to Damage & QC Rejects at the cost the pieces left at.
+    // Damaged: in from the buyer, out to Damage & QC Rejects at the cost the pieces left at
+    // (in and out in the grade they were sold as: a retail store's B line in B-grade).
     for (const r of rows.filter((row) => row.qc === "DAMAGED")) {
       const { line, take } = r;
       const key = {
         companyId,
         variantId: line.variantId,
         warehouseId: order.warehouseId,
-        grade: "A_GRADE" as const,
+        grade: line.grade,
         unitCost: line.unitCost,
         createdById: ctx.user.id,
       };

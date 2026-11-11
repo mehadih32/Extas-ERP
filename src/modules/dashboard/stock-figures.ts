@@ -83,6 +83,8 @@ function positions(
       JOIN "SalesOrder" so ON so.id = inv."orderId"
       JOIN "SalesOrderItem" soi ON soi."orderId" = so.id
       WHERE inv."companyId" = ${companyId} AND inv.status <> 'VOID' AND so.status <> 'CANCELLED'
+        -- Sell-through is of the A-grade stock: a retail store's B-grade pieces are not counted.
+        AND soi.grade = 'A_GRADE'::"StockGrade"
       GROUP BY soi."variantId"`
     : Prisma.sql`
       SELECT NULL::text AS "variantId", NULL::bigint AS "inWindow", NULL::bigint AS recently,

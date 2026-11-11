@@ -111,6 +111,7 @@ function StockTable({ details, currency }: { details: VariantDetails; currency: 
               <span className="block break-words">{row.name}</span>
               <span className="block text-xs font-normal text-muted-foreground sm:hidden">
                 {count(row.reserved)} set aside · {count(row.bGrade)} B-grade
+                {row.bReserved > 0 ? ` (${count(row.bReserved)} set aside)` : ""}
               </span>
             </TableCell>
             <TableCell
@@ -126,6 +127,11 @@ function StockTable({ details, currency }: { details: VariantDetails; currency: 
             </TableCell>
             <TableCell className={cn(wide, row.total && "font-medium")}>
               {count(row.bGrade)}
+              {row.bReserved > 0 && (
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {count(row.bReserved)} set aside
+                </span>
+              )}
             </TableCell>
           </TableRow>
         ))}

@@ -56,7 +56,8 @@ export type StoreCatalogVariant = {
   styleName: string;
   color: string;
   size: string;
-  grade: "A";
+  /** "B": the SKU's B-grade listing (its own price and stock), sent while it has B-grade stock. */
+  grade: "A" | "B";
   shopPrice: number;
   active: boolean;
   updatedAt: string;
@@ -83,9 +84,14 @@ export type CatalogVariant = {
   updatedAt: string;
 };
 
-/** One SKU in one warehouse in GET /stock, GET /stock/{sku} and stock.changed (A grade only). */
+/**
+ * One SKU in one warehouse and grade in GET /stock, GET /stock/{sku} and
+ * stock.changed: A-grade rows for every shop, B-grade rows too for a retail
+ * store's shop (the only one that can order B-grade lines).
+ */
 export type StockRow = {
   sku: string;
+  grade: "A" | "B";
   warehouseId: string;
   warehouseName: string;
   onHand: number;

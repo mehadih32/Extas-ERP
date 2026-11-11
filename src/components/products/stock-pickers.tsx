@@ -15,14 +15,21 @@ export type Shelf = {
   name: string;
   aGrade: number;
   bGrade: number;
+  /** A-grade pieces set aside for orders. */
   reserved: number;
+  /** B-grade pieces set aside for a retail store's B-grade lines. */
+  bReserved: number;
 };
 
 export const shelfKey = (shelf: Pick<Shelf, "id">) => shelf.id ?? "default";
 
-/** Pieces of a grade on a shelf (A-grade includes those set aside for orders). */
+/** Pieces of a grade on a shelf (including those set aside for orders). */
 export const onShelf = (shelf: Shelf, grade: StockGrade) =>
   grade === "A_GRADE" ? shelf.aGrade : shelf.bGrade;
+
+/** Pieces of a grade set aside for orders on a shelf. */
+export const setAside = (shelf: Shelf, grade: StockGrade) =>
+  grade === "A_GRADE" ? shelf.reserved : shelf.bReserved;
 
 /** Which warehouse: a picker when there are several, otherwise just its name. */
 export function WarehousePicker({

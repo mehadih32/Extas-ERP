@@ -80,10 +80,13 @@ async function reserveOf(db: Db, companyId: string, variantId: string) {
   });
 }
 
-/** Takes a billed store order's pieces off the reserve (as many as it holds). */
+/**
+ * Takes a billed store order's pieces off the reserve (as many as it holds).
+ * The reserve is A-grade stock: a B-grade line never takes from it.
+ */
 export async function takeFromReserveTx(tx: Tx, companyId: string, retailOrderId: string) {
   const lines = await tx.retailOrderLine.findMany({
-    where: { retailOrderId, cancelledAt: null },
+    where: { retailOrderId, cancelledAt: null, grade: "A" },
     select: { id: true, variantId: true, quantity: true },
   });
   for (const line of lines) {

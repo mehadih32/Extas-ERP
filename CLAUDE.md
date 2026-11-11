@@ -209,6 +209,13 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-11-11 (B-grade lines for the shops): a shop order line may be A-grade or B-grade. A B line takes the
+  factory's own B-grade stock at the B-grade cost; an approved returned B piece goes back to B-grade stock. A
+  B-grade piece costs the shop the style's own "B-grade price" (set on the product, with the PIN), or, without one,
+  the shop's A-grade price for that SKU; the store's old B-grade rule and B-grade hand prices are no longer used (kept,
+  never deleted). One SKU may not be on one order in both grades. Wholesale sales stay A-grade only. A store gets
+  B-grade pieces only after the owner ticks "Offer B-grade pieces to this store" (with the PIN; off at first), so a
+  site that does not read the grade yet never mixes B stock with A stock.
 - 2026-10-31 (Business menu, ready stock, size charts): Business holds Overview and Retail; Retail's tabs are
   E-commerce, POS, Retail stores, Shop stock and Returns (old addresses lead to the new ones). "Buy ready stock" is
   one form: supplier optional (pick one, add a new one there, or tick "Random supplier": a one-time supplier with

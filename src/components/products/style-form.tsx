@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { asksForPin, usePinPrompt } from "@/components/ai/pin-prompt";
 import { ErrorDialog } from "@/components/feedback/error-dialog";
 import { Field, FormAlert } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ const FIELDS = [
   "description",
   "wholesalePrice",
   "retailPrice",
+  "bGradePrice",
 ] as const;
 type FieldName = (typeof FIELDS)[number];
 
@@ -52,6 +54,7 @@ export function StyleForm({
   const [error, setError] = useState<ActionError>();
   const [problems, setProblems] = useState<Partial<Record<FieldName, string>>>({});
   const [pending, startTransition] = useTransition();
+  const { withPin, dialog } = usePinPrompt();
   const fieldError = (name: FieldName) => problems[name] ?? error?.fieldErrors?.[name]?.[0];
   const hasFieldErrors = FIELDS.some((f) => fieldError(f));
   const described = (name: FieldName, hint = false) =>
@@ -62,12 +65,21 @@ export function StyleForm({
     const form = new FormData(event.currentTarget);
     const wholesale = readAmount(textOf(form, "wholesalePrice"));
     const retail = readAmount(textOf(form, "retailPrice"));
+    const bGrade = readAmount(textOf(form, "bGradePrice"));
     const found: Partial<Record<FieldName, string>> = {};
     if (!textOf(form, "categoryId")) found.categoryId = "Choose the category it is filed under.";
     if (wholesale === "invalid") found.wholesalePrice = AMOUNT_HINT;
     if (retail === "invalid") found.retailPrice = AMOUNT_HINT;
+    if (bGrade === "invalid") found.bGradePrice = AMOUNT_HINT;
     setProblems(found);
-    if (Object.keys(found).length > 0 || wholesale === "invalid" || retail === "invalid") return;
+    if (
+      Object.keys(found).length > 0 ||
+      wholesale === "invalid" ||
+      retail === "invalid" ||
+      bGrade === "invalid"
+    ) {
+      return;
+    }
 
     const input = {
       code: textOf(form, "code"),
@@ -78,13 +90,17 @@ export function StyleForm({
       description: textOf(form, "description") || null,
       wholesalePrice: wholesale ?? 0,
       retailPrice: retail ?? 0,
+      // Empty or 0: no B-grade price of its own (the shop's A-grade price).
+      bGradePrice: bGrade ? bGrade : null,
     };
     startTransition(async () => {
-      const result = style
-        ? await updateStyleAction(style.id, input)
-        : await createStyleAction(input);
+      const result = await withPin((pin) =>
+        style
+          ? updateStyleAction(style.id, { ...input, pin })
+          : createStyleAction({ ...input, pin }),
+      );
       if (!result.ok) {
-        setError(result.error);
+        if (!asksForPin(result.error)) setError(result.error);
         return;
       }
       router.push(`/products/${result.data.id}?${style ? "saved" : "created"}=1`);
@@ -207,6 +223,24 @@ export function StyleForm({
           />
         </Field>
       </div>
+      <Field
+        id="bGradePrice"
+        label={`B-grade price (${currency})`}
+        hint="Optional: what a shop pays for one B-grade piece. Empty: the same as its A-grade price. Setting or changing it asks for your PIN."
+        error={fieldError("bGradePrice")}
+      >
+        <Input
+          id="bGradePrice"
+          name="bGradePrice"
+          inputMode="decimal"
+          defaultValue={style?.bGradePrice ?? ""}
+          placeholder="Same as A-grade"
+          autoComplete="off"
+          className="sm:max-w-xs"
+          aria-invalid={Boolean(fieldError("bGradePrice"))}
+          aria-describedby={described("bGradePrice", true)}
+        />
+      </Field>
       <Field id="fabric" label="Fabric (optional)" error={fieldError("fabric")}>
         <Input
           id="fabric"
@@ -242,6 +276,7 @@ export function StyleForm({
           {style ? (pending ? "Saving" : "Save changes") : pending ? "Adding" : "Add the style"}
         </Button>
       </div>
+      {dialog}
       {error?.code === "INTERNAL" && (
         <ErrorDialog
           code={error.errorId ?? "ERR-UNKNOWN"}

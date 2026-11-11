@@ -390,6 +390,7 @@ run("orders, stock and Force Override", () => {
       bGrade: 0,
       reserved: 4,
       available: 6,
+      bReserved: 0,
     });
 
     expect(order.invoice).toMatchObject({ status: "UNPAID" });
@@ -459,7 +460,13 @@ run("orders, stock and Force Override", () => {
       driverName: "Karim",
     });
     expect(first.number).toMatch(/^DC-\d{4}-00001$/);
-    expect(await cell(env, navyM)).toEqual({ aGrade: 7, bGrade: 0, reserved: 1, available: 6 });
+    expect(await cell(env, navyM)).toEqual({
+      aGrade: 7,
+      bGrade: 0,
+      reserved: 1,
+      available: 6,
+      bReserved: 0,
+    });
     let current = await orders.getOrder(env.ctx, order.id);
     expect(current.status).toBe("PROCESSING");
     expect(current.items.find((i) => i.variantId === navyM)).toMatchObject({
@@ -477,7 +484,13 @@ run("orders, stock and Force Override", () => {
     current = await orders.getOrder(env.ctx, order.id);
     expect(current.status).toBe("DELIVERED");
     expect(current.deliveryChallans).toHaveLength(2);
-    expect(await cell(env, navyM)).toEqual({ aGrade: 6, bGrade: 0, reserved: 0, available: 6 });
+    expect(await cell(env, navyM)).toEqual({
+      aGrade: 6,
+      bGrade: 0,
+      reserved: 0,
+      available: 6,
+      bReserved: 0,
+    });
     await expectAppError(documents.createDeliveryChallan(env.ctx, order.id), "CONFLICT");
 
     const movements = await prisma.stockMovement.findMany({
@@ -737,6 +750,7 @@ run("payments, invoices and walk-in sales", () => {
       bGrade: 0,
       reserved: 0,
       available: 8,
+      bReserved: 0,
     });
     const doc = await documents.getInvoiceDocument(env.ctx, order.invoice!.id);
     expect(doc.buyer).toMatchObject({ name: "Walk-in", phone: "01900000000" });

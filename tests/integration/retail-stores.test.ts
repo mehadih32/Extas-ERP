@@ -83,8 +83,7 @@ run("Retail stores and their prices (plan v6)", () => {
     await stores.setPriceRules(shop.owner, store.id, {
       aRule: "PERCENT",
       aValue: "25",
-      bRule: "FIXED",
-      bValue: "350",
+      sellsBGrade: true,
       pin: PIN,
     });
     await expect(
@@ -98,7 +97,7 @@ run("Retail stores and their prices (plan v6)", () => {
 
     const page = await stores.getStore(shop.owner, store.id);
     expect(page.history.map((h) => h.after)).toEqual(
-      expect.arrayContaining(["Cost + 25%", "BDT 350.00 each"]),
+      expect.arrayContaining(["Cost + 25%", "Offered"]),
     );
   });
 
@@ -107,8 +106,7 @@ run("Retail stores and their prices (plan v6)", () => {
     await stores.setPriceRules(shop.owner, store.id, {
       aRule: "PERCENT",
       aValue: "25",
-      bRule: "FIXED",
-      bValue: "350",
+      sellsBGrade: true,
       pin: PIN,
     });
     const navy = polo().filter((v) => v.color.name === "Navy");
@@ -118,7 +116,12 @@ run("Retail stores and their prices (plan v6)", () => {
     ];
     const whiteS = polo().find((v) => v.color.name === "White" && v.size.name === "S")!;
     expect(String(await priceOf(store.id, navyS.id))).toBe("625");
-    expect(String(await priceOf(store.id, navyS.id, "B"))).toBe("350");
+    // A B-grade piece (the owner, 2026-11-11): the style's B-grade price, else the
+    // A price; the store's B-grade rule is no longer used.
+    expect(String(await priceOf(store.id, navyS.id, "B"))).toBe("625");
+    await prisma.style.update({ where: { id: shop.polo.id }, data: { bGradePrice: 400 } });
+    expect(String(await priceOf(store.id, navyS.id, "B"))).toBe("400");
+    await prisma.style.update({ where: { id: shop.polo.id }, data: { bGradePrice: null } });
 
     const hand = (extra: Record<string, string>) =>
       stores.setHandPrice(shop.owner, {

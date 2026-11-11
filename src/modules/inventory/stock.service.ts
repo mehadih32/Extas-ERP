@@ -324,16 +324,40 @@ async function namesOf(ids: Array<string | null>) {
 // Reading stock
 // =============================================================================
 
-export type StockCell = { aGrade: number; bGrade: number; reserved: number; available: number };
+/**
+ * A SKU's stock: A-grade and B-grade pieces on the shelf, the A-grade ones set
+ * aside for orders (`reserved`) and the A-grade ones left to sell (`available`),
+ * and the B-grade ones set aside for a retail store's B-grade lines (`bReserved`).
+ */
+export type StockCell = {
+  aGrade: number;
+  bGrade: number;
+  reserved: number;
+  available: number;
+  bReserved: number;
+};
 
-const emptyCell = (): StockCell => ({ aGrade: 0, bGrade: 0, reserved: 0, available: 0 });
+export const emptyStockCell = (): StockCell => ({
+  aGrade: 0,
+  bGrade: 0,
+  reserved: 0,
+  available: 0,
+  bReserved: 0,
+});
 
-function addBalance(cell: StockCell, grade: StockGrade, quantity: number, reserved: number) {
+/** Adds one balance row to a SKU's (or style's, or warehouse's) stock. */
+export function addStockBalance(
+  cell: StockCell,
+  grade: StockGrade,
+  quantity: number,
+  reserved: number,
+) {
   if (grade === "A_GRADE") {
     cell.aGrade += quantity;
     cell.reserved += reserved;
   } else {
     cell.bGrade += quantity;
+    cell.bReserved += reserved;
   }
   cell.available = cell.aGrade - cell.reserved;
 }
@@ -344,22 +368,44 @@ export async function stockByVariant(
   variantIds: string[],
   warehouseId?: string,
 ): Promise<Map<string, StockCell>> {
-  const result = new Map<string, StockCell>(variantIds.map((id) => [id, emptyCell()]));
+  const result = new Map<string, StockCell>(variantIds.map((id) => [id, emptyStockCell()]));
   if (variantIds.length === 0) return result;
   const balances = await ctx.db.stockBalance.findMany({
     where: { variantId: { in: variantIds }, ...(warehouseId ? { warehouseId } : {}) },
     select: { variantId: true, grade: true, quantity: true, reserved: true },
   });
-  for (const b of balances) addBalance(result.get(b.variantId)!, b.grade, b.quantity, b.reserved);
+  for (const b of balances)
+    addStockBalance(result.get(b.variantId)!, b.grade, b.quantity, b.reserved);
   return result;
 }
 
-/** Available (sellable) A-grade quantity per SKU — used by sales validation. */
+/**
+ * Available (sellable) A-grade quantity per SKU — used by sales validation.
+ * With `grade` B_GRADE: the B-grade pieces not reserved yet (a retail store's
+ * B-grade lines, the only sales that take B-grade stock).
+ */
 export async function availableByVariant(
   ctx: CompanyContext,
   variantIds: string[],
   warehouseId?: string,
+  grade: StockGrade = "A_GRADE",
 ): Promise<Map<string, number>> {
+  if (grade === "B_GRADE") {
+    const result = new Map<string, number>(variantIds.map((id) => [id, 0]));
+    if (variantIds.length === 0) return result;
+    const balances = await ctx.db.stockBalance.findMany({
+      where: {
+        variantId: { in: variantIds },
+        grade: "B_GRADE",
+        ...(warehouseId ? { warehouseId } : {}),
+      },
+      select: { variantId: true, quantity: true, reserved: true },
+    });
+    for (const b of balances) {
+      result.set(b.variantId, (result.get(b.variantId) ?? 0) + b.quantity - b.reserved);
+    }
+    return result;
+  }
   const cells = await stockByVariant(ctx, variantIds, warehouseId);
   return new Map([...cells].map(([id, cell]) => [id, cell.available]));
 }
@@ -369,7 +415,7 @@ export async function stockTotalsByStyle(
   ctx: CompanyContext,
   styleIds: string[],
 ): Promise<Map<string, StockCell>> {
-  const result = new Map<string, StockCell>(styleIds.map((id) => [id, emptyCell()]));
+  const result = new Map<string, StockCell>(styleIds.map((id) => [id, emptyStockCell()]));
   if (styleIds.length === 0) return result;
   const rows = await prisma.$queryRaw<
     Array<{ styleId: string; grade: StockGrade; quantity: bigint; reserved: bigint }>
@@ -380,7 +426,7 @@ export async function stockTotalsByStyle(
     WHERE sb."companyId" = ${ctx.company.id} AND pv."styleId" IN (${Prisma.join(styleIds)})
     GROUP BY pv."styleId", sb.grade`;
   for (const r of rows) {
-    addBalance(result.get(r.styleId)!, r.grade, Number(r.quantity), Number(r.reserved));
+    addStockBalance(result.get(r.styleId)!, r.grade, Number(r.quantity), Number(r.reserved));
   }
   return result;
 }

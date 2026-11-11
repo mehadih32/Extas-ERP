@@ -1,4 +1,4 @@
-import type { InvoiceStatus, Prisma } from "@prisma/client";
+import type { InvoiceStatus, Prisma, StockGrade } from "@prisma/client";
 
 import { dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -12,6 +12,7 @@ import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journa
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
+import { gradeCost } from "@/modules/inventory/costs";
 import { recordPartyActivity } from "@/modules/parties/party.service";
 import {
   ledgerPartyId,
@@ -50,7 +51,9 @@ async function loadOrder(tx: Tx, companyId: string, orderId: string) {
   const order = await tx.salesOrder.findFirst({
     where: { id: orderId, companyId },
     include: {
-      items: { include: { variant: { select: { sku: true, avgCost: true } } } },
+      items: {
+        include: { variant: { select: { sku: true, avgCost: true, bGradeAvgCost: true } } },
+      },
       invoice: true,
       packingList: true,
       party: { select: { id: true, name: true, paymentTermsDays: true } },
@@ -523,11 +526,13 @@ export async function createDeliveryChallanTx(
         warehouseId: order.warehouseId,
         variantId,
         sku: item.variant.sku,
+        grade: item.grade,
       },
       quantity,
       item.forceOverride,
     );
-    const unitCost = item.variant.avgCost;
+    // A retail store's B-grade line leaves B-grade stock at the B-grade cost.
+    const unitCost = gradeCost(item.variant, item.grade);
     cost = cost.plus(unitCost.times(quantity));
     await tx.salesOrderItem.update({ where: { id: item.id }, data: { unitCost } });
     await tx.stockMovement.create({
@@ -535,7 +540,7 @@ export async function createDeliveryChallanTx(
         companyId: ctx.company.id,
         variantId,
         warehouseId: order.warehouseId,
-        grade: "A_GRADE",
+        grade: item.grade,
         type: "SALE_OUT",
         quantity: -quantity,
         unitCost,
@@ -610,6 +615,14 @@ const variantLabel = {
   },
 } as const;
 
+/**
+ * The SKUs an order holds as a retail store's B-grade lines (one SKU is on an
+ * order in one grade only), so its packing list and challan can mark them.
+ */
+function bGradeSkus(items: Array<{ variantId: string; grade: StockGrade }>) {
+  return new Set(items.filter((i) => i.grade === "B_GRADE").map((i) => i.variantId));
+}
+
 const partyDetails = {
   select: {
     id: true,
@@ -639,7 +652,7 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
               grossWeightKg: true,
               createdAt: true,
               items: {
-                select: { quantity: true, cartonNo: true, variant: variantLabel },
+                select: { variantId: true, quantity: true, cartonNo: true, variant: variantLabel },
                 orderBy: { id: "asc" },
               },
             },
@@ -716,6 +729,7 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     };
   }
   const { order } = invoice;
+  const bGrade = bGradeSkus(order.items);
   return {
     id: invoice.id,
     number: invoice.number,
@@ -733,6 +747,8 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     },
     items: order.items.map((i) => ({
       sku: i.variant.sku,
+      /** A retail store's B-grade line (B-grade stock, its own price). */
+      bGrade: i.grade === "B_GRADE",
       styleCode: i.variant.style.code,
       style: i.variant.style.name,
       color: i.variant.color.name,
@@ -746,6 +762,7 @@ export async function getInvoiceDocument(ctx: CompanyContext, invoiceId: string)
     packingList: order.packingList
       ? {
           ...order.packingList,
+          items: order.packingList.items.map((i) => ({ ...i, bGrade: bGrade.has(i.variantId) })),
           packedBy: order.packedBy?.name ?? null,
           totalPieces: order.packingList.items.reduce((s, i) => s + i.quantity, 0),
         }
@@ -828,13 +845,19 @@ export async function getPackingListDocument(ctx: CompanyContext, packingListId:
           totalCartons: true,
           packedBy: { select: { name: true } },
           party: partyDetails,
+          items: { where: { grade: "B_GRADE" }, select: { variantId: true, grade: true } },
         },
       },
     },
   });
   if (!list) throw new AppError("NOT_FOUND", "Packing list not found.");
+  const { items: bLines, ...order } = list.order;
+  const bGrade = bGradeSkus(bLines);
   return {
     ...list,
+    order,
+    /** `bGrade`: a retail store's B-grade line, packed from B-grade stock. */
+    items: list.items.map((i) => ({ ...i, bGrade: bGrade.has(i.variantId) })),
     totalPieces: list.items.reduce((s, i) => s + i.quantity, 0),
     pickedPieces: list.items.filter((i) => i.isPicked).reduce((s, i) => s + i.quantity, 0),
     letterhead: await letterhead(ctx),
@@ -856,7 +879,7 @@ export async function getChallanDocument(ctx: CompanyContext, challanId: string)
           totalCartons: true,
           packedBy: { select: { name: true } },
           party: partyDetails,
-          items: { select: { quantity: true } },
+          items: { select: { variantId: true, quantity: true, grade: true } },
         },
       },
     },
@@ -865,6 +888,7 @@ export async function getChallanDocument(ctx: CompanyContext, challanId: string)
   const totalPieces = challan.items.reduce((s, i) => s + i.quantity, 0);
   const { items: orderItems, ...order } = challan.order;
   const orderPieces = orderItems.reduce((s, i) => s + i.quantity, 0);
+  const bGrade = bGradeSkus(orderItems);
   return {
     ...challan,
     order,
@@ -872,6 +896,8 @@ export async function getChallanDocument(ctx: CompanyContext, challanId: string)
     wholeOrder: totalPieces >= orderPieces,
     items: challan.items.map((i) => ({
       sku: i.variant.sku,
+      /** A retail store's B-grade line, delivered from B-grade stock. */
+      bGrade: bGrade.has(i.variantId),
       style: i.variant.style.name,
       color: i.variant.color.name,
       size: i.variant.size.name,

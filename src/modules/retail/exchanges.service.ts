@@ -1,4 +1,4 @@
-import { Prisma, type RetailExchangeState } from "@prisma/client";
+import { Prisma, type RetailExchangeState, type StockGrade } from "@prisma/client";
 
 import { addDays, dateColumn, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -10,6 +10,7 @@ import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journal.service";
 import { auditInCompany, recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
+import { gradeCost } from "@/modules/inventory/costs";
 import { receiveAtCostTx } from "@/modules/inventory/stock.service";
 import { putBackOnReserve } from "@/modules/retail/reserve";
 import { type RetailEventType, shopEventTx } from "@/modules/retail/shop-events";
@@ -405,28 +406,32 @@ async function postExchangeTx(
   });
 }
 
-/** A checked piece back into A-grade stock at the cost it left at (that cost back off cost of goods). */
+/**
+ * A checked piece back into stock at the cost it left at (that cost back off
+ * cost of goods): A-grade, or B-grade for a piece sold on a B-grade line.
+ */
 async function restockTx(
   tx: Tx,
   ctx: CompanyContext,
   args: {
     warehouseId: string;
     variantId: string;
-    unitCost: Prisma.Decimal;
+    sold: { unitCost: Prisma.Decimal; grade: StockGrade };
     pieceId: string;
     note: string;
   },
 ) {
+  const { unitCost, grade } = args.sold;
   await lockRow(tx, "ProductVariant", args.variantId);
   const variant = await tx.productVariant.findUniqueOrThrow({
     where: { id: args.variantId },
-    select: { id: true, sku: true, avgCost: true },
+    select: { id: true, sku: true, avgCost: true, bGradeAvgCost: true },
   });
   const onHand = await tx.stockBalance.aggregate({
-    where: { variantId: variant.id, grade: "A_GRADE" },
+    where: { variantId: variant.id, grade },
     _sum: { quantity: true },
   });
-  const key = { variantId: variant.id, warehouseId: args.warehouseId, grade: "A_GRADE" as const };
+  const key = { variantId: variant.id, warehouseId: args.warehouseId, grade };
   await tx.stockBalance.upsert({
     where: { variantId_warehouseId_grade: key },
     create: { ...key, companyId: ctx.company.id, quantity: 1 },
@@ -438,7 +443,7 @@ async function restockTx(
       companyId: ctx.company.id,
       type: "RETURN_RESTOCK",
       quantity: 1,
-      unitCost: args.unitCost,
+      unitCost,
       referenceType: "RetailReturnPiece",
       referenceId: args.pieceId,
       note: args.note,
@@ -447,14 +452,14 @@ async function restockTx(
   });
   await receiveAtCostTx(tx, ctx, {
     variant,
-    grade: "A_GRADE",
+    grade,
     onHand: onHand._sum.quantity ?? 0,
-    average: variant.avgCost,
+    average: gradeCost(variant, grade),
     quantity: 1,
-    unitCost: args.unitCost,
+    unitCost,
     movementId: movement.id,
   });
-  if (args.unitCost.gt(0)) {
+  if (unitCost.gt(0)) {
     const acc = await ensureControlAccounts(ctx.company.id, tx);
     await postJournalEntry(tx, {
       companyId: ctx.company.id,
@@ -463,8 +468,8 @@ async function restockTx(
       sourceId: args.pieceId,
       postedById: ctx.user.id,
       lines: [
-        { accountId: acc.INVENTORY, debit: args.unitCost },
-        { accountId: acc.COGS, credit: args.unitCost },
+        { accountId: acc.INVENTORY, debit: unitCost },
+        { accountId: acc.COGS, credit: unitCost },
       ],
     });
   }
@@ -475,10 +480,14 @@ async function restockTx(
   await putBackOnReserve(tx, ctx.company.id, [piece.retailOrderLineId]);
 }
 
-/** The cost a piece of that SKU left the order at. */
-async function unitCostOf(tx: Tx, orderId: string, variantId: string) {
+/** The cost a piece of that SKU left the order at, and the grade it was sold as. */
+async function soldAs(
+  tx: Tx,
+  orderId: string,
+  variantId: string,
+): Promise<{ unitCost: Prisma.Decimal; grade: StockGrade }> {
   const item = await tx.salesOrderItem.findFirst({ where: { orderId, variantId } });
-  return item?.unitCost ?? ZERO;
+  return { unitCost: item?.unitCost ?? ZERO, grade: item?.grade ?? "A_GRADE" };
 }
 
 // ---------------------------------------------------------------------------
@@ -562,7 +571,7 @@ export async function settleExchangePieces(
           await restockTx(tx, ctx, {
             warehouseId,
             variantId: piece.variantId,
-            unitCost: await unitCostOf(tx, parcel.order.orderId, piece.variantId),
+            sold: await soldAs(tx, parcel.order.orderId, piece.variantId),
             pieceId: piece.id,
             note: `${note}: refused exchange piece`,
           });
@@ -592,7 +601,7 @@ export async function settleExchangePieces(
         await restockTx(tx, ctx, {
           warehouseId,
           variantId: piece.variantId,
-          unitCost: await unitCostOf(tx, line.replaces!.order.orderId, piece.variantId),
+          sold: await soldAs(tx, line.replaces!.order.orderId, piece.variantId),
           pieceId: piece.id,
           note: `${note}: old piece`,
         });

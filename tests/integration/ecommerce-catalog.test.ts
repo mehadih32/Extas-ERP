@@ -162,6 +162,7 @@ run("E-commerce API: catalog and stock (CN-005)", () => {
     expect(rows).toHaveLength(6);
     expect(rows[0]).toEqual({
       sku: expect.any(String),
+      grade: "A",
       warehouseId: shop.warehouse.id,
       warehouseName: shop.warehouse.name,
       onHand: 10,

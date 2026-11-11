@@ -1,4 +1,10 @@
-import { type PaymentMethod, Prisma, type SalesOrderStatus } from "@prisma/client";
+import {
+  type PaymentMethod,
+  Prisma,
+  type RetailGrade,
+  type SalesOrderStatus,
+  type StockGrade,
+} from "@prisma/client";
 
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
@@ -198,7 +204,14 @@ const orderExists = (order: { id: string; number: string }) =>
     { erpOrderId: order.id, erpOrderNumber: order.number },
   );
 
-type ShopItem = { sku: string; quantity: number; unitPrice: number; discount: number };
+type ShopItem = {
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  discount: number;
+  /** A retail store's line: "B" takes B-grade stock (A when not sent). */
+  grade?: RetailGrade;
+};
 type ShopLine = {
   variantId: string;
   sku: string;
@@ -206,13 +219,70 @@ type ShopLine = {
   quantity: number;
   unitPrice: number;
   discount: number;
+  /** The stock it takes: A-grade, or B-grade for a retail store's B line. */
+  grade: StockGrade;
 };
+
+/** The stock grade of a retail store's line grade. */
+const stockGradeOf = (grade: RetailGrade | undefined): StockGrade =>
+  grade === "B" ? "B_GRADE" : "A_GRADE";
+
+/** The retail line grade of a stock grade ("A" or "B", as the shop sends it). */
+const retailGradeOf = (grade: StockGrade): RetailGrade => (grade === "B_GRADE" ? "B" : "A");
+
+/**
+ * One SKU on one order in one grade only (the owner, 2026-11-11): an A-grade
+ * and a B-grade line of the same SKU come as separate orders.
+ */
+function assertOneGradePerSku(lines: Array<{ sku: string; grade?: RetailGrade }>) {
+  const grades = new Map<string, Set<RetailGrade>>();
+  for (const l of lines) {
+    grades.set(l.sku, (grades.get(l.sku) ?? new Set()).add(l.grade ?? "A"));
+  }
+  const both = [...grades].filter(([, g]) => g.size > 1).map(([sku]) => sku);
+  if (both.length > 0) {
+    throw new EcommerceApiError(
+      422,
+      "VALIDATION",
+      `${both.join(", ")} ${both.length > 1 ? "are" : "is"} on this order as both A-grade and B-grade: send them as separate orders.`,
+      { bothGrades: both },
+    );
+  }
+}
+
+/**
+ * B lines only for a store the owner has opened to B-grade pieces (its
+ * "Sell B-grade pieces" switch, 2026-11-11), so a site that does not read the
+ * grade yet never takes B stock by mistake.
+ */
+function assertBGradeOffered(
+  store: { name: string; sellsBGrade: boolean },
+  grades: Array<RetailGrade | undefined>,
+) {
+  if (store.sellsBGrade || !grades.includes("B")) return;
+  throw new EcommerceApiError(
+    422,
+    "VALIDATION",
+    `B-grade pieces are not offered to the store "${store.name}": the owner turns them on in the ERP.`,
+    { grade: ["B-grade pieces are not offered to this store"] },
+  );
+}
 
 /**
  * The shop's items as ERP SKUs, a SKU sent twice taken as one line (as the
  * order screens do). Unknown and inactive SKUs are refused, all in one answer.
+ * Only a retail store's order is `graded`: its B lines take B-grade stock (a
+ * SKU in one grade only); every other shop's lines are A-grade, as always.
  */
-async function resolveItems(ctx: CompanyContext, items: ShopItem[]): Promise<ShopLine[]> {
+async function resolveItems(
+  ctx: CompanyContext,
+  items: ShopItem[],
+  options: { graded?: boolean } = {},
+): Promise<ShopLine[]> {
+  if (options.graded) assertOneGradePerSku(items);
+  const gradeOfSku = new Map(
+    items.map((i) => [i.sku, options.graded ? stockGradeOf(i.grade) : ("A_GRADE" as const)]),
+  );
   const skus = [...new Set(items.map((i) => i.sku))];
   const variants = await ctx.db.productVariant.findMany({
     where: { sku: { in: skus } },
@@ -260,24 +330,48 @@ async function resolveItems(ctx: CompanyContext, items: ShopItem[]): Promise<Sho
     quantity: l.quantity,
     unitPrice: l.unitPrice ?? 0,
     discount: l.discount ?? 0,
+    grade: gradeOfSku.get(byId.get(l.variantId)!.sku)!,
   }));
+}
+
+/**
+ * Available pieces per SKU in the warehouse, each line in its own grade (a
+ * SKU is on an order in one grade only, so one figure per SKU).
+ */
+async function availableOf(
+  ctx: CompanyContext,
+  warehouseId: string | undefined,
+  lines: Array<{ variantId: string; grade: StockGrade }>,
+) {
+  const [a, b] = await Promise.all([
+    availableByVariant(
+      ctx,
+      lines.filter((l) => l.grade === "A_GRADE").map((l) => l.variantId),
+      warehouseId,
+    ),
+    availableByVariant(
+      ctx,
+      lines.filter((l) => l.grade === "B_GRADE").map((l) => l.variantId),
+      warehouseId,
+      "B_GRADE",
+    ),
+  ]);
+  return new Map(
+    lines.map((l) => [l.variantId, (l.grade === "B_GRADE" ? b : a).get(l.variantId) ?? 0]),
+  );
 }
 
 /**
  * The lines the warehouse cannot cover now: what each asks for and what is
  * available (`own`: what the order itself holds already, when it is edited).
  */
-async function shortLines<L extends Pick<ShopLine, "variantId" | "sku" | "quantity">>(
+async function shortLines<L extends Pick<ShopLine, "variantId" | "sku" | "quantity" | "grade">>(
   ctx: CompanyContext,
   warehouseId: string,
   lines: L[],
   own: Map<string, number> = new Map(),
 ): Promise<Array<L & { available: number }>> {
-  const available = await availableByVariant(
-    ctx,
-    lines.map((l) => l.variantId),
-    warehouseId,
-  );
+  const available = await availableOf(ctx, warehouseId, lines);
   return lines.map((l) => ({
     ...l,
     available: Math.max((available.get(l.variantId) ?? 0) + (own.get(l.variantId) ?? 0), 0),
@@ -360,7 +454,8 @@ export async function createShopOrder(call: Call, raw: unknown): Promise<ShopOrd
   if (existing) throw orderExists(existing);
   const store = await retailStoreOf(call);
   if (store) return createStoreOrder(call, input, store, warehouseId);
-  const lines = await resolveItems(ctx, input.items);
+  // Only a retail store's lines have grades: every other shop's are A-grade.
+  const lines = await resolveItems(ctx, input.items, { graded: false });
   const checked = await assertInStock(ctx, warehouseId, lines);
   const resolved: ResolvedLine[] = checked.map((l) => ({
     variantId: l.variantId,
@@ -431,6 +526,8 @@ async function stockOrReturnStock(ctx: CompanyContext, warehouseId: string, line
     const pieces = await ctx.db.retailReturnPiece.findMany({
       where: {
         variantId: line.variantId,
+        // A B-grade line takes only pieces sold as B-grade, an A-grade line only A-grade ones.
+        line: { grade: retailGradeOf(line.grade) },
         status: "WAITING",
         reservedForLineId: null,
         parcel: { state: "IN_RETURN_STOCK", order: { order: { warehouseId } } },
@@ -533,6 +630,31 @@ async function exchangeOf(
   }
 }
 
+/** The store's price for each line, by SKU, in the line's own grade. */
+async function linePrices(
+  ctx: CompanyContext,
+  storeId: string,
+  lines: Array<{ variantId: string; grade: StockGrade }>,
+) {
+  const [a, b] = await Promise.all([
+    storePrices(
+      ctx,
+      storeId,
+      lines.filter((l) => l.grade === "A_GRADE").map((l) => l.variantId),
+      "A",
+    ),
+    storePrices(
+      ctx,
+      storeId,
+      lines.filter((l) => l.grade === "B_GRADE").map((l) => l.variantId),
+      "B",
+    ),
+  ]);
+  return new Map(
+    lines.map((l) => [l.variantId, (l.grade === "B_GRADE" ? b : a).get(l.variantId)] as const),
+  );
+}
+
 /**
  * POST /orders from a retail store's shop (plan v6 sec 9): a sale to the store
  * (its buyer) at the store's own prices, fixed now and billed when the parcel
@@ -550,15 +672,7 @@ async function createStoreOrder(
   assertStoreOpen(store);
   // An exchange is not a new sale: it goes through while the store is on hold.
   if (!input.exchange) await assertStoreNotOnHold(ctx, store);
-  const bGrade = input.items.filter((i) => i.grade === "B").map((i) => i.sku);
-  if (bGrade.length > 0) {
-    throw new EcommerceApiError(
-      422,
-      "VALIDATION",
-      `B-grade lines are not open in the ERP yet: ${[...new Set(bGrade)].join(", ")}.`,
-      { bGradeSkus: [...new Set(bGrade)] },
-    );
-  }
+  assertOneGradePerSku(input.items);
   const siteLines = input.items.map((item, index) => ({
     ...item,
     lineId: item.lineId ?? `${input.externalOrderId}-${index + 1}`,
@@ -574,16 +688,23 @@ async function createStoreOrder(
   if (!exchange && siteLines.some((l) => l.replacesLineId)) {
     throw new EcommerceApiError(422, "VALIDATION", "replacesLineId is only for an exchange order.");
   }
+  assertBGradeOffered(
+    store,
+    siteLines.map((l) => l.grade),
+  );
   const lines = await resolveItems(
     ctx,
-    siteLines.map((l) => ({ sku: l.sku, quantity: l.quantity, unitPrice: 0, discount: 0 })),
+    siteLines.map((l) => ({
+      sku: l.sku,
+      quantity: l.quantity,
+      unitPrice: 0,
+      discount: 0,
+      grade: l.grade,
+    })),
+    { graded: true },
   );
-  const prices = await storePrices(
-    ctx,
-    store.id,
-    lines.map((l) => l.variantId),
-    "A",
-  );
+  // Each SKU at its grade's shop price (B-grade: the style's B-grade price, else the A price).
+  const prices = await linePrices(ctx, store.id, lines);
   const noPrice = lines.filter((l) => !prices.get(l.variantId)).map((l) => l.sku);
   if (noPrice.length > 0) {
     throw new EcommerceApiError(
@@ -630,6 +751,7 @@ async function createStoreOrder(
             available: l.available,
             // Pieces from Return stock are not in stock until the packing check passes them.
             short: fromReturn.has(l.variantId),
+            grade: l.grade,
           })),
           charges: {},
           overrideReason:
@@ -731,6 +853,7 @@ async function assertLinesReadyTx(tx: Tx, ctx: CompanyContext, retailOrderId: st
       ctx,
       [line.variantId],
       line.order.order.warehouseId ?? undefined,
+      stockGradeOf(line.grade),
     );
     if ((available.get(line.variantId) ?? 0) < 0) {
       throw new EcommerceApiError(
@@ -794,6 +917,7 @@ export async function fillWaitingLines() {
       ctx,
       [line.variantId],
       line.order.order.warehouseId ?? undefined,
+      stockGradeOf(line.grade),
     );
     if ((available.get(line.variantId) ?? 0) < 0) continue;
     await prisma.$transaction((tx) => fillLineTx(tx, line));
@@ -854,7 +978,7 @@ async function editShopOrder(call: Call, orderId: string, input: UpdateInput) {
 
   let lines: ShopLine[] | undefined;
   if (input.items) {
-    lines = await resolveItems(ctx, input.items);
+    lines = await resolveItems(ctx, input.items, { graded: false });
     await assertInStock(
       ctx,
       warehouseId,
@@ -1017,17 +1141,17 @@ export async function deliverShopOrder(ctx: CompanyContext, orderId: string, met
     const onHand = await ctx.db.stockBalance.findMany({
       where: {
         warehouseId: order.warehouseId ?? "",
-        grade: "A_GRADE",
         variantId: { in: order.items.map((i) => i.variantId) },
       },
-      select: { variantId: true, quantity: true },
+      select: { variantId: true, grade: true, quantity: true },
     });
-    const inHand = new Map(onHand.map((b) => [b.variantId, b.quantity]));
+    // Each line in the grade it takes (a retail store's B line: B-grade stock).
+    const inHand = new Map(onHand.map((b) => [`${b.variantId}:${b.grade}`, b.quantity]));
     const short = order.items
       .map((i) => ({
         sku: i.variant.sku,
         requested: i.quantity - (delivered.get(i.variantId) ?? 0),
-        available: Math.max(inHand.get(i.variantId) ?? 0, 0),
+        available: Math.max(inHand.get(`${i.variantId}:${i.grade}`) ?? 0, 0),
       }))
       .filter((l) => l.requested > l.available);
     throw short.length > 0 ? insufficientStock(short) : error;
@@ -1130,7 +1254,12 @@ export async function returnUndeliveredTx(
     for (const item of order.items) {
       await releaseStock(
         tx,
-        { companyId: ctx.company.id, warehouseId: order.warehouseId, variantId: item.variantId },
+        {
+          companyId: ctx.company.id,
+          warehouseId: order.warehouseId,
+          variantId: item.variantId,
+          grade: item.grade,
+        },
         item.quantity,
       );
     }
@@ -1305,15 +1434,40 @@ export async function updateStoreLine(
   if (input.action === "WAIT") return shopOrderOf(ctx, order.id);
 
   const warehouseId = order.warehouseId!;
-  let replacement: { variantId: string; sku: string; price: Prisma.Decimal } | null = null;
+  let replacement: {
+    variantId: string;
+    sku: string;
+    price: Prisma.Decimal;
+    grade: RetailGrade;
+  } | null = null;
   if (input.action === "REPLACE") {
     if (input.grade === "B") {
-      throw new EcommerceApiError(422, "VALIDATION", "B-grade lines are not open in the ERP yet.");
+      assertBGradeOffered(
+        await ctx.db.retailStore.findUniqueOrThrow({ where: { id: retail.storeId } }),
+        [input.grade],
+      );
     }
-    const [resolved] = await resolveItems(ctx, [
-      { sku: input.sku, quantity: line.quantity, unitPrice: 0, discount: 0 },
+    // The new piece may not make one SKU both grades on this order.
+    assertOneGradePerSku([
+      ...retail.lines
+        .filter((l) => !l.cancelledAt && l.id !== line.id)
+        .map((l) => ({ sku: l.variant.sku, grade: l.grade })),
+      { sku: input.sku, grade: input.grade },
     ]);
-    const price = (await storePrices(ctx, retail.storeId, [resolved!.variantId], "A")).get(
+    const [resolved] = await resolveItems(
+      ctx,
+      [
+        {
+          sku: input.sku,
+          quantity: line.quantity,
+          unitPrice: 0,
+          discount: 0,
+          grade: input.grade,
+        },
+      ],
+      { graded: true },
+    );
+    const price = (await storePrices(ctx, retail.storeId, [resolved!.variantId], input.grade)).get(
       resolved!.variantId,
     );
     if (!price) {
@@ -1322,23 +1476,36 @@ export async function updateStoreLine(
       });
     }
     await assertInStock(ctx, warehouseId, [resolved!]);
-    replacement = { variantId: resolved!.variantId, sku: resolved!.sku, price };
+    replacement = {
+      variantId: resolved!.variantId,
+      sku: resolved!.sku,
+      price,
+      grade: input.grade,
+    };
   }
   const active = retail.lines
     .filter((l) => !l.cancelledAt && !(input.action === "CANCEL" && l.id === line.id))
     .map((l) =>
       l.id === line.id && replacement
-        ? { ...l, variantId: replacement.variantId, shopPrice: replacement.price }
+        ? {
+            ...l,
+            variantId: replacement.variantId,
+            shopPrice: replacement.price,
+            grade: replacement.grade,
+          }
         : l,
     );
   if (active.length === 0) {
     await cancelShopOrder(call, order.id, input.action === "CANCEL" ? input.reason : undefined);
   } else {
     const byVariant = new Map<string, { quantity: number; unitPrice: number }>();
+    // A SKU is on the order in one grade only, so its grade goes with it.
+    const grades = new Map<string, StockGrade>();
     for (const l of active) {
       const unitPrice = retail.exchange ? 0 : Number(l.shopPrice);
       const now = byVariant.get(l.variantId);
       byVariant.set(l.variantId, { quantity: (now?.quantity ?? 0) + l.quantity, unitPrice });
+      grades.set(l.variantId, stockGradeOf(l.grade));
     }
     // Other lines may still hold the ERP's own Return stock reservation (beyond
     // stock until their piece is checked): the ERP keeps that override, not the shop.
@@ -1359,7 +1526,7 @@ export async function updateStoreLine(
         forceOverride: { reason: "Filled from Return stock: check before packing" },
       },
       meta,
-      { beforePacking: true },
+      { beforePacking: true, grades },
     );
   }
   await runTransaction(async (tx) => {
@@ -1371,6 +1538,7 @@ export async function updateStoreLine(
           : {
               variantId: replacement!.variantId,
               shopPrice: replacement!.price,
+              grade: replacement!.grade,
               waitingStock: false,
               fromReturnStock: 0,
             },

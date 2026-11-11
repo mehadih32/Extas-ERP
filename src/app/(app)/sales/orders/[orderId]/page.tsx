@@ -11,7 +11,13 @@ import { VerifiedBadge } from "@/components/parties/badges";
 import { productionHref } from "@/components/production/labels";
 import { StartedProjects } from "@/components/production/started-projects";
 import { BackLink } from "@/components/settings/back-link";
-import { InvoiceBadge, OrderBadge, OverrideBadge, RevisedBadge } from "@/components/sales/badges";
+import {
+  BGradeBadge,
+  InvoiceBadge,
+  OrderBadge,
+  OverrideBadge,
+  RevisedBadge,
+} from "@/components/sales/badges";
 import { ColorName, Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
 import { buyerName, CHANNEL_LABELS, money, salesHref } from "@/components/sales/labels";
 import { MoneyRecords } from "@/components/sales/money-records";
@@ -57,6 +63,7 @@ function Items({ screen, currency }: { screen: OrderScreen; currency: string }) 
                       <ColorName name={line.color.name} hexCode={line.color.hexCode} />
                       <span className="text-muted-foreground">·</span>
                       <span className="font-medium">{line.size}</span>
+                      {line.bGrade && <BGradeBadge />}
                     </p>
                     <p className="text-[0.8125rem] text-muted-foreground">
                       {line.sku}

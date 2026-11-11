@@ -130,15 +130,38 @@ run("Retail store's web orders (plan v6, part 2)", () => {
     expect(Number(await getPartyBalance(shop.owner, store.partyId))).toBe(0);
   });
 
-  it("refuses a SKU with no shop price, a B-grade line, and a closed store", async () => {
+  it("refuses a SKU with no shop price, one SKU in both grades, and a closed store", async () => {
     const tee = shop.sku("EX-TS-002", "White", "S");
     const noPrice = await post(order("WEB-2", [{ sku: tee, quantity: 1, unitPrice: 600 }]));
     expect(noPrice.status).toBe(409);
     expect(noPrice.body.error).toMatchObject({ code: "NO_SHOP_PRICE", details: { skus: [tee] } });
-    const bGrade = await post(
-      order("WEB-3", [{ sku: navyS(), quantity: 1, unitPrice: 900, grade: "B" }]),
+    // No B-grade line until the owner offers B-grade pieces to the store.
+    const notOffered = await post(
+      order("WEB-2N", [{ sku: navyS(), quantity: 1, unitPrice: 900, grade: "B" }]),
     );
-    expect(bGrade.status).toBe(422);
+    expect(notOffered.status).toBe(422);
+    expect(notOffered.body.error).toMatchObject({
+      code: "VALIDATION",
+      details: { grade: [expect.any(String)] },
+    });
+    await prisma.retailStore.update({ where: { id: store.id }, data: { sellsBGrade: true } });
+    // A B-grade line of a SKU with no shop price at all (no B-grade price, no A price) too.
+    const noBPrice = await post(
+      order("WEB-2B", [{ sku: tee, quantity: 1, unitPrice: 600, grade: "B" }]),
+    );
+    expect(noBPrice.status).toBe(409);
+    expect(noBPrice.body.error.code).toBe("NO_SHOP_PRICE");
+    const bothGrades = await post(
+      order("WEB-3", [
+        { sku: navyS(), quantity: 1, unitPrice: 1450 },
+        { sku: navyS(), quantity: 1, unitPrice: 900, grade: "B" },
+      ]),
+    );
+    expect(bothGrades.status).toBe(422);
+    expect(bothGrades.body.error).toMatchObject({
+      code: "VALIDATION",
+      details: { bothGrades: [navyS()] },
+    });
     await stores.setStoreClosed(shop.owner, store.id, true);
     const closed = await post(order("WEB-4", [{ sku: navyS(), quantity: 1, unitPrice: 1450 }]));
     expect(closed.body.error.code).toBe("STORE_CLOSED");

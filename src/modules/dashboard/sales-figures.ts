@@ -160,7 +160,8 @@ function scopeCondition(scope?: BuyerFilter | StyleFilter) {
 /**
  * Every invoiced line in the range with its share of the order's net value, in
  * paisa-exact amounts, and its cost: the cost recorded when it was delivered,
- * or the SKU's average cost for lines not delivered yet. Every line of a sales
+ * or the SKU's average cost for lines not delivered yet (a retail store's
+ * B-grade line: the B-grade average). Every line of a sales
  * return in the range comes in too, as negative pieces, value (its share of the
  * return's goods less discount) and cost (what the pieces left at); `sold`
  * tells the invoiced lines apart. With a buyer, only that buyer's lines; with a
@@ -170,7 +171,9 @@ function soldLines(companyId: string, range: SalesRange, scope?: BuyerFilter | S
   return Prisma.sql`
     WITH lines AS (
       SELECT soi.id, so.id AS "groupId", soi."orderId", soi."variantId", pv."styleId", soi.quantity,
-             soi."lineTotal", COALESCE(soi."unitCost", pv."avgCost") AS "unitCost",
+             soi."lineTotal",
+             COALESCE(soi."unitCost", CASE WHEN soi.grade = 'B_GRADE'::"StockGrade"
+                                           THEN pv."bGradeAvgCost" ELSE pv."avgCost" END) AS "unitCost",
              so.subtotal, so.subtotal - so.discount AS "groupNet", 1 AS sign
       FROM "Invoice" inv
       JOIN "SalesOrder" so ON so.id = inv."orderId"

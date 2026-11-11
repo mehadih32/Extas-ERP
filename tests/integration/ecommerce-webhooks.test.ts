@@ -203,6 +203,7 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
       createdAt: expect.any(String),
       data: {
         sku: navyS,
+        grade: "A",
         warehouseId: shop.warehouse.id,
         warehouseName: shop.warehouse.name,
         onHand: 10,

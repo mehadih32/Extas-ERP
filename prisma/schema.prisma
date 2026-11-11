@@ -687,6 +687,9 @@ model Style {
   imageUrl       String?
   retailPrice    Decimal  @default(0) @db.Decimal(14, 2)
   wholesalePrice Decimal  @default(0) @db.Decimal(14, 2)
+  /// What a shop pays for one B-grade piece (2026-11-11). Empty: the shop's
+  /// own A-grade price for that SKU.
+  bGradePrice    Decimal? @db.Decimal(14, 2)
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -1679,16 +1682,19 @@ model SalesOrder {
 /// One SKU line. Matrix entry creates one line per non-empty color/size cell.
 /// `forceOverride` records when quantity exceeded available stock.
 model SalesOrderItem {
-  id              String    @id @default(cuid())
+  id              String     @id @default(cuid())
   orderId         String
   variantId       String
   quantity        Int
-  unitPrice       Decimal   @db.Decimal(14, 2)
-  discount        Decimal   @default(0) @db.Decimal(14, 2)
-  lineTotal       Decimal   @db.Decimal(14, 2)
-  unitCost        Decimal?  @db.Decimal(14, 4) // COGS snapshot at sale
+  unitPrice       Decimal    @db.Decimal(14, 2)
+  discount        Decimal    @default(0) @db.Decimal(14, 2)
+  lineTotal       Decimal    @db.Decimal(14, 2)
+  unitCost        Decimal?   @db.Decimal(14, 4) // COGS snapshot at sale
+  /// Which stock the pieces come from: A_GRADE (every wholesale line) or, for a
+  /// shop's B-grade line, the factory's B-grade stock at its own cost.
+  grade           StockGrade @default(A_GRADE)
   availableAtSale Int? // stock seen when the line was saved
-  forceOverride   Boolean   @default(false)
+  forceOverride   Boolean    @default(false)
   overrideById    String?
   overrideReason  String?
   overrideAt      DateTime?
@@ -7428,6 +7434,10 @@ model RetailStore {
   /// B-grade rule on the B-grade cost (PERCENT or AMOUNT) or one price (FIXED).
   bRule             RetailPriceRule?
   bValue            Decimal?         @db.Decimal(14, 4)
+  /// B-grade pieces are offered to this store (B rows in its catalog and stock,
+  /// B lines on its orders). Off until the owner turns it on with the PIN, once
+  /// the store's site reads the grade (2026-11-11).
+  sellsBGrade       Boolean          @default(false)
   closedAt          DateTime?
   /// The ERP last asked the site for missing daily summaries (summary.missing, at most hourly).
   summaryAskedAt    DateTime?

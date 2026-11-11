@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
 import { BackLink } from "@/components/settings/back-link";
-import { InvoiceBadge, RefundBadge, RevisedBadge } from "@/components/sales/badges";
+import { BGradeBadge, InvoiceBadge, RefundBadge, RevisedBadge } from "@/components/sales/badges";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
 import { InvoiceActions } from "@/components/sales/invoice-actions";
 import { invoiceTotalLines } from "@/components/sales/invoice-totals";
@@ -102,8 +102,11 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
                   className="flex min-w-0 items-start justify-between gap-4 py-2.5 first:pt-0"
                 >
                   <div className="min-w-0 text-sm">
-                    <p className="font-medium break-words">
-                      {item.style} · {item.color} · {item.size}
+                    <p className="flex flex-wrap items-center gap-x-2 font-medium break-words">
+                      <span className="min-w-0">
+                        {item.style} · {item.color} · {item.size}
+                      </span>
+                      {item.bGrade && <BGradeBadge />}
                     </p>
                     <p className="text-[0.8125rem] text-muted-foreground">{item.sku}</p>
                   </div>

@@ -1,4 +1,4 @@
-import { type PaymentMethod, Prisma, type SalesChannel } from "@prisma/client";
+import { type PaymentMethod, Prisma, type SalesChannel, type StockGrade } from "@prisma/client";
 
 import { dateColumn, dateOnly, dayRange, localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
@@ -12,6 +12,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
 import { canSeeFinancials } from "@/modules/dashboard/access";
 import { reverseJournalEntry } from "@/modules/accounts/journal.service";
+import { gradeCost } from "@/modules/inventory/costs";
 import { receiveAtCostTx, resolveWarehouse } from "@/modules/inventory/stock.service";
 import { assertPartyCanTransact, recordPartyActivity } from "@/modules/parties/party.service";
 import {
@@ -73,12 +74,12 @@ async function reserveLines(
   tx: Tx,
   ctx: CompanyContext,
   warehouseId: string,
-  lines: Array<Pick<ResolvedLine, "variantId" | "sku" | "quantity" | "short">>,
+  lines: Array<Pick<ResolvedLine, "variantId" | "sku" | "quantity" | "short" | "grade">>,
 ) {
   for (const line of lines) {
     const ok = await reserveStock(
       tx,
-      { companyId: ctx.company.id, warehouseId, variantId: line.variantId },
+      { companyId: ctx.company.id, warehouseId, variantId: line.variantId, grade: line.grade },
       line.quantity,
       line.short,
     );
@@ -105,6 +106,7 @@ function itemRows(
     unitPrice: l.unitPrice,
     discount: money(l.discount),
     lineTotal: lineTotals[idx]!,
+    grade: l.grade ?? ("A_GRADE" as const),
     availableAtSale: Math.max(l.available, 0),
     forceOverride: l.short,
     overrideById: l.short ? ctx.user.id : null,
@@ -435,7 +437,12 @@ export async function updateOrder(
   orderId: string,
   raw: unknown,
   meta?: RequestMeta,
-  options: { codAmount?: number; beforePacking?: boolean } = {},
+  options: {
+    codAmount?: number;
+    beforePacking?: boolean;
+    /** A retail store's B-grade lines (by SKU): they take B-grade stock. */
+    grades?: Map<string, StockGrade>;
+  } = {},
 ) {
   const { reviseInvoice, ...input } = updateOrderSchema.parse(raw);
   const order = await ctx.db.salesOrder.findUnique({
@@ -466,9 +473,20 @@ export async function updateOrder(
   }
 
   const linesChanged = Boolean(input.lines || input.matrix);
-  const ownReserved = new Map(order.items.map((i) => [i.variantId, i.quantity]));
+  // A retail store's B-grade lines stay B-grade when the order is edited anywhere else.
+  const grades =
+    options.grades ??
+    new Map<string, StockGrade>(
+      order.items.filter((i) => i.grade === "B_GRADE").map((i) => [i.variantId, i.grade]),
+    );
+  // What the order holds counts as free for it, in the grade it holds it in.
+  const ownReserved = new Map(
+    order.items
+      .filter((i) => i.grade === (grades.get(i.variantId) ?? "A_GRADE"))
+      .map((i) => [i.variantId, i.quantity]),
+  );
   const lines: ResolvedLine[] = linesChanged
-    ? await resolveOrderLines(ctx, input, order.channel, order.warehouseId, ownReserved)
+    ? await resolveOrderLines(ctx, input, order.channel, order.warehouseId, ownReserved, grades)
     : order.items.map((i) => ({
         variantId: i.variantId,
         sku: i.variant.sku,
@@ -478,6 +496,7 @@ export async function updateOrder(
         discount: i.discount,
         available: i.availableAtSale ?? 0,
         short: i.forceOverride,
+        grade: i.grade,
       }));
   if (linesChanged) assertStockOrOverride(ctx, lines, input.forceOverride);
   const charges = {
@@ -530,7 +549,12 @@ export async function updateOrder(
       for (const item of current.items) {
         await releaseStock(
           tx,
-          { companyId: ctx.company.id, warehouseId: order.warehouseId!, variantId: item.variantId },
+          {
+            companyId: ctx.company.id,
+            warehouseId: order.warehouseId!,
+            variantId: item.variantId,
+            grade: item.grade,
+          },
           item.quantity,
         );
       }
@@ -706,6 +730,7 @@ export async function cancelOrder(
             companyId: ctx.company.id,
             warehouseId: current.warehouseId,
             variantId: item.variantId,
+            grade: item.grade,
           },
           item.quantity - out,
         );
@@ -742,17 +767,25 @@ async function restockDeliveredTx(
 ) {
   const moves = await tx.stockMovement.findMany({
     where: { referenceType: "SalesOrder", referenceId: order.id, type: "SALE_OUT" },
-    select: { variantId: true, warehouseId: true, quantity: true, unitCost: true },
+    select: { variantId: true, warehouseId: true, grade: true, quantity: true, unitCost: true },
   });
   const back = new Map<
     string,
-    { variantId: string; warehouseId: string; pieces: number; value: Prisma.Decimal }
+    {
+      variantId: string;
+      warehouseId: string;
+      grade: StockGrade;
+      pieces: number;
+      value: Prisma.Decimal;
+    }
   >();
   for (const m of moves) {
-    const key = `${m.variantId}:${m.warehouseId}`;
+    // A retail store's B-grade pieces go back into B-grade stock, at their own cost.
+    const key = `${m.variantId}:${m.warehouseId}:${m.grade}`;
     const entry = back.get(key) ?? {
       variantId: m.variantId,
       warehouseId: m.warehouseId,
+      grade: m.grade,
       pieces: 0,
       value: new Prisma.Decimal(0),
     };
@@ -763,7 +796,7 @@ async function restockDeliveredTx(
   let pieces = 0;
   const coming = [...back.values()]
     .filter((e) => e.pieces > 0)
-    .sort((a, b) => a.variantId.localeCompare(b.variantId));
+    .sort((a, b) => a.variantId.localeCompare(b.variantId) || a.grade.localeCompare(b.grade));
   // Every SKU first, in a fixed order, so two of these never wait on each other.
   await lockRows(
     tx,
@@ -773,17 +806,17 @@ async function restockDeliveredTx(
   for (const entry of coming) {
     const variant = await tx.productVariant.findUniqueOrThrow({
       where: { id: entry.variantId },
-      select: { sku: true, avgCost: true },
+      select: { sku: true, avgCost: true, bGradeAvgCost: true },
     });
     const onHand = await tx.stockBalance.aggregate({
-      where: { variantId: entry.variantId, grade: "A_GRADE" },
+      where: { variantId: entry.variantId, grade: entry.grade },
       _sum: { quantity: true },
     });
     const unitCost = entry.value.dividedBy(entry.pieces);
     const key = {
       variantId: entry.variantId,
       warehouseId: entry.warehouseId,
-      grade: "A_GRADE" as const,
+      grade: entry.grade,
     };
     await tx.stockBalance.upsert({
       where: { variantId_warehouseId_grade: key },
@@ -806,9 +839,9 @@ async function restockDeliveredTx(
     // They re-weight the average cost and put right the cost of pieces sold short meanwhile.
     await receiveAtCostTx(tx, ctx, {
       variant: { id: entry.variantId, sku: variant.sku },
-      grade: "A_GRADE",
+      grade: entry.grade,
       onHand: onHand._sum.quantity ?? 0,
-      average: variant.avgCost,
+      average: gradeCost(variant, entry.grade),
       quantity: entry.pieces,
       unitCost,
       movementId: movement.id,

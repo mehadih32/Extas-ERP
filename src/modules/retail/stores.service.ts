@@ -380,6 +380,13 @@ export async function setHandPrice(
 ) {
   assertCanManageStores(ctx);
   const input = handPriceSchema.parse(raw);
+  if (input.grade === "B") {
+    throw new AppError(
+      "VALIDATION",
+      "B-grade pieces are priced on the product: set its B-grade price on the style.",
+      { grade: ["B-grade pieces are priced on the product"] },
+    );
+  }
   const store = await storeOrThrow(ctx, input.storeId);
   const place = await placeOf(ctx, input);
   await requirePin(ctx, proof ?? input.pin, "change a store's prices");
@@ -623,6 +630,7 @@ export async function getStore(ctx: CompanyContext, storeId: string, raw: unknow
         id: true,
         code: true,
         name: true,
+        bGradePrice: true,
         variants: {
           where: { removedAt: null },
           select: {
@@ -712,7 +720,8 @@ export async function getStore(ctx: CompanyContext, storeId: string, raw: unknow
     search: q.search ?? "",
     styles: styles.map((style) => {
       const a = style.variants.map((v) => storePriceOf(rules, live as HandPrice[], v, "A").price);
-      const b = style.variants.map((v) => storePriceOf(rules, live as HandPrice[], v, "B").price);
+      // B-grade: the style's own B-grade price, or else the A-grade price.
+      const b = style.bGradePrice ? style.variants.map(() => style.bGradePrice) : a;
       return {
         id: style.id,
         code: style.code,
@@ -756,7 +765,14 @@ export async function pricesOfStore(
 ) {
   const variants = await prisma.productVariant.findMany({
     where: { companyId: store.companyId, id: { in: variantIds } },
-    select: { id: true, styleId: true, colorId: true, avgCost: true, bGradeAvgCost: true },
+    select: {
+      id: true,
+      styleId: true,
+      colorId: true,
+      avgCost: true,
+      bGradeAvgCost: true,
+      style: { select: { bGradePrice: true } },
+    },
   });
   const live = await prisma.retailPrice.findMany({
     where: {
@@ -771,5 +787,15 @@ export async function pricesOfStore(
     a: { rule: store.aRule, value: store.aValue },
     b: { rule: store.bRule, value: store.bValue },
   };
-  return new Map(variants.map((v) => [v.id, storePriceOf(rules, live, v, grade).price]));
+  // A B-grade piece (the owner, 2026-11-11): the style's own B-grade price, or
+  // else the shop's A-grade price for that SKU. The store's B-grade rule and
+  // B-grade hand prices are no longer used.
+  return new Map(
+    variants.map((v) => [
+      v.id,
+      grade === "B" && v.style.bGradePrice
+        ? v.style.bGradePrice
+        : storePriceOf(rules, live, v, "A").price,
+    ]),
+  );
 }

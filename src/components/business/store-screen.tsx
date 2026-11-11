@@ -162,12 +162,13 @@ export function StoreScreen({ page }: { page: StorePage }) {
         }
       >
         <p className="mt-2 text-sm text-muted-foreground">
-          Every SKU without a hand price is priced by its grade&apos;s rule, from that grade&apos;s
-          cost. With no rule or no cost it has no price, and the store is not shown it.
+          Every SKU without a hand price is priced by the rule, from its cost. With no rule or no
+          cost it has no price, and the store is not shown it. A B-grade piece costs the
+          style&apos;s own B-grade price, set on the product; without one, its A-grade price.
         </p>
         <dl className="mt-4 grid gap-4 sm:grid-cols-2">
           <Fact label="A-grade price">{store.aRuleText}</Fact>
-          <Fact label="B-grade price">{store.bRuleText}</Fact>
+          <Fact label="B-grade price">The product&apos;s B-grade price, else the A-grade price</Fact>
         </dl>
       </Panel>
 
@@ -443,8 +444,8 @@ function RulesDialog({ page, onClose }: { page: StorePage; onClose: () => void }
   const { store, currency } = page;
   return (
     <FormDialog
-      title="Change the price rules"
-      description="Each rule prices every SKU of its grade that has no hand price, from that grade's cost."
+      title="Change the price rule"
+      description="The rule prices every SKU that has no hand price, from its cost."
       submitLabel="Save the rules"
       pendingLabel="Saving"
       errorTitle="The rules were not saved"
@@ -454,8 +455,9 @@ function RulesDialog({ page, onClose }: { page: StorePage; onClose: () => void }
         const result = await setPriceRulesAction(store.id, {
           aRule: text("aRule"),
           aValue: text("aValue"),
-          bRule: text("bRule"),
-          bValue: text("bValue"),
+          // B-grade pieces are priced on the product now: the old rule stays as it is.
+          bRule: store.bRule ?? "NONE",
+          bValue: store.bValue ?? "",
           pin: text("pin"),
         });
         if (!result.ok) return result.error;
@@ -485,28 +487,6 @@ function RulesDialog({ page, onClose }: { page: StorePage; onClose: () => void }
               inputMode="decimal"
               defaultValue={store.aValue ?? ""}
               placeholder="25"
-            />
-          </Field>
-          <Field id="rule-b" label="B-grade rule" error={fieldError("bRule")}>
-            <NativeSelect
-              id="rule-b"
-              name="bRule"
-              defaultValue={store.bRule ?? "NONE"}
-              containerClassName="sm:w-full"
-            >
-              <option value="NONE">No rule (hand prices only)</option>
-              <option value="PERCENT">B-grade cost + a %</option>
-              <option value="AMOUNT">B-grade cost + an amount ({currency})</option>
-              <option value="FIXED">One price for every B-grade piece</option>
-            </NativeSelect>
-          </Field>
-          <Field id="rule-b-value" label="B-grade number" error={fieldError("bValue")}>
-            <Input
-              id="rule-b-value"
-              name="bValue"
-              inputMode="decimal"
-              defaultValue={store.bValue ?? ""}
-              placeholder="10"
             />
           </Field>
           <PinField id="rule-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
@@ -549,17 +529,7 @@ function HandPriceDialog({ page, onClose }: { page: StorePage; onClose: () => vo
     >
       {(fieldError) => (
         <>
-          <Field id="hand-grade" label="Grade" error={fieldError("grade")}>
-            <NativeSelect
-              id="hand-grade"
-              name="grade"
-              defaultValue="A"
-              containerClassName="sm:w-full"
-            >
-              <option value="A">A-grade</option>
-              <option value="B">B-grade</option>
-            </NativeSelect>
-          </Field>
+          <input type="hidden" name="grade" value="A" />
           <Field id="hand-style" label="Style" error={fieldError("styleId")}>
             <NativeSelect
               id="hand-style"

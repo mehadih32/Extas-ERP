@@ -687,6 +687,9 @@ model Style {
   imageUrl       String?
   retailPrice    Decimal  @default(0) @db.Decimal(14, 2)
   wholesalePrice Decimal  @default(0) @db.Decimal(14, 2)
+  /// What a shop pays for one B-grade piece (2026-11-11). Empty: the shop's
+  /// own A-grade price for that SKU.
+  bGradePrice    Decimal? @db.Decimal(14, 2)
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

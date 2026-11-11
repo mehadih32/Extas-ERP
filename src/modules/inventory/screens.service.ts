@@ -180,6 +180,7 @@ function presentStyle(style: StyleRow, categories: CategoryOption[]) {
     isActive: style.isActive,
     retailPrice: style.retailPrice.toFixed(2),
     wholesalePrice: style.wholesalePrice.toFixed(2),
+    bGradePrice: style.bGradePrice?.toFixed(2) ?? null,
     category: {
       id: style.category.id,
       name: style.category.name,

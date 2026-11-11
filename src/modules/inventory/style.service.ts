@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { assertAllowed } from "@/lib/verdict";
+import { requirePin } from "@/modules/ai/settings.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { categoryWithDescendants, listCategoryTree } from "@/modules/inventory/catalog.service";
@@ -86,9 +87,11 @@ export async function listStyles(ctx: CompanyContext, raw: unknown = {}) {
 }
 
 export async function createStyle(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
-  const input = createStyleSchema.parse(raw);
+  const { pin, ...input } = createStyleSchema.parse(raw);
   await assertRefs(ctx, input.categoryId, input.brandId);
   if (await ctx.db.style.findFirst({ where: { code: input.code } })) throw codeTaken(input.code);
+  // What the shops pay for a B-grade piece is a price: the owner's PIN sets it.
+  if (input.bGradePrice) await requirePin(ctx, pin, "set a B-grade price");
   const style = await ctx.db.style.create({
     data: { ...input, brandId: input.brandId ?? null, companyId: ctx.company.id },
     include: styleInclude,
@@ -109,9 +112,15 @@ export async function updateStyle(
   raw: unknown,
   meta?: RequestMeta,
 ) {
-  const input = updateStyleSchema.parse(raw);
+  const { pin, ...input } = updateStyleSchema.parse(raw);
   const before = await getStyle(ctx, styleId);
   await assertRefs(ctx, input.categoryId, input.brandId);
+  if (input.bGradePrice !== undefined) {
+    const was = before.bGradePrice?.toFixed(2) ?? null;
+    const now = input.bGradePrice === null ? null : input.bGradePrice.toFixed(2);
+    if (was === now) delete input.bGradePrice;
+    else await requirePin(ctx, pin, "change a B-grade price");
+  }
   if (input.code && input.code !== before.code) {
     if (await ctx.db.style.findFirst({ where: { code: input.code } })) throw codeTaken(input.code);
   }

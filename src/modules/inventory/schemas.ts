@@ -56,6 +56,10 @@ export const createStyleSchema = z.object({
   imageUrl: optionalText(500),
   retailPrice: money.default(0),
   wholesalePrice: money.default(0),
+  /** What a shop pays for one B-grade piece; empty: the shop's A-grade price. */
+  bGradePrice: money.min(0.01, "A B-grade price is more than 0.").nullish(),
+  /** The owner's PIN, asked when the B-grade price is set or changed. */
+  pin: z.string().trim().max(20).optional(),
 });
 export const updateStyleSchema = createStyleSchema
   .omit({ retailPrice: true, wholesalePrice: true })

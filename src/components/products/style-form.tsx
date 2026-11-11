@@ -95,7 +95,9 @@ export function StyleForm({
     };
     startTransition(async () => {
       const result = await withPin((pin) =>
-        style ? updateStyleAction(style.id, { ...input, pin }) : createStyleAction({ ...input, pin }),
+        style
+          ? updateStyleAction(style.id, { ...input, pin })
+          : createStyleAction({ ...input, pin }),
       );
       if (!result.ok) {
         if (!asksForPin(result.error)) setError(result.error);
@@ -223,8 +225,8 @@ export function StyleForm({
       </div>
       <Field
         id="bGradePrice"
-        label={`B-grade price (${currency}, optional)`}
-        hint="What a shop pays for one B-grade piece. Empty: the same as its A-grade price. Setting or changing it asks for your PIN."
+        label={`B-grade price (${currency})`}
+        hint="Optional: what a shop pays for one B-grade piece. Empty: the same as its A-grade price. Setting or changing it asks for your PIN."
         error={fieldError("bGradePrice")}
       >
         <Input

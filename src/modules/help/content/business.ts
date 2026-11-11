@@ -467,7 +467,10 @@ export const businessHelp: HelpSection = {
         { label: "Open", text: "শপ চালু আছে।" },
         { label: "Closed", text: "শপ বন্ধ। তার ইতিহাস, বাকি আর দাম সব থেকে যায়।" },
         { label: "A-grade price", text: "A-গ্রেড মালের দামের নিয়ম, যেমন Cost + 25%।" },
-        { label: "B-grade price", text: "B-গ্রেড মালের দামের নিয়ম, অথবা সব B-গ্রেডের একটাই দাম।" },
+        {
+          label: "B-grade price",
+          text: "“Set on each product”: B-গ্রেড পিসের দাম প্রতিটা প্রোডাক্টে বসে। না বসালে A-গ্রেডের দামই।",
+        },
         { label: "Hand prices", text: "কয়টা স্টাইল, কালার বা SKU-তে হাতে দাম দেওয়া আছে।" },
         { label: "Warehouse", text: "শপের মাল কোন গুদাম থেকে যায়।" },
         {
@@ -511,8 +514,9 @@ export const businessHelp: HelpSection = {
       routes: ["/business/retail/stores/[storeId]"],
       who: "দেখতে পারে যাদের রিটেল শপ দেখার অনুমতি আছে। দাম বদলাতে বদলানোর অনুমতি আর আপনার PIN লাগে।",
       what: [
-        "শপ প্রতিটা SKU একটা নির্দিষ্ট দামে কেনে। দাম আসে তিন জায়গা থেকে, এই ক্রমে: SKU-র হাতে দাম, কালারের হাতে দাম, স্টাইলের হাতে দাম, তারপর গ্রেডের নিয়ম।",
-        "নিয়ম খরচের ওপর চলে: খরচ + %, অথবা খরচ + টাকা। B-গ্রেডে চাইলে সব পিসের একটাই দাম দিতে পারেন।",
+        "শপ প্রতিটা SKU একটা নির্দিষ্ট দামে কেনে। A-গ্রেডের দাম আসে এই ক্রমে: SKU-র হাতে দাম, কালারের হাতে দাম, স্টাইলের হাতে দাম, তারপর নিয়ম।",
+        "নিয়ম খরচের ওপর চলে: খরচ + %, অথবা খরচ + টাকা।",
+        "B-গ্রেড পিসের দাম শপে বসে না: প্রোডাক্টের “B-grade price” থেকে আসে। সেটা না বসালে শপ B-গ্রেড পিসও A-গ্রেডের দামে কেনে।",
         "নিয়ম, হাতে দাম বা খরচ না থাকলে সেই SKU-র দাম নেই, আর শপ সেটা দেখে না।",
         "প্রতিটা বদল “Price history”-তে থাকে: কে, কবে, আগে কত, এখন কত।",
       ],
@@ -522,10 +526,10 @@ export const businessHelp: HelpSection = {
           text: "শপের পাতায় “Price rules” অংশে “Change the price rules” চাপুন।",
         },
         {
-          text: "“A-grade rule” থেকে “Cost + a %” বা “Cost + an amount” বাছুন, আর “A-grade number” ঘরে সংখ্যা দিন। B-গ্রেডের জন্য “B-grade rule” আর “B-grade number” একইভাবে। “PIN” দিয়ে “Save the rules” চাপুন।",
+          text: "“A-grade rule” থেকে “Cost + a %” বা “Cost + an amount” বাছুন, আর “A-grade number” ঘরে সংখ্যা দিন। “PIN” দিয়ে “Save the rules” চাপুন।",
         },
         {
-          text: "কোনো স্টাইলে আলাদা দাম চাইলে “Hand prices” অংশে “Add hand price” চাপুন। “Grade”, “Style”, দরকারে “Colour” আর “SKU” বাছুন, “Price” আর “PIN” দিয়ে “Save the price” চাপুন।",
+          text: "কোনো স্টাইলে আলাদা দাম চাইলে “Hand prices” অংশে “Add hand price” চাপুন। “Style”, দরকারে “Colour” আর “SKU” বাছুন, “Price” আর “PIN” দিয়ে “Save the price” চাপুন।",
         },
         {
           text: "হাতে দাম তুলে দিতে তার পাশে “Take off” চাপুন, “PIN” দিয়ে “Take it off” চাপুন। তখন আবার নিয়ম দাম ঠিক করে।",
@@ -554,21 +558,16 @@ export const businessHelp: HelpSection = {
         { label: "Open it again", text: "শপ আবার চালু করে, দাম আগের মতোই থাকে।" },
         { label: "Details", text: "শপের বায়ার, গুদাম, অনলাইন শপ, ঠিকানা আর ফোন।" },
         { label: "Buyer", text: "বায়ার লিস্টে শপের কোড। চাপলে Buyer 360 খোলে।" },
-        { label: "Price rules", text: "A-গ্রেড আর B-গ্রেডের নিয়ম।" },
+        {
+          label: "Price rules",
+          text: "A-গ্রেডের নিয়ম। B-গ্রেডের দাম এখানে নয়, প্রতিটা প্রোডাক্টের “B-grade price” থেকে আসে।",
+        },
         { label: "Change the price rules", text: "নিয়ম বদলানোর জানালা। PIN লাগে।" },
         { label: "A-grade rule", text: "A-গ্রেডের নিয়ম: নিয়ম নেই, খরচ + %, বা খরচ + টাকা।" },
         { label: "A-grade number", text: "A-গ্রেডের সংখ্যা: % হলে যেমন 25, টাকা হলে যেমন 120।" },
-        {
-          label: "B-grade rule",
-          text: "B-গ্রেডের নিয়ম: নিয়ম নেই, B-গ্রেড খরচ + %, খরচ + টাকা, বা সব B-গ্রেডের একটাই দাম।",
-        },
-        { label: "B-grade number", text: "B-গ্রেডের সংখ্যা: %, টাকা, বা একটাই দাম হলে সেই দাম।" },
         { label: "No rule (hand prices only)", text: "নিয়ম নেই: শুধু হাতে দেওয়া দামে শপ পায়।" },
         { label: "Cost + a %", text: "খরচের ওপর শতকরা হারে যোগ।" },
         { label: "Cost + an amount", text: "খরচের ওপর নির্দিষ্ট টাকা যোগ।" },
-        { label: "B-grade cost + a %", text: "B-গ্রেডের খরচের ওপর শতকরা হারে যোগ।" },
-        { label: "B-grade cost + an amount", text: "B-গ্রেডের খরচের ওপর নির্দিষ্ট টাকা যোগ।" },
-        { label: "One price for every B-grade piece", text: "সব B-গ্রেড পিস একই দামে।" },
         { label: "Save the rules", text: "PIN মিললে নিয়ম সেভ করে আর ইতিহাসে রাখে।" },
         {
           label: "Add hand price",
@@ -577,7 +576,6 @@ export const businessHelp: HelpSection = {
         { label: "A-grade", text: "ভালো মাল: শপ পুরো দামে কেনে।" },
         { label: "B-grade", text: "দাগ বা ছোট খুঁতের মাল: কম দামে যায়।" },
         { label: "PIN", text: "মালিকের ওয়েব PIN। দামের প্রতিটা বদলে লাগে।" },
-        { label: "Grade", text: "কোন গ্রেডের দাম: A-গ্রেড বা B-গ্রেড।" },
         { label: "Style", text: "কোন স্টাইলের দাম। পাতায় খোঁজা স্টাইলগুলো এখানে আসে।" },
         {
           label: "Colour",

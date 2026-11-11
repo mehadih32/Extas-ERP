@@ -70,7 +70,7 @@ export function StoresScreen({ list }: { list: StoreList }) {
                   </div>
                   <div className="flex flex-wrap gap-x-2">
                     <dt className="text-muted-foreground">B-grade price:</dt>
-                    <dd className="min-w-0 break-words">{store.bRule}</dd>
+                    <dd className="min-w-0 break-words">Set on each product</dd>
                   </div>
                   <div className="flex flex-wrap gap-x-2">
                     <dt className="text-muted-foreground">Hand prices:</dt>

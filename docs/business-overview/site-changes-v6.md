@@ -86,7 +86,10 @@ The owner has decided on a new business model:
   - For a retail shop the ERP sends `shopPrice` and nothing else about money.
   - `retailPrice` (the ERP's own price list) and `avgCost` (the ERP's own cost) are no longer sent from the switch date. Stop reading them.
 - **B-grade lines** come as the same SKU with `grade: "B"`, their own `shopPrice` and their own stock.
-  - **Not open yet (owner, 30 October 2026):** they come in a later ERP release. Until then an order line with `grade: "B"` answers 422; keep B-grade listings switched off.
+  - **Open from the ERP release of November 2026 (owner, 11 November 2026).** An order line with `grade: "B"` takes the ERP's B-grade stock and is billed at the B row's `shopPrice`.
+  - The B `shopPrice` is the product's own B-grade price, or the A-grade `shopPrice` when the product has none. Read it from the catalog like any price; never work it out on the site.
+  - One SKU may not be on one order in both grades: such an order answers 422. Send them as two orders.
+  - A returned B piece that the owner approves goes back to the ERP's B-grade stock, and the site is credited the price it paid, as for A.
   - Sell them as separate listings, for example a "B-grade / outlet" section.
   - Skip them if the admin turns that off.
 - **Keep it in sync.**

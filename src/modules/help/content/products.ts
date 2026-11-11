@@ -287,7 +287,7 @@ export const productsHelp: HelpSection = {
           },
         },
         {
-          text: "“Wholesale price” (পাইকারি দাম) ও “Retail price” (খুচরা দাম) লিখুন। চাইলে “Fabric (optional)” ও “Description (optional)” দিন। “Add the style” চাপুন। ফর্ম ছেড়ে যেতে “Cancel”।",
+          text: "“Wholesale price” (পাইকারি দাম) ও “Retail price” (খুচরা দাম) লিখুন। শপগুলো B-গ্রেড পিস আলাদা দামে কিনবে চাইলে “B-grade price” দিন; খালি রাখলে শপ B-গ্রেডও A-গ্রেডের দামে কেনে। এই দাম বসাতে বা বদলাতে আপনার PIN চায়। চাইলে “Fabric (optional)” ও “Description (optional)” দিন। “Add the style” চাপুন। ফর্ম ছেড়ে যেতে “Cancel”।",
         },
         {
           text: "স্টাইলের পাতায় “Colours and sizes” চাপুন। “Colours” ও “Sizes” থেকে যেগুলো এই স্টাইলে বানানো হয় টিক দিন। সব সাইজ একবারে নিতে “Tick all sizes” চাপুন। প্রতিটি রং-সাইজের জোড়া একটি SKU হবে। লম্বা নাম (যেমন Black & White Stripes) পুরোটা দুই লাইনে দেখায়।",
@@ -335,6 +335,22 @@ export const productsHelp: HelpSection = {
         {
           label: "Retail price",
           text: "দোকান ও অনলাইনের খুচরা ক্রেতার জন্য পিসপ্রতি দাম। খালি রাখলে 0।",
+        },
+        {
+          label: "B-grade price",
+          text: "রিটেল শপ একটা B-গ্রেড পিস (দাগ বা ছোট খুঁতের মাল) কত টাকায় কিনবে। খালি রাখলে শপের A-গ্রেডের দামই চলে। বসাতে, বদলাতে বা মুছতে মালিকের PIN লাগে।",
+        },
+        {
+          label: "PIN",
+          text: "“B-grade price” বসালে, বদলালে বা মুছলে সেভ করার সময় একটা জানালা মালিকের ওয়েব PIN চায়। PIN দিয়ে “Go on” চাপুন।",
+        },
+        {
+          label: "Set a PIN",
+          text: "এখনো PIN বসানো না থাকলে এই বোতাম দেখায়: AI Center-এর Settings-এ নিয়ে যায়, সেখানে PIN বসিয়ে আবার সেভ করুন।",
+        },
+        {
+          label: "Same as A-grade",
+          text: "“B-grade price” ঘর খালি থাকলে এই লেখা দেখায়: শপ B-গ্রেড পিস A-গ্রেডের দামে কিনবে।",
         },
         {
           label: "Fabric (optional)",

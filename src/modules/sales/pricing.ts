@@ -1,4 +1,4 @@
-import { Prisma, type SalesChannel } from "@prisma/client";
+import { Prisma, type SalesChannel, type StockGrade } from "@prisma/client";
 
 import { AppError } from "@/lib/errors";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -20,13 +20,16 @@ export type ResolvedLine = {
   short: boolean;
   /** Wholesale: the most this line may take without going into the shops' reserve. */
   reserveCap?: number;
+  /** The stock it takes: A-grade unless a retail store's B-grade line says B_GRADE. */
+  grade?: StockGrade;
 };
 
 /**
  * Turns requested lines / matrix cells into priced SKU lines with the stock
  * available in the warehouse. Prices default to the SKU's wholesale or retail
  * price for the channel. `ownReserved` adds back what this order already holds
- * (when an order is edited).
+ * (when an order is edited). `grades` names a retail store's B-grade lines:
+ * they take B-grade stock, so their available pieces are B-grade ones.
  */
 export async function resolveOrderLines(
   ctx: CompanyContext,
@@ -34,6 +37,7 @@ export async function resolveOrderLines(
   channel: SalesChannel,
   warehouseId: string,
   ownReserved: Map<string, number> = new Map(),
+  grades: Map<string, StockGrade> = new Map(),
 ): Promise<ResolvedLine[]> {
   const { lines, matrixStyles } = collectOrderLines(input);
   const ids = lines.map((l) => l.variantId);
@@ -46,7 +50,9 @@ export async function resolveOrderLines(
     },
   });
   const byId = new Map(variants.map((v) => [v.id, v]));
+  const bIds = ids.filter((id) => grades.get(id) === "B_GRADE");
   const available = await availableByVariant(ctx, ids, warehouseId);
+  const availableB = await availableByVariant(ctx, bIds, warehouseId, "B_GRADE");
   const wholesale = WHOLESALE_CHANNELS.includes(channel);
   const caps = wholesale
     ? await wholesaleCaps(
@@ -84,8 +90,10 @@ export async function resolveOrderLines(
       );
     }
     const reserveCap = caps.get(v.id);
+    const grade = grades.get(v.id) ?? "A_GRADE";
     const free = Math.min(
-      (available.get(v.id) ?? 0) + (ownReserved.get(v.id) ?? 0),
+      ((grade === "B_GRADE" ? availableB : available).get(v.id) ?? 0) +
+        (ownReserved.get(v.id) ?? 0),
       reserveCap ?? Infinity,
     );
     return {
@@ -98,6 +106,7 @@ export async function resolveOrderLines(
       available: free,
       short: line.quantity > free,
       ...(reserveCap !== undefined ? { reserveCap } : {}),
+      ...(grade === "B_GRADE" ? { grade } : {}),
     };
   });
 }

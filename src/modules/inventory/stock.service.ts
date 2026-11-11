@@ -354,12 +354,33 @@ export async function stockByVariant(
   return result;
 }
 
-/** Available (sellable) A-grade quantity per SKU — used by sales validation. */
+/**
+ * Available (sellable) A-grade quantity per SKU — used by sales validation.
+ * With `grade` B_GRADE: the B-grade pieces not reserved yet (a retail store's
+ * B-grade lines, the only sales that take B-grade stock).
+ */
 export async function availableByVariant(
   ctx: CompanyContext,
   variantIds: string[],
   warehouseId?: string,
+  grade: StockGrade = "A_GRADE",
 ): Promise<Map<string, number>> {
+  if (grade === "B_GRADE") {
+    const result = new Map<string, number>(variantIds.map((id) => [id, 0]));
+    if (variantIds.length === 0) return result;
+    const balances = await ctx.db.stockBalance.findMany({
+      where: {
+        variantId: { in: variantIds },
+        grade: "B_GRADE",
+        ...(warehouseId ? { warehouseId } : {}),
+      },
+      select: { variantId: true, quantity: true, reserved: true },
+    });
+    for (const b of balances) {
+      result.set(b.variantId, (result.get(b.variantId) ?? 0) + b.quantity - b.reserved);
+    }
+    return result;
+  }
   const cells = await stockByVariant(ctx, variantIds, warehouseId);
   return new Map([...cells].map(([id, cell]) => [id, cell.available]));
 }

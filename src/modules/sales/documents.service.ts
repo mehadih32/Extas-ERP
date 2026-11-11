@@ -12,6 +12,7 @@ import { postJournalEntry, reverseJournalEntry } from "@/modules/accounts/journa
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
+import { gradeCost } from "@/modules/inventory/costs";
 import { recordPartyActivity } from "@/modules/parties/party.service";
 import {
   ledgerPartyId,
@@ -50,7 +51,9 @@ async function loadOrder(tx: Tx, companyId: string, orderId: string) {
   const order = await tx.salesOrder.findFirst({
     where: { id: orderId, companyId },
     include: {
-      items: { include: { variant: { select: { sku: true, avgCost: true } } } },
+      items: {
+        include: { variant: { select: { sku: true, avgCost: true, bGradeAvgCost: true } } },
+      },
       invoice: true,
       packingList: true,
       party: { select: { id: true, name: true, paymentTermsDays: true } },
@@ -523,11 +526,13 @@ export async function createDeliveryChallanTx(
         warehouseId: order.warehouseId,
         variantId,
         sku: item.variant.sku,
+        grade: item.grade,
       },
       quantity,
       item.forceOverride,
     );
-    const unitCost = item.variant.avgCost;
+    // A retail store's B-grade line leaves B-grade stock at the B-grade cost.
+    const unitCost = gradeCost(item.variant, item.grade);
     cost = cost.plus(unitCost.times(quantity));
     await tx.salesOrderItem.update({ where: { id: item.id }, data: { unitCost } });
     await tx.stockMovement.create({
@@ -535,7 +540,7 @@ export async function createDeliveryChallanTx(
         companyId: ctx.company.id,
         variantId,
         warehouseId: order.warehouseId,
-        grade: "A_GRADE",
+        grade: item.grade,
         type: "SALE_OUT",
         quantity: -quantity,
         unitCost,

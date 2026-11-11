@@ -168,7 +168,9 @@ export function StoreScreen({ page }: { page: StorePage }) {
         </p>
         <dl className="mt-4 grid gap-4 sm:grid-cols-2">
           <Fact label="A-grade price">{store.aRuleText}</Fact>
-          <Fact label="B-grade price">The product&apos;s B-grade price, else the A-grade price</Fact>
+          <Fact label="B-grade price">
+            The product&apos;s B-grade price, else the A-grade price
+          </Fact>
         </dl>
       </Panel>
 
@@ -209,7 +211,12 @@ export function StoreScreen({ page }: { page: StorePage }) {
                       {h.costNow !== null &&
                         ` · Cost then ${currency} ${h.costWhenSet}, now ${currency} ${h.costNow}`}
                     </p>
-                    {h.costChanged && (
+                    {h.grade === "B" && (
+                      <p className="mt-1 text-muted-foreground">
+                        Not used: a B-grade piece takes the product&apos;s B-grade price.
+                      </p>
+                    )}
+                    {h.costChanged && h.grade !== "B" && (
                       <p className="mt-1 flex items-start gap-1.5 text-destructive">
                         <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
                         Cost changed: look at this price

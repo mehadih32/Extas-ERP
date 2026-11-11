@@ -26,7 +26,9 @@ import {
 
 /*
  * What the shop reads (CN-005): the catalog of SKUs with their prices, and
- * the A-grade (sellable) stock per SKU per warehouse. Both lists page by a
+ * the A-grade (sellable) stock per SKU per warehouse. A retail store's shop
+ * also gets each SKU's B-grade listing (grade "B", its own shop price) while
+ * the SKU has B-grade stock, and B-grade stock rows. Both lists page by a
  * cursor that names the last row given (in id order, so a page never repeats
  * or skips a row while others change), and take `updatedSince` so the shop
  * can poll for changes when a webhook was missed.
@@ -105,6 +107,7 @@ export function catalogVariantOf(v: VariantRow): CatalogVariant {
 export function storeCatalogVariantOf(
   v: VariantRow,
   price: Prisma.Decimal | number,
+  grade: StoreCatalogVariant["grade"] = "A",
 ): StoreCatalogVariant {
   const updatedAt = v.updatedAt > v.style.updatedAt ? v.updatedAt : v.style.updatedAt;
   return {
@@ -114,7 +117,7 @@ export function storeCatalogVariantOf(
     styleName: v.style.name,
     color: v.color.name,
     size: v.size.name,
-    grade: "A",
+    grade,
     shopPrice: amount(price),
     active: variantActive(v),
     updatedAt: updatedAt.toISOString(),
@@ -144,11 +147,26 @@ export async function listCatalogVariants(
   return pageOf(rows, q.limit, catalogVariantOf);
 }
 
+/** The SKUs (of these) with B-grade pieces on hand in any warehouse: they have a B-grade listing. */
+export async function withBGradeStock(companyId: string, variantIds: string[]) {
+  if (variantIds.length === 0) return new Set<string>();
+  // Read straight from the company's own rows (also for the webhooks, which have no user).
+  const rows = await prisma.stockBalance.groupBy({
+    by: ["variantId"],
+    where: { companyId, variantId: { in: variantIds }, grade: "B_GRADE" },
+    _sum: { quantity: true },
+  });
+  return new Set(rows.filter((r) => (r._sum.quantity ?? 0) > 0).map((r) => r.variantId));
+}
+
 /**
  * GET /catalog/variants for a retail store's shop (plan v6 sec 2): each SKU
  * with only the store's own price, never the ERP's cost or price list. A SKU
- * with no shop price is left out. `updatedSince` also finds SKUs whose price
- * changed: a hand price on them, or the store's rules (then every SKU).
+ * with no shop price is left out. A SKU with B-grade stock also comes as a
+ * B-grade row (grade "B", the style's B-grade price, else the A price) right
+ * after its A row; a page holds `limit` SKUs. `updatedSince` also finds SKUs
+ * whose price changed (a hand price on them, or the store's rules: then every
+ * SKU) and SKUs whose B-grade stock changed.
  */
 export async function listStoreCatalog(
   ctx: CompanyContext,
@@ -169,6 +187,7 @@ export async function listStoreCatalog(
               { updatedAt: { gt: since } },
               { style: { updatedAt: { gt: since } } },
               { style: { retailPrices: { some: priced } } },
+              { stockBalances: { some: { grade: "B_GRADE", updatedAt: { gt: since } } } },
             ],
           }
         : {}),
@@ -187,9 +206,18 @@ export async function listStoreCatalog(
     kept.map((v) => v.id),
     "A",
   );
+  const graded = await withBGradeStock(
+    ctx.company.id,
+    kept.map((v) => v.id),
+  );
+  const bPrices = await storePrices(ctx, store.id, [...graded], "B");
   const data = kept.flatMap((v): StoreCatalogVariant[] => {
     const price = prices.get(v.id);
-    return price ? [storeCatalogVariantOf(v, price)] : [];
+    const bPrice = graded.has(v.id) ? bPrices.get(v.id) : null;
+    return [
+      ...(price ? [storeCatalogVariantOf(v, price)] : []),
+      ...(bPrice ? [storeCatalogVariantOf(v, bPrice, "B")] : []),
+    ];
   });
   return { data, nextCursor: more ? encodeCursor(kept[kept.length - 1]!.id) : null };
 }
@@ -253,6 +281,7 @@ type BalanceRow = Prisma.StockBalanceGetPayload<{ include: typeof balanceInclude
 export function stockRowOf(b: BalanceRow): StockRow {
   return {
     sku: b.variant.sku,
+    grade: b.grade === "B_GRADE" ? "B" : "A",
     warehouseId: b.warehouse.id,
     warehouseName: b.warehouse.name,
     onHand: b.quantity,
@@ -262,10 +291,14 @@ export function stockRowOf(b: BalanceRow): StockRow {
   };
 }
 
-/** GET /stock: A-grade stock per SKU per warehouse (warehouses not deleted). */
+/**
+ * GET /stock: A-grade stock per SKU per warehouse (warehouses not deleted),
+ * and B-grade stock too for a retail store's shop (`bGrade`).
+ */
 export async function listStock(
   ctx: CompanyContext,
   query: URLSearchParams,
+  options: { bGrade?: boolean } = {},
 ): Promise<Page<StockRow>> {
   const q = stockQuerySchema.parse(fieldsOf(query));
   const after = decodeCursor(q.cursor);
@@ -280,7 +313,7 @@ export async function listStock(
   }
   const rows = await ctx.db.stockBalance.findMany({
     where: {
-      grade: "A_GRADE",
+      ...(options.bGrade ? {} : { grade: "A_GRADE" }),
       warehouse: { deletedAt: null },
       ...(q.warehouseId ? { warehouseId: q.warehouseId } : {}),
       ...(q.updatedSince ? { updatedAt: { gt: new Date(q.updatedSince) } } : {}),
@@ -295,7 +328,8 @@ export async function listStock(
 
 /**
  * GET /stock/{sku}: live stock of one SKU, for the checkout's last check. The
- * top `available` is the shop's own warehouse's (0 when it holds none).
+ * top `available` is the shop's own warehouse's A-grade (0 when it holds
+ * none). A retail store's shop gets the B-grade rows too.
  */
 export async function stockOfSku(call: Pick<ShopCall, "ctx" | "integration">, rawSku: string) {
   const sku = skuSchema.parse(rawSku);
@@ -310,17 +344,26 @@ export async function stockOfSku(call: Pick<ShopCall, "ctx" | "integration">, ra
     },
   });
   if (!variant) throw new EcommerceApiError(404, "NOT_FOUND", `There is no SKU ${sku} in the ERP.`);
+  const store = await call.ctx.db.retailStore.findFirst({
+    where: { integrationId: call.integration.id },
+    select: { id: true },
+  });
   const balances = await call.ctx.db.stockBalance.findMany({
-    where: { variantId: variant.id, grade: "A_GRADE", warehouse: { deletedAt: null } },
+    where: {
+      variantId: variant.id,
+      ...(store ? {} : { grade: "A_GRADE" }),
+      warehouse: { deletedAt: null },
+    },
     include: balanceInclude,
-    orderBy: [{ warehouse: { name: "asc" } }, { id: "asc" }],
+    orderBy: [{ warehouse: { name: "asc" } }, { grade: "asc" }, { id: "asc" }],
   });
   const warehouses = balances.map(stockRowOf);
   return {
     sku: variant.sku,
     active: variantActive(variant),
     available:
-      warehouses.find((w) => w.warehouseId === call.integration.warehouseId)?.available ?? 0,
+      warehouses.find((w) => w.warehouseId === call.integration.warehouseId && w.grade === "A")
+        ?.available ?? 0,
     warehouses,
   };
 }

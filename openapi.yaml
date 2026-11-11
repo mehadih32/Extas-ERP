@@ -99,6 +99,8 @@ paths:
         Every variant of the company, inactive ones too (`active: false`). Page through with `cursor`
         until `nextCursor` is null. With `updatedSince` only the variants (or their styles) changed after
         that time come back: poll it every few minutes as the fallback for `variant.changed`.
+        A retail store's shop gets its own rows (`grade`, `shopPrice`): an A row per SKU, and a B row
+        while the SKU has B-grade stock and a price (the style's B-grade price, else the A shopPrice).
       operationId: listVariants
       parameters:
         - $ref: "#/components/parameters/UpdatedSince"
@@ -155,10 +157,11 @@ paths:
   /stock:
     get:
       tags: [Stock]
-      summary: Sellable (A-grade) stock per SKU per warehouse
+      summary: Sellable stock per SKU per warehouse (A-grade; B-grade too for a retail store)
       description: |
         One row per SKU per warehouse that has a stock record. Reservations for confirmed orders change
-        `reserved` and `updatedAt`, so `updatedSince` catches them too.
+        `reserved` and `updatedAt`, so `updatedSince` catches them too. Every row carries `grade`: A for
+        every shop; a retail store's shop also gets B rows (B-grade stock, the only stock its B lines take).
       operationId: listStock
       parameters:
         - $ref: "#/components/parameters/UpdatedSince"
@@ -2148,9 +2151,15 @@ components:
         updatedAt: { type: string, format: date-time }
     StockRow:
       type: object
-      required: [sku, warehouseId, warehouseName, onHand, reserved, available, updatedAt]
+      required: [sku, grade, warehouseId, warehouseName, onHand, reserved, available, updatedAt]
       properties:
         sku: { type: string }
+        grade:
+          type: string
+          enum: [A, B]
+          description: |
+            A: sellable stock. B: B-grade stock, sent only to a retail store's shop; its stock.changed
+            events go by the key "<sku>:B", so they never replace the SKU's A row.
         warehouseId: { type: string }
         warehouseName: { type: string }
         onHand: { type: integer }
@@ -2173,7 +2182,13 @@ components:
           allOf: [{ $ref: "#/components/schemas/Money" }]
           description: A retail store's customer price per piece (its own figure).
         comboId: { type: string, maxLength: 60 }
-        grade: { type: string, enum: [A, B], description: "A retail store's line; A by default." }
+        grade:
+          type: string
+          enum: [A, B]
+          description: |
+            A retail store's line; A by default. A B line takes B-grade stock and costs the store the
+            style's B-grade price, else its A-grade price. One SKU is on one order in one grade only:
+            both grades of a SKU answer 422.
         replacesLineId:
           type: string
           maxLength: 60

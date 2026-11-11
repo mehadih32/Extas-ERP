@@ -16,6 +16,7 @@ import { assertAllowed } from "@/lib/verdict";
 import type { CompanyContext } from "@/modules/auth/context";
 import { canSeeFinancials } from "@/modules/dashboard/access";
 import { listSizes } from "@/modules/inventory/catalog.service";
+import { gradeCost } from "@/modules/inventory/costs";
 import { getStyleMatrix } from "@/modules/inventory/matrix.service";
 import { listCategoryOptions } from "@/modules/inventory/screens.service";
 import { listWarehouses } from "@/modules/inventory/stock.service";
@@ -798,6 +799,7 @@ async function variantFacts(ctx: CompanyContext, variantIds: string[]) {
     select: {
       id: true,
       avgCost: true,
+      bGradeAvgCost: true,
       color: { select: { sortOrder: true } },
       size: { select: { sortOrder: true } },
     },
@@ -878,7 +880,9 @@ function orderCosts(
   let cost = money(0);
   let estimated = false;
   for (const item of order.items) {
-    const unit = item.unitCost ?? facts.get(item.variantId)?.avgCost ?? null;
+    const fact = facts.get(item.variantId);
+    // Not delivered yet: today's average of the grade it takes (a retail store's B line: B-grade).
+    const unit = item.unitCost ?? (fact ? gradeCost(fact, item.grade) : null);
     if (item.unitCost === null) estimated = true;
     if (unit) cost = cost.plus(unit.times(item.quantity));
   }

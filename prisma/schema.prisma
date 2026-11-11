@@ -1682,16 +1682,19 @@ model SalesOrder {
 /// One SKU line. Matrix entry creates one line per non-empty color/size cell.
 /// `forceOverride` records when quantity exceeded available stock.
 model SalesOrderItem {
-  id              String    @id @default(cuid())
+  id              String     @id @default(cuid())
   orderId         String
   variantId       String
   quantity        Int
-  unitPrice       Decimal   @db.Decimal(14, 2)
-  discount        Decimal   @default(0) @db.Decimal(14, 2)
-  lineTotal       Decimal   @db.Decimal(14, 2)
-  unitCost        Decimal?  @db.Decimal(14, 4) // COGS snapshot at sale
+  unitPrice       Decimal    @db.Decimal(14, 2)
+  discount        Decimal    @default(0) @db.Decimal(14, 2)
+  lineTotal       Decimal    @db.Decimal(14, 2)
+  unitCost        Decimal?   @db.Decimal(14, 4) // COGS snapshot at sale
+  /// Which stock the pieces come from: A_GRADE (every wholesale line) or, for a
+  /// shop's B-grade line, the factory's B-grade stock at its own cost.
+  grade           StockGrade @default(A_GRADE)
   availableAtSale Int? // stock seen when the line was saved
-  forceOverride   Boolean   @default(false)
+  forceOverride   Boolean    @default(false)
   overrideById    String?
   overrideReason  String?
   overrideAt      DateTime?

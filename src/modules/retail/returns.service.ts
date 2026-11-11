@@ -597,7 +597,10 @@ export async function checkParcel(
   });
 }
 
-/** One sales return per SKU approved, on the order's invoice, at the price the store paid. */
+/**
+ * One sales return per SKU approved, on the order's invoice, at the price the
+ * store paid: A-grade pieces back into main stock, B-grade ones into B-grade stock.
+ */
 async function creditApproved(
   ctx: CompanyContext,
   parcel: ParcelRow,
@@ -617,7 +620,9 @@ async function creditApproved(
   const items = [...byVariant].map(([variantId, ids]) => {
     const item = order.items.find((i) => i.variantId === variantId);
     if (!item) throw new AppError("CONFLICT", "A piece is not on the order's invoice.");
-    return { orderItemId: item.id, quantity: ids.length, qc: "GOOD" as const };
+    // A B-grade line's piece goes back into B-grade stock, at the B-grade cost it left at.
+    const qc = item.grade === "B_GRADE" ? ("B_GRADE" as const) : ("GOOD" as const);
+    return { orderItemId: item.id, quantity: ids.length, qc };
   });
   const credit = await createSalesReturn(
     ctx,

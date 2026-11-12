@@ -2053,7 +2053,9 @@ export const salesHelp: HelpSection = {
         "এক্সচেঞ্জে দাম বেশি হলে নতুন ইনভয়েসের বাকিটা বায়ারের বকেয়া, কম হলে বাকি জমা বায়ারের হিসাবে থাকে।",
         "ক্রেডিট নোটের লিংক “Steps”-এ: সেখান থেকে PDF ছেপে বায়ারকে দিন।",
       ],
-      shot: { route: "/sales/wholesale-returns/[returnId]", target: "Lines" },
+      shot: {
+        none: "The demo data has no wholesale returns yet, so there is no return's page to show.",
+      },
     },
     {
       slug: "sales-quotation",

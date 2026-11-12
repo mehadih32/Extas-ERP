@@ -66,6 +66,7 @@ const NO_PICTURE = [
   "install-app",
   "location-lock",
   "my-hr-phone-app",
+  "sales-wholesale-return-approve",
 ];
 
 /** The longest What given as one text; a longer one is written as points. */

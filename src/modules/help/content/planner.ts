@@ -725,7 +725,7 @@ export const plannerHelp: HelpSection = {
         },
         {
           label: "Who hears about it",
-          text: "টিক বাক্স: বিষয় অনুযায়ী দায়িত্বে থাকা মানুষ (যেমন যাঁরা প্রোডাকশন সামলান) আর রেকর্ডের নিজের মানুষ (যেমন যিনি অর্ডার দিয়েছেন, বা কাজের কর্মী)। বিষয় অনুযায়ী দায়িত্বের টিকের নাম: “People who manage production” (প্রোডাকশনের সময়সীমা), “People who buy materials” (মাল ইন-হাউস), “People who take sales orders” (শিপমেন্ট), “People who see the licences” (লাইসেন্স ও নিবন্ধন নবায়ন), “People who make quotations, and the owner” (কোটেশনের মেয়াদ), “People who take orders or record money received, and the owner” (ইনভয়েসের টাকা ও ক্রেতার কথা দেওয়া দিন) বা “The owner” (ফলো-আপ)। মালিক মানে যিনি কোম্পানির দায়িত্বে (শুরুতে Super Admin)।",
+          text: "টিক বাক্স: বিষয় অনুযায়ী দায়িত্বে থাকা মানুষ (যেমন যাঁরা প্রোডাকশন সামলান) আর রেকর্ডের নিজের মানুষ (যেমন যিনি অর্ডার দিয়েছেন, বা কাজের কর্মী)। বিষয় অনুযায়ী দায়িত্বের টিকের নাম: “People who manage production” (প্রোডাকশনের সময়সীমা), “People who buy materials” (মাল ইন-হাউস), “People who take sales orders” (শিপমেন্ট), “People who see the licences” (লাইসেন্স ও নিবন্ধন নবায়ন), “People who make quotations, and the owner” (কোটেশনের মেয়াদ), “People who take orders or record money received, and the owner” (ইনভয়েসের টাকা ও ক্রেতার কথা দেওয়া দিন), “The owner” (ফলো-আপ) বা “People who see every lead” (লিডের পরের কাজ, “Lead follow-ups”; লিডের নিজের মানুষ সবসময় পান)। মালিক মানে যিনি কোম্পানির দায়িত্বে (শুরুতে Super Admin)।",
         },
         {
           label: "Also tell (optional)",

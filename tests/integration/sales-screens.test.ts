@@ -288,10 +288,12 @@ run("Sales screens", () => {
       const inMenu = visibleNavItems([...ctx.permissions]).some((i) => i.href === "/sales");
       expect(inMenu, who).toBe(view);
       const tabs = visibleSalesTabs(ctx.permissions).map((t) => t.href);
+      const leadsTab = ctx.can("leads.view") || ctx.can("leads.all") ? ["/sales/leads"] : [];
       expect(tabs, who).toEqual(
         view
           ? [
               "/sales/overview",
+              ...leadsTab,
               "/sales/orders",
               "/sales/quotations",
               "/sales/proformas",

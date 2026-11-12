@@ -1,5 +1,7 @@
 import type { HelpSection } from "../types";
 
+import { leadsHelpArticles } from "./sales-leads";
+
 /** Sales: orders, quotations, proforma invoices, invoices, payments, refunds and returns. */
 export const salesHelp: HelpSection = {
   id: "sales",
@@ -178,6 +180,10 @@ export const salesHelp: HelpSection = {
           text: "পাতা বা তালিকা লোড না হলে লাল ঘরে এই বোতাম আসে। চাপলে আবার লোড করে। বারবার ব্যর্থ হলে ইন্টারনেট দেখুন, তারপর বার্তায় লেখা ভুলের নম্বরটি Super Admin-কে জানান।",
         },
         { label: "Overview", text: "Sales-এর প্রথম ট্যাব: এই পাতা খোলে।" },
+        {
+          label: "Leads",
+          text: "Sales-এর দ্বিতীয় ট্যাব: যাঁরা এখনো ক্রেতা হননি তাঁদের (লিড) তালিকা খোলে। শুধু যাঁরা লিড দেখতে পারেন তাঁরা পান।",
+        },
         {
           label: "Update the figures now",
           text: "“Updated” সময়ের পাশের ঘোরানো তীর: পাতা না ছেড়েই সংখ্যাগুলো আবার আনে।",
@@ -3615,5 +3621,6 @@ export const salesHelp: HelpSection = {
         "টাকা রেকর্ড না করে শুধু ছবি তুলে রাখলে তা পরদিন নিজে থেকেই মুছে যায়।",
       ],
     },
+    ...leadsHelpArticles,
   ],
 };

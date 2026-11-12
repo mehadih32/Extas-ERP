@@ -53,6 +53,12 @@ export async function reminderTick(now: Date = new Date()) {
       const { runOrderFollowUps } = await import("@/modules/ai/orders/order-run.service");
       await runOrderFollowUps(now).catch((error) => console.error("[orders] run failed", error));
     }
+    // Every order's T&A: steps ticked from the ERP's records and each late step
+    // told once, checked once an hour, with the AI on or off (ta/ta.service.ts).
+    if (now.getUTCMinutes() === 10) {
+      const { runTaClock } = await import("@/modules/ta/ta.service");
+      await runTaClock(now).catch((error) => console.error("[ta] run failed", error));
+    }
     // The Full check: checks that never reported end, and Claude Code's fixes are
     // followed on GitHub, every two minutes (ai/full-check/full-check.service.ts).
     if (now.getUTCMinutes() % 2 === 0) {

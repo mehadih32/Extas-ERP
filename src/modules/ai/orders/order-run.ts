@@ -1,7 +1,8 @@
 import type { AiOrderRunStatus } from "@prisma/client";
 
-import { addDays, daysBetween } from "@/lib/dates";
+import { daysBetween } from "@/lib/dates";
 import { CHECK_RULES, type CheckSignal } from "@/modules/costing/order-check";
+import { DEFAULT_TA_STEPS, stepDay, type TaTemplateLike } from "@/modules/ta/ta-rules";
 
 /*
  * Order automation, the parts with no database: the form a new order is read
@@ -209,31 +210,41 @@ export const TA_LABELS: Record<TaKey, string> = {
   ship: "Ship",
 };
 
+/** Which step of the company's T&A template each of these dates is (ta/ta-rules.ts). */
+export const TA_TEMPLATE_KEYS: Record<TaKey, string> = {
+  techPack: "TECH_PACK",
+  booking: "FABRIC_BOOKING",
+  cutting: "CUTTING",
+  packed: "PACKING",
+  ship: "SHIP",
+};
+
+/** A company's T&A template, as the AI order runs read it. */
+export type TaTemplateDays = readonly Pick<TaTemplateLike, "key" | "daysBeforeShip">[];
+
 /**
- * The T&A dates back from the ship date: packed a week before it, making
- * before that, the fabric before the making, the tech pack before the booking.
+ * The T&A dates back from the ship date, from the company's T&A template (the
+ * same days every order's T&A calendar uses); a step the template no longer has
+ * keeps the starting template's days. With the starting template: packed a week
+ * before the ship date, cutting 25 days before that, the fabric booked 30 days
+ * before cutting and the tech pack approved 2 days before the booking.
  */
-export function taDates(
-  shipDate: string,
-  days: { fabricDays?: number | null; makingDays?: number | null } = {},
-): TaDate[] {
-  const fabric = days.fabricDays ?? CHECK_RULES.fabricDays;
-  const making = days.makingDays ?? CHECK_RULES.makingDays;
-  const packed = addDays(shipDate, -CHECK_RULES.shippingDays);
-  const cutting = addDays(packed, -making);
-  const booking = addDays(cutting, -fabric);
-  const techPack = addDays(booking, -2);
-  const at: Record<TaKey, string> = { techPack, booking, cutting, packed, ship: shipDate };
-  return (Object.keys(TA_LABELS) as TaKey[]).map((key) => ({
-    key,
-    label: TA_LABELS[key],
-    by: at[key],
-  }));
+export function taDates(shipDate: string, template: TaTemplateDays = DEFAULT_TA_STEPS): TaDate[] {
+  return (Object.keys(TA_LABELS) as TaKey[]).map((key) => {
+    const want = TA_TEMPLATE_KEYS[key];
+    const step =
+      template.find((s) => s.key === want) ?? DEFAULT_TA_STEPS.find((s) => s.key === want)!;
+    return { key, label: TA_LABELS[key], by: stepDay(shipDate, step.daysBeforeShip) };
+  });
 }
 
-export function judgeDates(f: OrderFields, today: string): IntakeCheck {
+export function judgeDates(
+  f: OrderFields,
+  today: string,
+  template: TaTemplateDays = DEFAULT_TA_STEPS,
+): IntakeCheck {
   if (!f.shipDate) return check("dates", "yellow", "No ship date yet.");
-  const ta = taDates(f.shipDate);
+  const ta = taDates(f.shipDate, template);
   const techPack = ta.find((d) => d.key === "techPack")!.by;
   const left = daysBetween(today, techPack);
   if (daysBetween(today, f.shipDate) < 0) return check("dates", "red", "The ship date has passed.");
@@ -310,12 +321,14 @@ export function intakeChecks(
     rules: readonly string[];
     buyerFound: boolean;
     styles: readonly string[];
+    /** The company's T&A template (the starting one when not given). */
+    template?: TaTemplateDays;
   },
 ): IntakeCheck[] {
   return [
     judgeTotals(f),
     judgeSizes(f.lines),
-    judgeDates(f, input.today),
+    judgeDates(f, input.today, input.template),
     judgeRules(f.buyer, input.rules),
     judgeMatch(f, { buyerFound: input.buyerFound, styles: input.styles }),
   ];
@@ -404,8 +417,10 @@ export function stepsFor(input: {
   shipDate: string | null;
   done: Partial<Record<StepKey, boolean>>;
   hrefs: Partial<Record<StepKey, string | null>>;
+  /** The company's T&A template (the starting one when not given). */
+  template?: TaTemplateDays;
 }): Step[] {
-  const ta = input.shipDate ? taDates(input.shipDate) : [];
+  const ta = input.shipDate ? taDates(input.shipDate, input.template) : [];
   return STEP_KEYS.map((key) => {
     const text = STEP_TEXT[key];
     const by = text.ta ? (ta.find((d) => d.key === text.ta)?.by ?? null) : null;

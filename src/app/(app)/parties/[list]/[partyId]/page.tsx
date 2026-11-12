@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { SectionError } from "@/components/dashboard/section-error";
 import { PrintDocumentButton } from "@/components/documents/print-button";
 import { FormAlert } from "@/components/forms/field";
+import { LeadOrigin } from "@/components/leads/lead-origin";
 import { GradeBadge, StatusBadge, VerifiedBadge } from "@/components/parties/badges";
 import { BuyerFigures, BuyerHistoryPanels, BuyerTopStyles } from "@/components/parties/buyer-360";
 import { accountsHref } from "@/components/accounts/labels";
@@ -41,6 +42,7 @@ import {
   getPartyScreenAction,
   getSupplier360Action,
 } from "@/server/actions/parties.actions";
+import { getLeadOfBuyerAction } from "@/server/actions/leads.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Buyer or supplier" };
@@ -325,10 +327,13 @@ export default async function PartyPage({
   const openList = supplierListFrom(one(query.show));
   // Customer 360°: buyers (and accounts that are both), seen from the buyers' list;
   // Supplier 360°: suppliers (and accounts that are both), seen from the suppliers' list.
-  const [buyer, supplier] = await Promise.all([
+  const [buyer, supplier, origin] = await Promise.all([
     name === "buyers" ? getBuyer360Action(party.id, { all: open }) : null,
     name !== "buyers" ? getSupplier360Action(party.id, { all: openList }) : null,
+    name === "buyers" ? getLeadOfBuyerAction(party.id) : null,
   ]);
+  // The lead it came from, with the lead's history (for people who see that lead).
+  const fromLead = origin?.ok ? origin.data : null;
   const buyer360 = buyer?.ok ? buyer.data : null;
   const supplier360 = supplier?.ok ? supplier.data : null;
   const categories =
@@ -503,6 +508,7 @@ export default async function PartyPage({
           basePath={partyHref(party)}
         />
       )}
+      {fromLead && <LeadOrigin origin={fromLead} />}
       {supplier360 && (
         <SupplierPanels
           data={supplier360}

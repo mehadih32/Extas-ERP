@@ -27,6 +27,10 @@ export const CHECK_NEVER_ROUTES: ReadonlyArray<{ route: string; why: string }> =
     why: "The one-time Fresh start card: reading it settles a run no job holds, so it writes.",
   },
   {
+    route: "/api/sales/leads/export",
+    why: "The lead list with people's emails and phones: it leaves only with the owner, never in a check.",
+  },
+  {
     route: "/api/v1/ecommerce/health",
     why: "The online shops' API: it answers only a shop's own API key, never a session.",
   },

@@ -1,0 +1,153 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  cleanCompanyName,
+  companyDomain,
+  keysOf,
+  leadCheck,
+  leadNumber,
+  matchDuplicates,
+  suppressionHash,
+  suppressionValue,
+  websiteDomain,
+} from "@/modules/leads/rules";
+
+/*
+ * Leads phase 1: the plain rules behind the duplicate warning, "Do not
+ * contact" and the lead check card (no database).
+ */
+
+describe("Lead duplicates", () => {
+  it("reads websites and company emails the same way, and ignores free mail", () => {
+    expect(websiteDomain("https://WWW.Nordic-Wear.com/about")).toBe("nordic-wear.com");
+    expect(companyDomain("anna@nordic-wear.com")).toBe("nordic-wear.com");
+    expect(companyDomain("anna@gmail.com")).toBeNull();
+    expect(cleanCompanyName("Nordic Wear GmbH")).toBe(cleanCompanyName("nordic wear"));
+  });
+
+  it("on shared sites (Facebook, LinkedIn, Alibaba, Amazon, wa.me) compares the company's own page", () => {
+    expect(websiteDomain("https://www.facebook.com/nordicwear")).toBe("facebook.com/nordicwear");
+    expect(websiteDomain("m.facebook.com/NordicWear/about")).toBe("facebook.com/nordicwear");
+    expect(websiteDomain("https://www.facebook.com/balticbasics")).not.toBe(
+      websiteDomain("https://www.facebook.com/nordicwear"),
+    );
+    expect(websiteDomain("https://facebook.com/profile.php?id=123")).toBe(
+      "facebook.com/profile.php?id=123",
+    );
+    expect(websiteDomain("https://www.linkedin.com/company/nordic-wear/")).toBe(
+      "linkedin.com/company/nordic-wear",
+    );
+    expect(websiteDomain("linkedin.com/company/baltic")).not.toBe(
+      websiteDomain("linkedin.com/company/nordic-wear"),
+    );
+    expect(websiteDomain("https://nordicwear.en.alibaba.com/")).toBeNull();
+    expect(websiteDomain("https://www.alibaba.com/")).toBeNull();
+    expect(websiteDomain("https://www.amazon.de/stores/NordicWear/page/1")).toBe(
+      "amazon.de/stores/nordicwear",
+    );
+    expect(websiteDomain("https://wa.me/46701234567")).toBe("wa.me/46701234567");
+    expect(websiteDomain("https://www.etsy.com/shop/NordicWear")).toBe("etsy.com/shop/nordicwear");
+    // The company's own site stays the host alone.
+    expect(websiteDomain("https://shop.nordic-wear.com/x")).toBe("shop.nordic-wear.com");
+
+    const fb = (page: string) => keysOf({ name: page, website: `facebook.com/${page}` });
+    expect(
+      matchDuplicates(fb("aaa"), [{ ...fb("bbb"), id: "b", kind: "LEAD", label: "B" }]),
+    ).toEqual([]);
+    expect(
+      matchDuplicates(fb("aaa"), [{ ...fb("aaa"), id: "a", kind: "LEAD", label: "A" }])[0],
+    ).toMatchObject({ id: "a", strong: true });
+  });
+
+  it("calls the same email or website a strong match, a similar name a weak one", () => {
+    const lead = keysOf({
+      name: "Nordic Wear",
+      website: "nordic-wear.com",
+      emails: ["Anna@Nordic-Wear.com"],
+    });
+    const same = keysOf({
+      name: "Something else",
+      website: null,
+      emails: ["anna@nordic-wear.com"],
+    });
+    const similar = keysOf({ name: "Nordic Wear Ltd", website: null });
+    const other = keysOf({ name: "Dhaka Polo House", website: null });
+    const found = matchDuplicates(lead, [
+      { ...same, id: "a", label: "LD-0001", kind: "LEAD" },
+      { ...similar, id: "b", label: "Nordic Wear Ltd", kind: "BUYER" },
+      { ...other, id: "c", label: "LD-0002", kind: "LEAD" },
+    ]);
+    expect(found.map((m) => [m.id, m.strong])).toEqual([
+      ["a", true],
+      ["b", false],
+    ]);
+  });
+});
+
+describe("Do not contact", () => {
+  it("keeps only a per-company code of the email, never the email itself", () => {
+    const value = suppressionValue("EMAIL", " Anna@Nordic-Wear.com ")!;
+    expect(value).toBe("anna@nordic-wear.com");
+    const one = suppressionHash("company-1", value);
+    expect(one).not.toContain("anna");
+    expect(suppressionHash("company-2", value)).not.toBe(one);
+  });
+});
+
+describe("Lead check card", () => {
+  const rules = {
+    productFocus: ["Polo", "T-shirt"],
+    minPieces: 1000,
+    priceMin: 300,
+    priceMax: 900,
+    targetCountries: ["Germany"],
+    riskyCountries: ["Nowhereland"],
+  };
+  const base = {
+    products: ["Polo"],
+    piecesPerStyle: 1500,
+    targetPrice: 450,
+    country: "Germany",
+    paymentTerms: "TT" as const,
+    contacts: [
+      { isDecisionMaker: true, email: "a@b.com", phone: null, whatsapp: null, erased: false },
+    ],
+  };
+
+  it("shows five checks, all green for a lead that fits", () => {
+    const card = leadCheck(base, rules, "BDT");
+    expect(card.map((c) => c.key)).toEqual(["products", "quantity", "price", "risk", "decider"]);
+    expect(card.every((c) => c.colour === "green")).toBe(true);
+    expect(card.every((c) => c.reason.length > 0)).toBe(true);
+  });
+
+  it("turns red for the wrong product, far too few pieces, a low price or a risky country", () => {
+    const card = leadCheck(
+      {
+        ...base,
+        products: ["Denim jacket"],
+        piecesPerStyle: 200,
+        targetPrice: 100,
+        country: "Nowhereland",
+      },
+      rules,
+      "BDT",
+    );
+    const colour = Object.fromEntries(card.map((c) => [c.key, c.colour]));
+    expect(colour).toMatchObject({ products: "red", quantity: "red", price: "red", risk: "red" });
+  });
+
+  it("is yellow, not red, while something is simply not known yet", () => {
+    const card = leadCheck(
+      { ...base, products: [], piecesPerStyle: null, targetPrice: null, contacts: [] },
+      rules,
+      "BDT",
+    );
+    const colour = Object.fromEntries(card.map((c) => [c.key, c.colour]));
+    expect(colour).toMatchObject({ products: "yellow", quantity: "yellow", price: "yellow" });
+  });
+
+  it("numbers leads LD-0001", () => {
+    expect(leadNumber(1)).toBe("LD-0001");
+  });
+});

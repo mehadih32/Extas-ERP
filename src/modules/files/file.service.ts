@@ -247,11 +247,17 @@ export async function getFileForDownload(ctx: CompanyContext, fileId: string) {
       logoMachineFiles: { select: { id: true }, take: 1 },
       logoSewOuts: { select: { id: true }, take: 1 },
       labDipReports: { select: { id: true }, take: 1 },
+      leadFiles: { select: { lead: { select: { ownerUserId: true } } }, take: 1 },
     },
   });
   if (!asset) throw new AppError("NOT_FOUND", "File not found.");
+  const leadOwner = asset.leadFiles[0]?.lead.ownerUserId;
   const allowed =
     asset.uploadedById === ctx.user.id ||
+    // A file kept on a lead: whoever sees that lead (every lead, or their own and unassigned ones).
+    (asset.leadFiles.length > 0 &&
+      (ctx.can("leads.all") ||
+        (ctx.can("leads.view") && (leadOwner === null || leadOwner === ctx.user.id)))) ||
     (asset.stockIntakes.length > 0 &&
       (ctx.can("production.view") || ctx.can("production.stock_intake"))) ||
     (asset.supplierBills.length > 0 &&

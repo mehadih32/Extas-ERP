@@ -11,6 +11,7 @@ import { stockWindow } from "@/modules/dashboard/insights.service";
 import { lowStock } from "@/modules/dashboard/stock-figures";
 import { whatsappLink } from "@/modules/parties/contact";
 import { wholesaleReturnsWaiting } from "@/modules/sales/wholesale-return.service";
+import { leadFollowUps } from "@/modules/leads/lead.service";
 
 /*
  * The Home screen's Action Zone: what needs someone now, each with the one
@@ -60,6 +61,8 @@ export function actionZoneAccess(ctx: Pick<CompanyContext, "can">) {
     wholesaleReturns: ctx.can("sales.returns.approve") || ctx.can("sales.returns.qc"),
     /** Loan installments and a person's profit dates: those who see the business's money and Accounts. */
     installments: canSeeFinancials(ctx) && ctx.can("accounts.view"),
+    /** Lead follow-ups due today or late: whoever sees leads (their own and unassigned, or all). */
+    leads: ctx.can("leads.view") || ctx.can("leads.all"),
   };
 }
 
@@ -391,7 +394,7 @@ export async function getActionZone(ctx: CompanyContext, raw: unknown = {}, now 
   const today = localDay(now, tz);
   const period = homePeriod(range, today, tz);
   const can = actionZoneAccess(ctx);
-  const [overdue, low, returns, leave, payroll, discounts, installments, wholesaleReturns] =
+  const [overdue, low, returns, leave, payroll, discounts, installments, wholesaleReturns, leads] =
     await Promise.all([
       can.overdue ? overdueInvoices(ctx, now, today) : null,
       can.lowStock ? lowStockAlerts(ctx, now) : null,
@@ -401,6 +404,7 @@ export async function getActionZone(ctx: CompanyContext, raw: unknown = {}, now 
       can.discounts ? bigDiscounts(ctx, period) : null,
       can.installments ? installmentsComing(ctx, INSTALLMENT_DAYS, LIMIT, now) : null,
       can.wholesaleReturns ? wholesaleReturnsWaiting(ctx) : null,
+      can.leads ? leadFollowUps(ctx, now, LIMIT) : null,
     ]);
   const approvals =
     returns || leave || payroll || discounts || wholesaleReturns
@@ -417,6 +421,8 @@ export async function getActionZone(ctx: CompanyContext, raw: unknown = {}, now 
     approvals,
     /** Loan installments late or due within a week. */
     installments,
+    /** Leads whose next step is today or late (works with AI off). */
+    leads,
     /** Which pages the rows may link to. */
     open: { buyers: ctx.can("parties.view"), sales: ctx.can("sales.view") },
   };

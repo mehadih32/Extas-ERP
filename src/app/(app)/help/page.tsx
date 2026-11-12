@@ -5,7 +5,7 @@ import { HelpSearch } from "@/components/help/help-search";
 import { SectionCards } from "@/components/help/section-cards";
 import { roleLabel } from "@/components/shell/labels";
 import { localDay } from "@/lib/dates";
-import { HELP_SECTIONS, helpSearchEntries, sectionOpen, shownArticles } from "@/modules/help";
+import { HELP_SECTIONS, sectionOpen, shownArticles } from "@/modules/help";
 import { getHelpAiAction } from "@/server/actions/ai.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -53,7 +53,6 @@ export default async function HelpPage({
       </header>
       {helpAi.ok && <HelpAsk helpAi={helpAi.data} />}
       <HelpSearch
-        entries={helpSearchEntries(permissions, owner)}
         initialQuery={initialQuery}
         roleName={roleLabel(ctx.role, ctx.user.isSuperAdmin)}
         companyName={ctx.company.name}

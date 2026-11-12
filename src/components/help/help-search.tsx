@@ -116,14 +116,12 @@ function MissingFeature({
  * prompt the admin can give to Claude to build the missing feature.
  */
 export function HelpSearch({
-  entries,
   initialQuery,
   roleName,
   companyName,
   today,
   children,
 }: {
-  entries: HelpSearchEntry[];
   initialQuery: string;
   roleName: string;
   companyName: string;
@@ -134,17 +132,44 @@ export function HelpSearch({
 }) {
   const [query, setQuery] = useState(initialQuery);
   const deferred = useDeferredValue(query);
-  const results = useMemo(() => searchHelp(entries, deferred), [entries, deferred]);
+  // The guides' search text is loaded once, when someone starts to search, so the
+  // Help Center itself opens at once (it is several megabytes of Bengali text).
+  const [entries, setEntries] = useState<HelpSearchEntry[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const loading = useRef(false);
+  const loadIndex = () => {
+    if (loading.current || entries) return;
+    loading.current = true;
+    setLoadFailed(false);
+    fetch("/api/help/search", { credentials: "same-origin" })
+      .then((response) => response.json() as Promise<{ ok: boolean; data?: HelpSearchEntry[] }>)
+      .then((body) => {
+        if (!body.ok || !body.data) throw new Error("not loaded");
+        setEntries(body.data);
+      })
+      .catch(() => setLoadFailed(true))
+      .finally(() => {
+        loading.current = false;
+      });
+  };
+  const results = useMemo(() => searchHelp(entries ?? [], deferred), [entries, deferred]);
   const [askAnyway, setAskAnyway] = useState(false);
   const searching = searchWords(deferred).length > 0;
+  const ready = entries !== null;
+
+  // A search carried in the address (?q=, back from a guide) loads the index at once.
+  useEffect(() => {
+    if (searchWords(initialQuery).length > 0) loadIndex();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Words that found nothing are counted for Bug Guard (a guide may be missing).
   useEffect(() => {
-    if (!searching || results.length > 0) return;
+    if (!ready || !searching || results.length > 0) return;
     const words = deferred.trim();
     const timer = setTimeout(() => sendUsage({ kind: "HELP_MISS", subject: words }), 2500);
     return () => clearTimeout(timer);
-  }, [searching, results.length, deferred]);
+  }, [ready, searching, results.length, deferred]);
 
   // Keep ?q= in the address so a search survives going back from a guide.
   useEffect(() => {
@@ -170,9 +195,11 @@ export function HelpSearch({
             type="search"
             value={query}
             autoComplete="off"
+            onFocus={loadIndex}
             onChange={(event) => {
               setQuery(event.target.value);
               setAskAnyway(false);
+              loadIndex();
             }}
             placeholder="যেমন: ইনভয়েস, কোটেশন, বেতন, stock count"
             className="h-12 w-full rounded-lg border border-input bg-card pr-11 pl-11 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25 [&::-webkit-search-cancel-button]:hidden"
@@ -192,6 +219,17 @@ export function HelpSearch({
 
       {!searching ? (
         children
+      ) : !ready ? (
+        <div className="grid justify-items-start gap-3">
+          <p role="status" lang="bn" className="text-sm text-muted-foreground">
+            {loadFailed ? "নির্দেশিকাগুলো আনা গেল না। আবার চেষ্টা করুন।" : "খুঁজছি…"}
+          </p>
+          {loadFailed && (
+            <Button type="button" variant="outline" size="sm" onClick={loadIndex}>
+              Try again
+            </Button>
+          )}
+        </div>
       ) : (
         <div className="grid gap-4">
           <p role="status" lang="bn" className="text-sm text-muted-foreground">

@@ -246,6 +246,7 @@ model Company {
   aiPinTries             AiPinTry[]
   aiBotMessages          AiBotMessage[]
   aiOrderRuns            AiOrderRun[]
+  orderStatusLinks       OrderStatusLink[]
   aiStaffUpdates         AiStaffUpdate[]
   serverHealthRuns       ServerHealthRun[]
   bugGuardSettings       BugGuardSettings?
@@ -391,6 +392,8 @@ model User {
   aiBotLinksSet       AiBotLink[]            @relation("AiBotLinkUpdatedBy")
   aiOrderRunsMade     AiOrderRun[]           @relation("AiOrderRunCreatedBy")
   aiOrderRunsDecided  AiOrderRun[]           @relation("AiOrderRunDecidedBy")
+  orderLinksMade      OrderStatusLink[]      @relation("OrderStatusLinkMadeBy")
+  orderLinksStopped   OrderStatusLink[]      @relation("OrderStatusLinkStoppedBy")
   aiStaffUpdates      AiStaffUpdate[]        @relation("AiStaffUpdateBy")
   serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
   bugGuardEvents      BugGuardEvent[]        @relation("BugGuardEventBy")
@@ -1671,6 +1674,8 @@ model SalesOrder {
   productionProjects ProductionProject[]
   costings           OrderCosting[]
   aiOrderRuns        AiOrderRun[]
+  /// Read-only links to its progress for the buyer ("Share order status").
+  statusLinks        OrderStatusLink[]
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
@@ -1706,6 +1711,33 @@ model SalesOrderItem {
 
   @@index([orderId])
   @@index([variantId])
+}
+
+/// A read-only link to one order's progress for its buyer ("Share order status"): the
+/// buyer opens /order-status/<token> without signing in and sees only the styles, the
+/// pieces, the cutting, sewing, finishing and packing progress and the ship dates, never
+/// a price, a cost or a supplier. Only the token's SHA-256 hash is kept (the link is shown
+/// once); it may end on a day and can be stopped at any time. Nothing is sent by itself:
+/// the person who made it copies and shares it.
+model OrderStatusLink {
+  id          String    @id @default(cuid())
+  companyId   String
+  orderId     String
+  /// SHA-256 (hex) of the token in the link; the token itself is never stored.
+  tokenHash   String    @unique
+  /// The link stops working after this moment. Null: until it is stopped.
+  expiresAt   DateTime?
+  stoppedAt   DateTime?
+  stoppedById String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order     SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdBy User?      @relation("OrderStatusLinkMadeBy", fields: [createdById], references: [id], onDelete: SetNull)
+  stoppedBy User?      @relation("OrderStatusLinkStoppedBy", fields: [stoppedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, orderId])
 }
 
 /// Document 1: Commercial Invoice (prices, totals, paid/due). Saved permanently.

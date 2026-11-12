@@ -25,12 +25,15 @@ import { SalesNoAccess } from "@/components/sales/no-access";
 import { OrderActions } from "@/components/sales/order-actions";
 import { ReturnRecords } from "@/components/sales/return-records";
 import { SalesFlow } from "@/components/sales/sales-flow";
+import { ShareOrderStatus } from "@/components/sales/share-order-status";
 import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import type { TemplateChoice } from "@/modules/reports/screens.service";
+import { canShareOrderStatus } from "@/modules/sales/order-status.service";
 import type { OrderScreen } from "@/modules/sales/screens.service";
 import { getAiRecordCostAction } from "@/server/actions/ai.actions";
+import { listStatusLinksAction } from "@/server/actions/order-status.actions";
 import { getOrderScreenAction } from "@/server/actions/sales.actions";
 import { templateChoicesAction } from "@/server/actions/templates.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -255,11 +258,13 @@ export default async function OrderPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ orderId }, query] = await Promise.all([params, searchParams]);
-  const [result, invoiceTemplates, challanTemplates, aiBox] = await Promise.all([
+  const [result, invoiceTemplates, challanTemplates, aiBox, statusLinks] = await Promise.all([
     getOrderScreenAction(orderId),
     templateChoicesAction("COMMERCIAL_INVOICE"),
     templateChoicesAction("DELIVERY_CHALLAN"),
     getAiRecordCostAction("SalesOrder", orderId),
+    // Share order status: only for people who may share it (sales.order.share).
+    canShareOrderStatus(ctx) ? listStatusLinksAction(orderId) : null,
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -377,6 +382,14 @@ export default async function OrderPage({
             }
             canOpen={screen.can.openProduction}
           />
+          {statusLinks?.ok && (
+            <ShareOrderStatus
+              orderId={o.id}
+              orderNumber={o.number}
+              links={statusLinks.data}
+              cancelled={o.status === "CANCELLED"}
+            />
+          )}
           <Documents
             screen={screen}
             currency={currency}

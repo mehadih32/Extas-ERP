@@ -72,6 +72,8 @@ export const LOCKED_PERMISSIONS: ReadonlySet<string> = new Set([
   "sales.order.create",
   "sales.invoice.edit",
   "sales.force_override",
+  // A link the buyer opens: anything that reaches a buyer is always Ask.
+  "sales.order.share",
   "sales.campaigns.manage",
   "production.bookings.approve",
   "production.bookings.close",

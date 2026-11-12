@@ -10,6 +10,8 @@ export const ROUTES = {
   terms: "/terms",
   /** The privacy policy: public, read before anyone signs in (Google links to it). */
   privacy: "/privacy",
+  /** An order's status for its buyer, open to anyone with the link (/order-status/<token>). */
+  orderStatus: "/order-status",
   /** The Help Center: the manual in Bengali. */
   help: "/help",
   /** Each person's look: Legacy or Modern. */

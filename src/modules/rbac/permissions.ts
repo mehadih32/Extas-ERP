@@ -78,6 +78,12 @@ export const PERMISSIONS = [
     description: "Sell more than available stock (Force Override)",
   },
   {
+    key: "sales.order.share",
+    module: "SALES",
+    description:
+      "Share an order's progress with its buyer through a read-only link, and stop such links",
+  },
+  {
     key: "sales.returns.qc",
     module: "RETAIL",
     description: "Inspect returns and move items to main or bad stock",

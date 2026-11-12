@@ -34,6 +34,12 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
       return ctx.can("production.view") ? `/tech-packs/${id}` : null;
     case "SalesOrder":
       return ctx.can("sales.view") ? `/sales/orders/${id}` : null;
+    case "Quotation":
+      return ctx.can("sales.view") ? `/sales/quotations/${id}` : null;
+    case "Invoice":
+      return ctx.can("sales.view") ? `/sales/invoices/${id}` : null;
+    case "Party":
+      return ctx.can("parties.view") ? `/parties/buyers/${id}` : null;
     case "PurchaseOrder":
       return ctx.can("materials.view") ? `/materials/orders/${id}` : null;
     case "ComplianceDocument":
@@ -118,6 +124,9 @@ export const RECORD_NOUNS: Record<string, string> = {
   TechPack: "the tech pack",
   ProductionBatch: "the batch",
   SalesOrder: "the order",
+  Quotation: "the quotation",
+  Invoice: "the invoice",
+  Party: "the buyer",
   PurchaseOrder: "the purchase order",
   ComplianceDocument: "the licence",
   Employee: "the employee",

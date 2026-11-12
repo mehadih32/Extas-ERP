@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { SendBar, SentSection } from "@/components/documents/send-section";
+import { FollowUpSection } from "@/components/follow-ups/sections";
 import { FormAlert } from "@/components/forms/field";
 import { VerifiedBadge } from "@/components/parties/badges";
 import { BackLink } from "@/components/settings/back-link";
@@ -177,6 +178,7 @@ export default async function QuotationPage({
             </dl>
           </Panel>
           <SentSection referenceIds={[q.id]} type="QUOTATION" />
+          <FollowUpSection on={{ quotationId: q.id }} what={`Quotation ${q.number}`} />
           {q.customFields.length > 0 && (
             <Panel title="More details" id="fields-heading">
               <dl className="mt-4 grid grid-cols-2 gap-4">

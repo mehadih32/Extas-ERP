@@ -32,7 +32,7 @@ import {
   updateReminderSchema,
   upcomingSchema,
 } from "@/modules/reminders/schemas";
-import { dueItems } from "@/modules/reminders/sources";
+import { dueItems, mayOpenFollowUp } from "@/modules/reminders/sources";
 
 /*
  * Reminders set by hand ("call Rahim Traders about the advance on Monday 10:00",
@@ -595,6 +595,13 @@ function canSee(ctx: CompanyContext, type: AutoType): boolean {
       return ctx.can("compliance.view") || ctx.can("compliance.manage");
     case "TASK_DUE":
       return true;
+    case "QUOTATION_EXPIRY":
+    case "PAYMENT_DUE":
+    case "PROMISED_PAYMENT":
+      return ctx.can("sales.view");
+    case "FOLLOW_UP":
+      // Each follow-up is checked against its record below.
+      return ctx.can("sales.view") || ctx.can("parties.view");
   }
 }
 
@@ -625,6 +632,7 @@ export async function upcoming(ctx: CompanyContext, raw: unknown = {}, now: Date
   for (const type of AUTO_TYPES) {
     if (!canSee(ctx, type)) continue;
     let found = await dueItems(ctx.company.id, type, until, tz, prisma, 200);
+    if (type === "FOLLOW_UP") found = found.filter((item) => mayOpenFollowUp(ctx, item));
     if (type === "TASK_DUE" && !ctx.can("reminders.manage")) {
       found = found.filter(
         (t) =>

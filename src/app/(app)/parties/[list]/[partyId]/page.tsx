@@ -10,6 +10,7 @@ import { GradeBadge, StatusBadge, VerifiedBadge } from "@/components/parties/bad
 import { BuyerFigures, BuyerHistoryPanels, BuyerTopStyles } from "@/components/parties/buyer-360";
 import { accountsHref } from "@/components/accounts/labels";
 import { SentSection } from "@/components/documents/send-section";
+import { FollowUpSection } from "@/components/follow-ups/sections";
 import { EmailPendingButton } from "@/components/parties/email-pending";
 import {
   balanceText,
@@ -487,6 +488,9 @@ export default async function PartyPage({
         <div className="grid content-start gap-6">
           <ContactPanel screen={screen} />
           <ActivityPanel screen={screen} currency={currency} />
+          {party.kind !== "SUPPLIER" && (
+            <FollowUpSection on={{ partyId: party.id }} what={party.name} />
+          )}
           {party.kind !== "SUPPLIER" && <SentSection partyId={party.id} showTitle />}
         </div>
       </div>

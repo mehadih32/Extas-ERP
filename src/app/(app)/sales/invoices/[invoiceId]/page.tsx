@@ -8,6 +8,7 @@ import { BackLink } from "@/components/settings/back-link";
 import { BGradeBadge, InvoiceBadge, RefundBadge, RevisedBadge } from "@/components/sales/badges";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
 import { SendBar, SentSection } from "@/components/documents/send-section";
+import { PromiseSection } from "@/components/follow-ups/sections";
 import { InvoiceActions } from "@/components/sales/invoice-actions";
 import { invoiceTotalLines } from "@/components/sales/invoice-totals";
 import { METHOD_LABELS, money, salesHref } from "@/components/sales/labels";
@@ -188,6 +189,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
               </p>
             )}
           </Panel>
+          <PromiseSection invoiceId={inv.id} />
           <SentSection referenceIds={[inv.id]} type="COMMERCIAL_INVOICE" />
           <ReturnRecords returns={inv.returns} currency={currency} />
           <Panel title="Payments" id="payments-heading">

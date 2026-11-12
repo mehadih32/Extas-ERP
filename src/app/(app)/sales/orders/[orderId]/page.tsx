@@ -6,6 +6,7 @@ import { AiRecordBox } from "@/components/ai/record-box";
 import { SectionError } from "@/components/dashboard/section-error";
 import { PrintDocumentButton } from "@/components/documents/print-button";
 import { SendBar, SentSection } from "@/components/documents/send-section";
+import { FollowUpSection } from "@/components/follow-ups/sections";
 import { UseTemplateButton } from "@/components/reports/use-template";
 import { FormAlert } from "@/components/forms/field";
 import { VerifiedBadge } from "@/components/parties/badges";
@@ -409,6 +410,7 @@ export default async function OrderPage({
               )}
             />
           )}
+          <FollowUpSection on={{ orderId: o.id }} what={`Order ${o.number}`} />
           <ReturnRecords returns={o.returns} currency={currency} />
           {costs && (
             <Panel title="Cost and margin" id="costs-heading">

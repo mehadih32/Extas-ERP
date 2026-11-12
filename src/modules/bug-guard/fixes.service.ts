@@ -719,16 +719,26 @@ async function applyNow(
   await pushToBot(companyId, { kind: "guard-correction", correctionId: id }, { alarm: true });
 }
 
-/** Why Bug Guard cannot send code fixes to Claude Code by itself now, or null when it can. */
+/**
+ * Why Bug Guard cannot send code fixes to Claude Code by itself now, or null
+ * when it can. AI switched off or paused means no AI work by itself, so code
+ * fixes wait (data corrections are prepared without AI and are not affected).
+ * Every reason that applies is given, the AI first.
+ */
 export async function codeFixesBlocked(companyId: string): Promise<string | null> {
   const s = await prisma.aiSettings.findUnique({
     where: { companyId },
-    select: { githubRepo: true, githubTokenSealed: true },
+    select: { enabled: true, pausedAt: true, githubRepo: true, githubTokenSealed: true },
   });
+  const why: string[] = [];
+  if (!s?.enabled) why.push("AI is off. The owner turns it on in AI Center.");
+  else if (s.pausedAt) why.push("AI is off: it is paused. The owner resumes it in AI Center.");
   if (!s?.githubRepo || !s.githubTokenSealed) {
-    return "GitHub is not connected. Connect it in AI Center > Full check (GitHub): the repository and a token.";
+    why.push(
+      "GitHub is not connected. Connect it in AI Center > Full check (GitHub): the repository and a token.",
+    );
   }
-  return null;
+  return why.length ? why.join(" ") : null;
 }
 
 /**

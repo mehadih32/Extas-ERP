@@ -744,6 +744,15 @@ run("Bug Guard", () => {
         }),
       ];
     };
+    /** The AI switch (AI Center): on, off or paused. */
+    const ai = (state: "on" | "off" | "paused") => {
+      const data = { enabled: state !== "off", pausedAt: state === "paused" ? new Date() : null };
+      return prisma.aiSettings.upsert({
+        where: { companyId: env.company.id },
+        create: { companyId: env.company.id, ...data },
+        update: data,
+      });
+    };
 
     it("is turned on only with the owner's PIN, and off without it", async () => {
       const turnOn = (pin?: string) =>
@@ -771,9 +780,10 @@ run("Bug Guard", () => {
     });
 
     it("prepares a correction that waits for the PIN, and says plainly why code fixes wait while GitHub is not connected", async () => {
+      await ai("on");
       await setPin(env.owner, { pin: PIN });
       await saveSettings(env.owner, { schedule, autoPrepare: true, pin: PIN });
-      expect((await getBugGuard(env.owner)).codeFixesBlocked).toMatch(/GitHub is not connected/);
+      expect((await getBugGuard(env.owner)).codeFixesBlocked).toMatch(/^GitHub is not connected/);
       await found();
       await guard(new Date());
 
@@ -809,6 +819,7 @@ run("Bug Guard", () => {
       vi.stubEnv("GITHUB_API_URL", gh.url);
       try {
         await saveGitHub(env.owner, { repo: "extas/erp", token: gh.token });
+        await ai("on");
         await setPin(env.owner, { pin: PIN });
         await saveSettings(env.owner, { schedule, autoPrepare: true, pin: PIN });
         expect((await getBugGuard(env.owner)).codeFixesBlocked).toBeNull();
@@ -821,6 +832,38 @@ run("Bug Guard", () => {
         });
         expect(request).toMatchObject({ kind: "FIX", state: "SENT" });
         expect(gh.calls.some((c) => c.method === "PUT" && c.path.endsWith("/merge"))).toBe(false);
+        expect(await prisma.bugGuardCorrection.count({ where: { status: "PREPARED" } })).toBe(1);
+      } finally {
+        await gh.close();
+      }
+    });
+
+    it("keeps code problems waiting while AI is off or paused, and still prepares data corrections", async () => {
+      const gh = await startFakeGitHub("extas/erp");
+      vi.stubEnv("GITHUB_API_URL", gh.url);
+      try {
+        await saveGitHub(env.owner, { repo: "extas/erp", token: gh.token });
+        await setPin(env.owner, { pin: PIN });
+        await saveSettings(env.owner, { schedule, autoPrepare: true, pin: PIN });
+        await ai("off");
+        expect((await getBugGuard(env.owner)).codeFixesBlocked).toBe(
+          "AI is off. The owner turns it on in AI Center.",
+        );
+        await ai("paused");
+        expect((await getBugGuard(env.owner)).codeFixesBlocked).toMatch(/^AI is off: it is paused/);
+        await ai("off");
+        await found();
+        await guard(new Date());
+
+        const err = await findingOf("err");
+        expect(err.status).toBe("OPEN");
+        expect(await prisma.claudeCodeRequest.count()).toBe(0);
+        expect(gh.calls.some((c) => c.method !== "GET")).toBe(false);
+        const why = await prisma.bugGuardEvent.findFirstOrThrow({
+          where: { kind: "FAILED", findingId: err.id },
+        });
+        expect(why.summary).toMatch(/^Not sent to Claude Code by itself: AI is off\. /);
+        // The data correction is made without AI, so it is prepared as before.
         expect(await prisma.bugGuardCorrection.count({ where: { status: "PREPARED" } })).toBe(1);
       } finally {
         await gh.close();

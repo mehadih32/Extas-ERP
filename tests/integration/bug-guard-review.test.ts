@@ -278,6 +278,8 @@ run("Bug Guard, after the review", () => {
     it("logs what Bug Guard sends to Claude Code by itself as Bug Guard's, not the owner's (S10)", async () => {
       const { company, owner } = await setup();
       await saveGitHub(owner, { repo: "extas/erp", token: gh.token });
+      // Code fixes go to Claude Code by itself only while AI is on.
+      await prisma.aiSettings.update({ where: { companyId: company.id }, data: { enabled: true } });
       const code = (route: string) => ({
         fixKind: "CODE",
         code: { route, method: "GET", status: 500, errorType: "TypeError", stack: [], times: 2 },

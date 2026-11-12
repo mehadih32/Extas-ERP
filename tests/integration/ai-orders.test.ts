@@ -620,6 +620,23 @@ run("Order automation and Server Health", () => {
     expect(await runWeeklyHealth(new Date("2026-10-24T05:30:00Z"), { probes, ask: null })).toBe(0);
   });
 
+  it("reads a time zone it does not know as Bangladesh time, and still runs the weekly check", async () => {
+    await prisma.company.update({
+      where: { id: env.company.id },
+      data: { timezone: "Not/AZone" },
+    });
+    await setWeekly(env.owner, { on: true });
+    const ownerNow = await contextFor(env.owner.user.id, env.company.id);
+    expect((await getServerHealth(ownerNow)).weeklyText).toMatch(
+      /^Every Saturday at 09:00 \(Asia\/Dhaka time\)/,
+    );
+    const probes = fakeProbes();
+    // Saturday 2026-10-17, 08:30 in Dhaka: not yet; 09:30 in Dhaka: it runs.
+    expect(await runWeeklyHealth(new Date("2026-10-17T02:30:00Z"), { probes, ask: null })).toBe(0);
+    expect(await runWeeklyHealth(new Date("2026-10-17T03:30:00Z"), { probes, ask: null })).toBe(1);
+    expect(await prisma.serverHealthRun.count({ where: { trigger: "WEEKLY" } })).toBe(1);
+  });
+
   it("words the weekly bot line by how the week went", () => {
     const check = (key: string, label: string, level: "OK" | "WARN" | "ERROR") =>
       ({ key, label, level, detail: `${label} detail`, bn: "" }) as unknown as HealthCheck;

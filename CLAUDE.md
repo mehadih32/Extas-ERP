@@ -182,7 +182,8 @@ places disagree, the newer instruction wins.
 Bug Guard audits the whole ERP (app, data and accounts, security, product, AI) on the owner's schedule (default
 every 3 days at night) and reports in simple Bengali, grouped Urgent / Important / Can wait, in the ERP inbox
 and on Telegram, with a weekly summary even when all is fine. It may: open fix PRs and prepare data corrections
-(only if the owner turns that on; off by default), end a suspicious session that is not the owner's, and block
+(only if the owner turns that on with the PIN; off by default; code-fix requests wait while AI is off or
+paused), end a suspicious session that is not the owner's, and block
 a login source after repeated failed logins, telling the owner at once. Applying a correction or merging always needs
 the owner's PIN; a data correction runs after a backup, is logged and can be undone (in accounts, an adjusting entry). It
 can NEVER delete data, change roles or permissions, merge or deploy, send anything to buyers or suppliers, move
@@ -240,6 +241,14 @@ overwrites a stored total or figure.
   Admin in its context) and the bot (no command reaches it) can never start it. Every table is classified in
   `src/modules/fresh-start/plan.ts` (a test fails for a new table not in the list). Restoring a backup from before
   the fresh start brings the old data, and the button, back.
+- 2026-11-12 (switches and small fixes): turning on Bug Guard's "prepare fixes by itself" needs the owner's PIN
+  (turning it off does not); its code-fix requests to Claude Code wait while AI is off or paused, or GitHub is not
+  connected, and the log and the switch say why; data corrections are still prepared and still need the PIN to be
+  applied. The weekly Server Health runs Saturday 09:00 in the company's own time (Bangladesh time when none is set
+  or it is unknown) and goes to the ERP inbox and, as a system alarm, to the bot, even with AI off. Pieces reserved
+  for shop or sales orders can never be moved to bad stock or counted away (A-grade and B-grade), checked on the
+  server. Changing a retail shop's warehouse needs the PIN. `docs/later-list.md` holds the owner's later list, an
+  exact copy of the owner's file.
 - 2026-11-11 (B-grade lines for the shops): a shop order line may be A-grade or B-grade. A B line takes the
   factory's own B-grade stock at the B-grade cost; an approved returned B piece goes back to B-grade stock. A
   B-grade piece costs the shop the style's own "B-grade price" (set on the product, with the PIN), or, without one,

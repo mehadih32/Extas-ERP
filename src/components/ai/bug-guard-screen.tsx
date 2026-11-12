@@ -776,8 +776,8 @@ function SchedulePanel({ g, setMessage }: { g: Screen; setMessage: (m: Message) 
           <span>
             Open fix pull requests and prepare data corrections by itself
             <span className="block text-muted-foreground">
-              Off by default; turning it on needs your PIN. Applying a correction and merging a fix
-              always wait for you and your PIN.
+              Off by default; turning it on needs your PIN. Code fixes go only while AI is on.
+              Applying a correction and merging a fix always wait for you and your PIN.
             </span>
           </span>
         </label>

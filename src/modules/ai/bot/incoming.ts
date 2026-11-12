@@ -87,10 +87,12 @@ type PinChecks = Record<string, { right: boolean; problem?: string; wrongToday?:
 
 /**
  * The store a message names at its start ("Extas Uttara: status") when stores
- * share this chat: the store of exactly that name, else the first whose name
- * starts with it; null when it names none of them (or only one store is here).
+ * share this chat: the store of exactly that name, else the only one whose
+ * name starts with it. "unclear" when the start fits more than one store (the
+ * bot then asks "Which store?" and never picks one for a PIN action); null when
+ * it names none of them (or only one store is here).
  */
-async function namedStore(mine: AiBotLink[], text: string): Promise<AiBotLink | null> {
+async function namedStore(mine: AiBotLink[], text: string): Promise<AiBotLink | "unclear" | null> {
   if (mine.length < 2) return null;
   const { store } = storePrefix(text);
   if (!store) return null;
@@ -99,9 +101,11 @@ async function namedStore(mine: AiBotLink[], text: string): Promise<AiBotLink | 
     select: { id: true, name: true },
   });
   const wanted = store.toLowerCase();
-  const named =
-    companies.find((c) => c.name.toLowerCase() === wanted) ??
-    companies.find((c) => c.name.toLowerCase().startsWith(wanted));
+  const exact = companies.filter((c) => c.name.toLowerCase() === wanted);
+  const starts = companies.filter((c) => c.name.toLowerCase().startsWith(wanted));
+  const fits = exact.length > 0 ? exact : starts;
+  if (fits.length > 1) return "unclear";
+  const named = fits[0];
   return named ? (mine.find((l) => l.companyId === named.id) ?? null) : null;
 }
 
@@ -113,10 +117,13 @@ async function namedStore(mine: AiBotLink[], text: string): Promise<AiBotLink | 
  */
 async function checkPinNow(mine: AiBotLink[], m: Incoming, now: Date): Promise<PinChecks | null> {
   const text = m.text?.trim() ?? "";
-  if (!text || m.callback || STOP_WORDS.test(text)) return null;
+  // "Uttara: cancel" stops too: the stop word is read after the store's name.
+  if (!text || m.callback || STOP_WORDS.test(storePrefix(text).rest)) return null;
   let waiting = mine.filter((l) => l.pending && l.pendingUntil && l.pendingUntil > now);
   if (waiting.length === 0) return null;
   const named = await namedStore(mine, text);
+  // A name that fits more than one store is for none of them: the bot asks which.
+  if (named === "unclear") return null;
   if (named) {
     waiting = waiting.filter((l) => l.id === named.id);
     if (waiting.length === 0) return null;
@@ -635,11 +642,12 @@ async function pinNotWaited(mine: AiBotLink[], m: Incoming, now: Date) {
 async function storeFor(mine: AiBotLink[], text: string) {
   if (mine.length === 1) return mine[0]!;
   const named = await namedStore(mine, text);
-  if (named) return named;
   const companies = await prisma.company.findMany({
     where: { id: { in: mine.map((l) => l.companyId) } },
     select: { id: true, name: true },
   });
+  if (named === "unclear") return { ask: companies.map((c) => c.name) };
+  if (named) return named;
   const now = new Date();
   const waiting = mine.filter((l) => l.pendingUntil && l.pendingUntil > now);
   if (waiting.length === 1) return waiting[0]!;
@@ -693,7 +701,7 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
       where: { id: link.id },
       data: { pending: Prisma.DbNull, pendingUntil: null },
     });
-    if (STOP_WORDS.test(text)) {
+    if (STOP_WORDS.test(storePrefix(text).rest)) {
       await sender.remove(m.chatId, m.messageId);
       return say(link, m.chatId, words("Stopped: nothing changed."));
     }

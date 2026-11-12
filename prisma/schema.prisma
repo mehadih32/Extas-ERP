@@ -4942,6 +4942,8 @@ model FreshStart {
   startedById   String?
   startedByName String
   startedAt     DateTime         @default(now())
+  /// A new random id each time the row is claimed: only the job holding it may move the row.
+  claimId       String?
   /// The backup made just before (BackupRun, kept for ever), once it is checked in Drive.
   backupRunId   String?
   backupName    String?

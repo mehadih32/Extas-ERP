@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
+import { FRESH_START_RUNNING, noteFreshStartRunning } from "@/lib/fresh-start-guard";
 import { prisma } from "@/lib/prisma";
 import { TENANT_MODELS } from "@/lib/tenant-db";
 import { rawBalance } from "@/modules/accounts/balances";
@@ -31,6 +32,7 @@ import * as catalog from "@/modules/inventory/catalog.service";
 import * as matrix from "@/modules/inventory/matrix.service";
 import * as stock from "@/modules/inventory/stock.service";
 import * as styles from "@/modules/inventory/style.service";
+import { WEBHOOK_JOB } from "@/modules/ecommerce/webhooks";
 import * as documents from "@/modules/sales/documents.service";
 import * as orders from "@/modules/sales/order.service";
 
@@ -285,6 +287,11 @@ run("Fresh start", () => {
     const logoPath = (await storedPath(a.logo.id, uploads))!;
     const strayPath = (await storedPath(a.stray.id, uploads))!;
     const bStray = (await storedPath(b.stray.id, uploads))!;
+    // The buyers that stay without the tick (Walk-in, the store's buyer) carry figures too.
+    await prisma.party.updateMany({
+      where: { companyId: a.company.id },
+      data: { openingBalance: 7000, lastTransactionAt: new Date() },
+    });
 
     const done = await go();
     expect(done).toMatchObject({ status: "DONE", backupName: "2026-11-12_stub" });
@@ -323,7 +330,15 @@ run("Fresh start", () => {
     expect(
       await prisma.party.count({ where: { companyId: a.company.id, systemRole: "WALK_IN" } }),
     ).toBe(1);
-    expect(await prisma.note.count({ where: { companyId: a.company.id } })).toBe(1);
+    // Notes and the planner are the business's work: erased.
+    expect(await prisma.note.count({ where: { companyId: a.company.id } })).toBe(0);
+    // The buyers that stay start from zero too.
+    const left = await prisma.party.findMany({ where: { companyId: a.company.id } });
+    expect(left).toHaveLength(2);
+    for (const party of left) {
+      expect(party.openingBalance.isZero(), party.name).toBe(true);
+      expect(party.lastTransactionAt, party.name).toBeNull();
+    }
     expect(
       (await prisma.company.findUniqueOrThrow({ where: { id: a.company.id } })).logoFileId,
     ).toBe(a.logo.id);
@@ -471,6 +486,221 @@ run("Fresh start", () => {
       }
     }
     expect(await countsFor(b.company.id)).toEqual(before);
+  });
+
+  it("closes the company to every write while it runs; other companies go on (review 2026-11-12)", async () => {
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => (release = resolve));
+    const slowBackup: FreshStartBackup = async () => {
+      await waiting;
+      return { ok: true, runId: "stub-run", name: "slow" };
+    };
+    await startFreshStart(a.owner, { companyName: "Alpha", pin: PIN }, undefined, {
+      backup: slowBackup,
+      readiness: READY,
+    });
+    const note = (s: Seeded, content: string) => ({
+      companyId: s.company.id,
+      userId: s.ownerUser.id,
+      tab: "GENERAL" as const,
+      content,
+    });
+    // By its company, by the id of its row, and in raw SQL from the company's session.
+    const late = await expectAppError(prisma.note.create({ data: note(a, "late") }), "CONFLICT");
+    expect(late.message).toContain(FRESH_START_RUNNING);
+    await expectAppError(
+      prisma.productVariant.update({ where: { id: a.variant.id }, data: { barcode: "X-1" } }),
+      "CONFLICT",
+    );
+    await expectAppError(
+      a.owner.db.style.update({ where: { id: a.polo.id }, data: { name: "Renamed" } }),
+      "CONFLICT",
+    );
+    // Reads go on, and so does every other company.
+    expect(await prisma.style.count({ where: { companyId: a.company.id } })).toBe(1);
+    await prisma.note.create({ data: note(b, "fine") });
+    await b.owner.db.style.update({ where: { id: b.polo.id }, data: { name: "Renamed" } });
+    // A second start is refused as running (before the PIN is even counted).
+    await expectAppError(go(), "CONFLICT");
+
+    release();
+    await vi.waitFor(
+      async () =>
+        expect(
+          (await prisma.freshStart.findFirstOrThrow({ where: { companyId: a.company.id } })).status,
+        ).toBe("DONE"),
+      { timeout: 20_000, interval: 100 },
+    );
+    await vi.waitFor(async () => {
+      await prisma.note.create({ data: note(a, "after") });
+    });
+    expect(await prisma.note.count({ where: { companyId: a.company.id } })).toBe(1);
+  });
+
+  it("locks its tables, so a write saved meanwhile by another path waits until it is over", async () => {
+    let wiped!: () => void;
+    const locked = new Promise<void>((resolve) => (wiped = resolve));
+    let over = false;
+    const wipe = prisma
+      .$transaction(
+        async (tx) => {
+          await wipeCompany(tx, b.company.id, NONE);
+          wiped();
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          over = true;
+          throw new Error("undo");
+        },
+        { timeout: 60_000 },
+      )
+      .catch((e: unknown) => (e as Error).message);
+    await locked;
+    // A clock's raw SQL (no session, no company the guard could see).
+    const sawOver = prisma
+      .$executeRawUnsafe(`UPDATE "Note" SET "content" = 'x' WHERE "companyId" = $1`, b.company.id)
+      .then(() => over);
+    expect(await wipe).toBe("undo");
+    expect(await sawOver).toBe(true);
+  });
+
+  it("settles a run no job holds (a stopped server, a restored backup) and holds nothing back", async () => {
+    await prisma.freshStart.create({
+      data: {
+        companyId: a.company.id,
+        status: "BACKING_UP",
+        claimId: "a-server-that-stopped",
+        startedByName: "Owner",
+      },
+    });
+    // Writes go on: no job of this server runs it.
+    await prisma.style.update({ where: { id: a.polo.id }, data: { name: "Still open" } });
+    const card = await getFreshStart(a.owner, READY);
+    expect(card.record).toMatchObject({
+      status: "FAILED",
+      error: "Interrupted: the server stopped. Nothing was erased.",
+    });
+    expect(card.canUse).toBe(true);
+    expect(await go()).toMatchObject({ status: "DONE" });
+  });
+
+  it("a stale job never erases with newer ticks, nor moves a finished fresh start", async () => {
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => (release = resolve));
+    const oldRun = await prisma.backupRun.create({
+      data: {
+        trigger: "MANUAL",
+        status: "SUCCEEDED",
+        keepForever: true,
+        label: "Before fresh start",
+      },
+    });
+    const old = startFreshStart(a.owner, { companyName: "Alpha", pin: PIN }, undefined, {
+      backup: async () => {
+        await waiting;
+        return { ok: true, runId: oldRun.id, name: "old" };
+      },
+      readiness: READY,
+      wait: true,
+    });
+    await vi.waitFor(async () =>
+      expect(await prisma.freshStart.count({ where: { companyId: a.company.id } })).toBe(1),
+    );
+    // The server "restarts" while the old job waits: the card settles its run.
+    noteFreshStartRunning(a.company.id, null);
+    expect((await getFreshStart(a.owner, READY)).record).toMatchObject({ status: "FAILED" });
+    // A new run, keeping the buyers, finishes.
+    expect(await go(a.owner, { keepParties: true })).toMatchObject({ status: "DONE" });
+    const parties = await prisma.party.count({ where: { companyId: a.company.id } });
+    expect(parties).toBeGreaterThan(2);
+
+    // The old job wakes up: it erases nothing and leaves DONE as it was.
+    release();
+    await old;
+    const row = await prisma.freshStart.findFirstOrThrow({ where: { companyId: a.company.id } });
+    expect(row).toMatchObject({
+      status: "DONE",
+      keepParties: true,
+      backupRunId: "stub-run",
+      error: null,
+    });
+    expect(await prisma.party.count({ where: { companyId: a.company.id } })).toBe(parties);
+    // Its own backup is an ordinary one again.
+    expect(await prisma.backupRun.findUniqueOrThrow({ where: { id: oldRun.id } })).toMatchObject({
+      keepForever: false,
+      label: null,
+    });
+  });
+
+  it("tells each connected shop its stock is zero and the erased SKUs are gone", async () => {
+    const warehouse = {
+      id: (await prisma.stockBalance.findFirstOrThrow({ where: { companyId: a.company.id } }))
+        .warehouseId,
+    };
+    const shopOf = (s: Seeded, w: string | null) =>
+      prisma.salesChannelIntegration.create({
+        data: {
+          companyId: s.company.id,
+          name: "Website",
+          platform: "CUSTOM_WEBSITE",
+          warehouseId: w,
+          isActive: true,
+          apiKeyRef: `sha256:${s.company.id}`,
+          webhookSecretRef: "sealed-secret",
+          webhookUrl: "https://shop.example.com/hooks",
+        },
+      });
+    const shop = await shopOf(a, warehouse.id);
+    const other = await shopOf(b, null);
+    const stockRows = await prisma.stockBalance.count({
+      where: { companyId: a.company.id, warehouseId: warehouse.id, grade: "A_GRADE" },
+    });
+    expect(stockRows).toBeGreaterThan(0);
+
+    await go();
+    const events = await prisma.webhookEvent.findMany({ where: { integrationId: shop.id } });
+    const stock = events.filter((e) => e.eventType === "stock.changed");
+    expect(stock).toHaveLength(stockRows);
+    for (const e of stock) {
+      expect((e.payload as { data: Record<string, unknown> }).data).toMatchObject({
+        onHand: 0,
+        reserved: 0,
+        available: 0,
+      });
+    }
+    const variants = events.filter((e) => e.eventType === "variant.changed");
+    expect(variants.map((e) => e.externalId)).toEqual([a.variant.sku]);
+    expect((variants[0]!.payload as { data: Record<string, unknown> }).data).toMatchObject({
+      sku: a.variant.sku,
+      active: false,
+      isNew: false,
+    });
+    // Each through the usual sender, and only for this company's shop.
+    const jobs = await prisma.backgroundJob.findMany({ where: { kind: WEBHOOK_JOB } });
+    expect(jobs.map((j) => (j.payload as { eventId: string }).eventId).sort()).toEqual(
+      events.map((e) => e.id).sort(),
+    );
+    expect(await prisma.webhookEvent.count({ where: { integrationId: other.id } })).toBe(0);
+  });
+
+  it("sends nothing to the shops with ECOMMERCE_WEBHOOKS=off", async () => {
+    vi.stubEnv("ECOMMERCE_WEBHOOKS", "off");
+    const warehouse = {
+      id: (await prisma.stockBalance.findFirstOrThrow({ where: { companyId: a.company.id } }))
+        .warehouseId,
+    };
+    await prisma.salesChannelIntegration.create({
+      data: {
+        companyId: a.company.id,
+        name: "Website",
+        platform: "CUSTOM_WEBSITE",
+        warehouseId: warehouse.id,
+        isActive: true,
+        apiKeyRef: "sha256:off",
+        webhookSecretRef: "sealed-secret",
+        webhookUrl: "https://shop.example.com/hooks",
+      },
+    });
+    await go();
+    expect(await prisma.webhookEvent.count({ where: { companyId: a.company.id } })).toBe(0);
   });
 
   it("never removes a backup kept for ever under the keeping rules", async () => {

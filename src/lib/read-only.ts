@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { isCheckToken } from "@/lib/auth/check-token";
 import { SESSION_COOKIE } from "@/lib/auth/session-cookie";
 import { AppError } from "@/lib/errors";
+import { freshStartBlocks } from "@/lib/fresh-start-guard";
 
 /*
  * Work that may only read (v6.4 A4). Every write through Prisma is refused
@@ -13,6 +14,9 @@ import { AppError } from "@/lib/errors";
  *     route, so a screen or API route that writes when it is opened cannot
  *     change anything for the check either.
  * Reads go on as usual. Writes outside are untouched.
+ *
+ * A write to a company's data is also refused while that company's Fresh start
+ * runs (lib/fresh-start-guard.ts).
  */
 
 /** Why a Full check session cannot write on the live site. */
@@ -33,7 +37,7 @@ export const checkSessionReadOnly = (token: string | undefined, demoSite: boolea
   isCheckToken(token) && !demoSite;
 
 /** The request's session cookie, when there is a request (never throws). */
-async function requestToken(): Promise<string | undefined> {
+export async function requestToken(): Promise<string | undefined> {
   try {
     const { cookies } = await import("next/headers");
     return (await cookies()).get(SESSION_COOKIE)?.value;
@@ -145,9 +149,29 @@ export function readsOnly(sql: string): boolean {
   );
 }
 
+/** The tables a raw write names (INSERT INTO, UPDATE, DELETE FROM, LOCK, TRUNCATE). */
+export function rawWriteTables(sql: string): string[] {
+  const found = sql.matchAll(
+    /\b(?:insert\s+into|update|delete\s+from|lock\s+table|truncate(?:\s+table)?)\s+(?:only\s+)?"?([A-Za-z_][A-Za-z0-9_]*)"?/gi,
+  );
+  return [...new Set([...found].map((m) => m[1]!))];
+}
+
 /** Whether a Prisma operation may run now (writes only outside read-only work). */
-export async function guardOperation(operation: string, args: unknown): Promise<void> {
+export async function guardOperation(
+  operation: string,
+  args: unknown,
+  model?: string,
+): Promise<void> {
+  const raw = RAW_QUERIES.has(operation) || operation.startsWith("$executeRaw");
   const writes =
     WRITE_OPERATIONS.has(operation) || (RAW_QUERIES.has(operation) && !readsOnly(sqlOf(args)));
-  if (writes) await assertMayWrite();
+  if (!writes) return;
+  await assertMayWrite();
+  // A raw write is judged by the tables its SQL names; a model call by its model.
+  const models = raw ? rawWriteTables(sqlOf(args)) : [model];
+  for (const name of models) {
+    const why = await freshStartBlocks(name, raw ? undefined : args, requestToken);
+    if (why) throw new AppError("CONFLICT", `${why}: nothing can be changed until it finishes.`);
+  }
 }

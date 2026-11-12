@@ -11,7 +11,8 @@ import { noteQueryTime } from "@/lib/slow-queries";
  *
  * Every write first asks lib/read-only.ts whether it may run: a Full check
  * session on the live site and Bug Guard's checks only read, whatever the
- * code they reach does (v6.4 A4). Calls over a second are noted for Bug Guard
+ * code they reach does (v6.4 A4), and nobody writes to a company's data while
+ * its Fresh start runs (lib/fresh-start-guard.ts). Calls over a second are noted for Bug Guard
  * (lib/slow-queries.ts: the table and the kind of call, never the values),
  * except Bug Guard's own (its checks read whole tables on purpose).
  */
@@ -26,7 +27,7 @@ function makeClient(): PrismaClient {
     name: "read-only-guard",
     query: {
       async $allOperations({ model, operation, args, query }) {
-        await guardOperation(operation, args);
+        await guardOperation(operation, args, model);
         const started = performance.now();
         try {
           return await query(args);

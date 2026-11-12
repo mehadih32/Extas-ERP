@@ -72,7 +72,6 @@ export const FRESH_START_RULES: Readonly<Record<string, FreshStartRule>> = {
   ComplianceDocument: "KEEP",
   DocumentTemplate: "KEEP",
   TemplatePlaceholder: "KEEP",
-  Note: "KEEP",
   ReminderRule: "KEEP",
   RetailStore: "KEEP",
   // AI Center, the bot and Bug Guard settings (and the AI's spend, PIN tries and security log).
@@ -115,7 +114,8 @@ export const FRESH_START_RULES: Readonly<Record<string, FreshStartRule>> = {
   // Files: erased when nothing kept uses them (wipe.ts).
   FileAsset: "ERASE",
 
-  // Everything the business did: erased.
+  // Everything the business did: erased (notes and the planner too).
+  Note: "ERASE",
   AuditLog: "ERASE",
   SalesTarget: "ERASE",
   StockBalance: "ERASE",
@@ -261,7 +261,8 @@ export const FRESH_START_RULES: Readonly<Record<string, FreshStartRule>> = {
 export const FRESH_START_RESETS: Readonly<Record<string, string>> = {
   LedgerAccount: `"openingBalance" = 0`,
   Party: `"openingBalance" = 0, "lastTransactionAt" = NULL`,
-  ProductVariant: `"avgCost" = 0, "bGradeAvgCost" = 0`,
+  // Marked changed, so the online shops are sent the kept SKUs again (fresh-start/shops.ts).
+  ProductVariant: `"avgCost" = 0, "bGradeAvgCost" = 0, "updatedAt" = (clock_timestamp() AT TIME ZONE 'UTC')`,
   RawMaterial: `"quantity" = 0, "stockValue" = 0, "avgCost" = 0`,
   LeaveBalance: `"used" = 0`,
   RetailStore: `"holdReleasedUntil" = NULL, "holdReleaseReason" = NULL, "summaryAskedAt" = NULL, "summaryAlertedOn" = NULL, "holdTold" = false, "paymentToldAt" = NULL`,
@@ -444,9 +445,10 @@ export function freshStartSteps(ticks: FreshStartTicks): FreshStartStep[] {
     steps.push({ kind: "erase", model: name, sql: `DELETE FROM ${q(name)} WHERE ${where(name)}` });
   }
 
-  // 4. Running figures on kept rows.
+  // 4. Running figures on kept rows (on a table erased in part, such as the
+  // buyers, on the rows that stay: Walk-in customers and the stores' buyers).
   for (const [name, set] of Object.entries(FRESH_START_RESETS)) {
-    if (!kept(name)) continue;
+    if (!kept(name) && !PARTIAL.has(name)) continue;
     const model = byName().get(name)!;
     const scope = hasCompany(model) ? `"companyId" = $1` : where(name);
     steps.push({ kind: "reset", model: name, sql: `UPDATE ${q(name)} SET ${set} WHERE ${scope}` });
@@ -455,24 +457,34 @@ export function freshStartSteps(ticks: FreshStartTicks): FreshStartStep[] {
 }
 
 /**
- * Columns of kept tables that may name a file by its id or path (a style's
- * picture address, an employee's photo, an AI skill's uploaded knowledge): a
- * file named there is kept even with no link to it.
+ * The columns that name a file by its address or id instead of a link (a
+ * style's picture, an employee's photo, an AI skill's uploaded knowledge): a
+ * file named in a kept row there is kept even with no link to it. A fixed list
+ * (tests/unit/fresh-start-plan.test.ts checks each exists).
  */
+export const FILE_MENTIONS: readonly { model: string; column: string; json?: boolean }[] = [
+  { model: "Company", column: "logoUrl" },
+  { model: "Brand", column: "logoUrl" },
+  { model: "Style", column: "imageUrl" },
+  { model: "Employee", column: "photoUrl" },
+  { model: "User", column: "avatarUrl" },
+  { model: "AiSkillVersion", column: "files", json: true },
+];
+
+/** The FILE_MENTIONS columns of the tables kept with these ticks. */
 export function fileMentionColumns(
   ticks: FreshStartTicks,
 ): { model: string; column: string; json: boolean; tenant: boolean }[] {
-  const out: { model: string; column: string; json: boolean; tenant: boolean }[] = [];
-  const fk = new Set(foreignKeys().flatMap((k) => k.columns.map((c) => `${k.from}.${c}`)));
-  for (const m of models()) {
-    if (erases(m.name, ticks)) continue;
-    for (const f of m.fields as Field[]) {
-      if (f.kind !== "scalar" || fk.has(`${m.name}.${f.name}`)) continue;
-      const json = f.type === "Json";
-      const fileish =
-        f.type === "String" && /url|file|image|photo|logo|attach|avatar/i.test(f.name);
-      if (json || fileish) out.push({ model: m.name, column: f.name, json, tenant: hasCompany(m) });
-    }
-  }
-  return out;
+  const all = byName();
+  return FILE_MENTIONS.filter((c) => !erases(c.model, ticks)).map((c) => ({
+    model: c.model,
+    column: c.column,
+    json: Boolean(c.json),
+    tenant: hasCompany(all.get(c.model)!),
+  }));
+}
+
+/** Every table the wipe writes to (erased, unlinked or reset), to lock it first. */
+export function touchedTables(ticks: FreshStartTicks): string[] {
+  return [...new Set([...freshStartSteps(ticks).map((s) => s.model), "FileAsset"])].sort();
 }

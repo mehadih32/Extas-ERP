@@ -1,8 +1,17 @@
+import { randomUUID } from "node:crypto";
+import { access } from "node:fs/promises";
+import path from "node:path";
+
 import { Prisma, type FreshStart } from "@prisma/client";
 import { z } from "zod";
 
 import { AppError } from "@/lib/errors";
 import { formatInstantDay } from "@/lib/format";
+import {
+  asFreshStartWork,
+  liveFreshStartClaim,
+  noteFreshStartRunning,
+} from "@/lib/fresh-start-guard";
 import { prisma } from "@/lib/prisma";
 import { assertMayWrite, readOnlyReason } from "@/lib/read-only";
 import type { RequestMeta } from "@/lib/request-meta";
@@ -12,35 +21,42 @@ import { requirePin } from "@/modules/ai/settings.service";
 import { recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { deleteStoredFile } from "@/modules/files/file.service";
+import { planShopResync, queueShopResync } from "@/modules/fresh-start/shops";
 import { wipeCompany } from "@/modules/fresh-start/wipe";
 import { ensureHrSetup } from "@/modules/hr/setup";
 import { ensureWalkInParty } from "@/modules/parties/walk-in";
 
 /*
- * Fresh start (the owner's decision, 2026-11-12): the one time in the ERP's life
- * that a company's business data is erased, so the owner can start real work on
+ * Fresh start (the owner's decision, 2026-11-12): the one time in a company's life
+ * that its business data is erased, so the owner can start real work on
  * a clean ERP after practising on it. The one exception to "the ERP never
  * deletes history" (CLAUDE.md section 2).
  *
  *   - Only the platform owner (Super Admin), on the web, with the company's name
  *     typed exactly and the PIN. Never the AI (its context is never a Super
  *     Admin) and never the bot (no command reaches it; a stand-in has no session).
- *   - A FreshStart row is claimed first (one per company), so a second click or a
- *     second tab is refused while it runs, and for ever once it is DONE.
+ *   - A FreshStart row is claimed first (one per company, with a new claim id), so
+ *     a second click or a second tab is refused while it runs, and for ever once
+ *     it is DONE. Only the job holding the claim id moves the row, and never off
+ *     DONE. From the claim until DONE or FAILED nobody writes to the company's
+ *     data (lib/fresh-start-guard.ts), so nothing is saved after the backup only
+ *     to be erased.
  *   - A complete backup comes first, through the normal backup system, and must be
- *     checked in Google Drive; it is kept for ever ("Before fresh start"). Without
- *     it nothing is erased and the owner is told why.
+ *     checked in Google Drive, with every part in it (the code and the locked
+ *     settings too); it is kept for ever ("Before fresh start"). Without it
+ *     nothing is erased and the owner is told why.
  *   - The wipe (plan.ts, wipe.ts) is one transaction, together with the DONE mark
  *     and the "Fresh start" activity-log row: all of it or nothing. The files'
- *     bytes go after it is saved.
+ *     bytes go after it is saved. Connected online shops are told their stock is
+ *     0 and erased SKUs are gone (shops.ts).
+ *   - A row left running by a stopped server (or brought back by a restore) is
+ *     settled as FAILED the next time the card is read: no job holds its claim.
  * Restoring a backup from before the fresh start brings the old data back, and
  * with it the button.
  */
 
 export const BEFORE_FRESH_START = "Before fresh start";
 
-/** A run still backing up or erasing after this long was cut off (the server stopped). */
-const STALE_MS = 6 * 60 * 60 * 1000;
 /** The wipe's transaction may take this long on a big company. */
 const WIPE_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -91,6 +107,43 @@ export async function backupReadiness(): Promise<string | null> {
   if (!config.credentialsRef) {
     return "Connect Google Drive on the Backups screen first: the backup made before a fresh start must be safe in Google Drive.";
   }
+  return hostPartsReadiness(config);
+}
+
+const exists = (file: string) =>
+  access(file).then(
+    () => true,
+    () => false,
+  );
+
+/**
+ * Whether the server has left what a complete backup needs besides the data
+ * (backup.service.ts hostParts): the code at the running version, and the
+ * settings file locked with this backup key. Without them the backup would be
+ * made but not complete, and a fresh start is refused.
+ */
+async function hostPartsReadiness(
+  config: NonNullable<
+    Awaited<ReturnType<typeof import("@/modules/backups/backup-core").readBackupConfig>>
+  >,
+): Promise<string | null> {
+  const { backupLock, hostRoot, hostVersion } = await import("@/modules/backups/backup-core");
+  const { formatOf } = await import("@/modules/backups/backup.service");
+  const lock = backupLock(config);
+  if (formatOf(lock) !== 3) {
+    return "Set your own recovery key on the Backups screen first: the backup made before a fresh start must hold the server's settings, and they go in only with it.";
+  }
+  const host = await hostVersion();
+  if (!host.commit || !(await exists(path.join(hostRoot(), "code.bundle")))) {
+    return "The server has not yet saved the code of the running version for the backups (it does at each update): a fresh start must wait for a complete backup.";
+  }
+  const facts = await import("node:fs/promises")
+    .then((fs) => fs.readFile(path.join(hostRoot(), "settings.env.json"), "utf8"))
+    .then((text) => JSON.parse(text) as { pairId?: string })
+    .catch(() => null);
+  if (facts?.pairId !== lock!.id || !(await exists(path.join(hostRoot(), "settings.env.locked")))) {
+    return "The server has not yet locked its settings file with your backup key (it does within a minute of setting the key, and at each update): a fresh start must wait for a complete backup.";
+  }
   return null;
 }
 
@@ -120,6 +173,11 @@ export const driveBackup: FreshStartBackup = async (actor) => {
       reason: `the backup was made but is not checked in Google Drive (${run.driveError ?? "no reason given"})`,
     };
   }
+  const missing = (run.report as { missing?: unknown } | null)?.missing;
+  if (!Array.isArray(missing) || missing.length > 0) {
+    const parts = Array.isArray(missing) ? missing.map(String).join(" ") : "its report is missing.";
+    return { ok: false, runId, reason: `the backup is not complete: ${parts}` };
+  }
   return { ok: true, runId: run.id, name: run.name ?? run.id };
 };
 
@@ -141,13 +199,18 @@ function present(row: FreshStart | null, timeZone = "Asia/Dhaka") {
   };
 }
 
-/** A run cut off by a server stop: nothing was erased (the wipe is one transaction). */
+/**
+ * A run no job of this server holds (the server stopped, or a restored backup
+ * brought the row back as it was): nothing was erased (the wipe is one
+ * transaction), so it is FAILED and the button is back.
+ */
 async function settleStale(companyId: string, now = new Date()) {
+  const live = liveFreshStartClaim(companyId);
   await prisma.freshStart.updateMany({
     where: {
       companyId,
       status: { in: ["BACKING_UP", "ERASING"] },
-      startedAt: { lt: new Date(now.getTime() - STALE_MS) },
+      ...(live ? { OR: [{ claimId: null }, { claimId: { not: live } }] } : {}),
     },
     data: {
       status: "FAILED",
@@ -193,8 +256,8 @@ export async function startFreshStart(
       companyName: [`Type the company name exactly: ${ctx.company.name}`],
     });
   }
-  await requirePin(ctx, input.pin, "make a fresh start");
 
+  // Used or running: said before the PIN is checked (a PIN try is a write the run refuses).
   const companyId = ctx.company.id;
   await settleStale(companyId);
   const existing = await prisma.freshStart.findUnique({ where: { companyId } });
@@ -204,12 +267,15 @@ export async function startFreshStart(
   if (existing && existing.status !== "FAILED") {
     throw new AppError("CONFLICT", "A fresh start is already running. Wait for it to finish.");
   }
+  await requirePin(ctx, input.pin, "make a fresh start");
   const notReady = await (options.readiness ?? backupReadiness)();
   if (notReady) throw new AppError("VALIDATION", `Nothing was erased. ${notReady}`);
 
   // Claim the one row: a second click (or tab) finds it taken and stops here.
+  const claimId = randomUUID();
   const claim = {
     status: "BACKING_UP" as const,
+    claimId,
     keepParties: input.keepParties,
     keepProducts: input.keepProducts,
     keepEmployees: input.keepEmployees,
@@ -243,7 +309,22 @@ export async function startFreshStart(
     row = await prisma.freshStart.findUniqueOrThrow({ where: { companyId } });
   }
 
-  const job = runFreshStart(row.id, { userId: ctx.user.id }, meta, options.backup ?? driveBackup);
+  // From here on nobody writes to the company's data until the run ends.
+  noteFreshStartRunning(companyId, claimId);
+  const job = asFreshStartWork(companyId, claimId, () =>
+    runFreshStart(
+      { id: row.id, companyId, claimId },
+      { userId: ctx.user.id },
+      meta,
+      options.backup ?? driveBackup,
+    ),
+  )
+    .finally(() => noteFreshStartRunning(companyId, null, claimId))
+    .then(async (told) => {
+      // The shops' webhooks go out now (outside the fresh start's own work).
+      if (told > 0) (await import("@/modules/jobs/worker")).kickJobWorker();
+    })
+    .catch((error: unknown) => console.error("[fresh-start] after the run", error));
   if (options.wait) await job;
   return present(
     await prisma.freshStart.findUnique({ where: { id: row.id } }),
@@ -251,70 +332,107 @@ export async function startFreshStart(
   );
 }
 
-async function fail(id: string, error: string, backupRunId?: string | null) {
-  await prisma.freshStart.update({
-    where: { id },
+type Claim = { id: string; companyId: string; claimId: string };
+
+class Stopped extends Error {}
+
+/** Marks this run FAILED (only while it still holds its claim and is not DONE). */
+async function fail(claim: Claim, error: string, backupRunId?: string | null) {
+  await prisma.freshStart.updateMany({
+    where: { id: claim.id, claimId: claim.claimId, status: { in: ["BACKING_UP", "ERASING"] } },
     data: { status: "FAILED", finishedAt: new Date(), error },
   });
-  // Nothing was erased: the backup is an ordinary one again, under the usual keeping rules.
-  if (backupRunId) {
-    await prisma.backupRun
-      .updateMany({ where: { id: backupRunId }, data: { keepForever: false, label: null } })
-      .catch(() => undefined);
+  if (!backupRunId) return;
+  // Never the backup a finished fresh start was made after.
+  const row = await prisma.freshStart.findUnique({ where: { id: claim.id } });
+  if (row?.status === "DONE" && row.backupRunId === backupRunId) return;
+  await unkeep(backupRunId);
+}
+
+/** Nothing was erased: the backup is an ordinary one again, under the usual keeping rules. */
+async function unkeep(backupRunId: string) {
+  const run = await prisma.backupRun
+    .update({
+      where: { id: backupRunId },
+      data: { keepForever: false, label: null },
+      select: { driveFileId: true },
+    })
+    .catch(() => null);
+  if (!run?.driveFileId) return;
+  // Its Drive folder loses the "kept for ever" label too, so Drive's newest-3 rule takes it.
+  try {
+    const { driveToken, getBackupConfig } = await import("@/modules/backups/backup-core");
+    const drive = await import("@/modules/backups/google-drive");
+    const token = await driveToken(await getBackupConfig());
+    if (token) await drive.label(token, run.driveFileId, { keep: null, note: null });
+  } catch (error) {
+    console.error("[fresh-start] the Drive label could not be taken off", error);
   }
 }
 
-/** The background part: the backup, then the wipe. Never rejects. */
+/** The background part: the backup, then the wipe. Never rejects; how many shop webhooks it queued. */
 async function runFreshStart(
-  id: string,
+  claim: Claim,
   actor: { userId: string },
   meta: RequestMeta | undefined,
   backup: FreshStartBackup,
-): Promise<void> {
+): Promise<number> {
+  const { id, companyId, claimId } = claim;
   let backupRunId: string | null = null;
   try {
     const made = await backup(actor);
     if (!made.ok) {
-      await fail(id, `Nothing was erased: ${made.reason}.`, made.runId);
-      return;
+      await fail(claim, `Nothing was erased: ${made.reason}.`, made.runId);
+      return 0;
     }
     backupRunId = made.runId;
-    const row = await prisma.freshStart.update({
-      where: { id },
+    const moved = await prisma.freshStart.updateMany({
+      where: { id, claimId, status: "BACKING_UP" },
       data: { status: "ERASING", backupRunId: made.runId, backupName: made.name },
     });
+    if (moved.count !== 1) throw new Stopped("the fresh start was stopped");
+    // The ticks of this claim (a newer claim has a new claim id).
+    const row = await prisma.freshStart.findFirst({ where: { id, claimId } });
+    if (!row) throw new Stopped("the fresh start was stopped");
     const ticks = {
       keepParties: row.keepParties,
       keepProducts: row.keepProducts,
       keepEmployees: row.keepEmployees,
     };
+    // What the connected shops are told, read before anything is erased.
+    const shops = await planShopResync(companyId, ticks);
+    let told = 0;
     const result = await runTransaction(
       async (tx) => {
-        // Still ours to run (the row is locked until this is saved).
-        const [mine] = await tx.$queryRaw<{ status: string }[]>`
-          SELECT "status"::text AS "status" FROM "FreshStart" WHERE "id" = ${id} FOR UPDATE`;
-        if (mine?.status !== "ERASING") throw new Error("the fresh start was stopped");
-        const wiped = await wipeCompany(tx, row.companyId, ticks);
+        // Still ours to run, with the ticks it was claimed with (locked until saved).
+        const [mine] = await tx.$queryRaw<{ status: string; claimId: string | null }[]>`
+          SELECT "status"::text AS "status", "claimId" FROM "FreshStart" WHERE "id" = ${id} FOR UPDATE`;
+        if (mine?.status !== "ERASING" || mine.claimId !== claimId) {
+          throw new Stopped("the fresh start was stopped");
+        }
+        const wiped = await wipeCompany(tx, companyId, ticks);
         // What a new company has from the start (all safe to repeat).
-        await ensureAccountsSetup(row.companyId, tx);
-        await ensureHrSetup(row.companyId, tx);
-        await ensureWalkInParty(row.companyId, tx);
+        await ensureAccountsSetup(companyId, tx);
+        await ensureHrSetup(companyId, tx);
+        await ensureWalkInParty(companyId, tx);
+        told = await queueShopResync(tx, companyId, shops);
         const kept = [
           ticks.keepParties && "buyers and suppliers",
           ticks.keepProducts && "products and styles",
           ticks.keepEmployees && "employees",
         ].filter(Boolean);
-        await tx.freshStart.update({
-          where: { id },
+        const done = await tx.freshStart.updateMany({
+          where: { id, claimId, status: "ERASING" },
           data: {
             status: "DONE",
             finishedAt: new Date(),
-            report: { erased: wiped.erased } as Prisma.InputJsonObject,
+            report: { erased: wiped.erased, shopEvents: told } as Prisma.InputJsonObject,
           },
         });
+        if (done.count !== 1) throw new Stopped("the fresh start was stopped");
         await recordAudit(
           {
-            companyId: row.companyId,
+            companyId,
             userId: actor.userId,
             action: "DELETE",
             entityType: "FreshStart",
@@ -327,7 +445,8 @@ async function runFreshStart(
         return wiped;
       },
       { timeout: WIPE_TIMEOUT_MS, maxWait: 60_000 },
-      1,
+      // Run again if Postgres cancels it to break a deadlock (it waits for its table locks).
+      3,
     );
     // The erased files' bytes, now that the wipe is saved.
     for (const file of result.files) {
@@ -335,11 +454,13 @@ async function runFreshStart(
         console.error("[fresh-start] a file could not be removed", error),
       );
     }
+    return told;
   } catch (error) {
     console.error("[fresh-start] stopped", error);
     const reason = error instanceof Error ? error.message : String(error);
-    await fail(id, `Nothing was erased: ${reason}`, backupRunId).catch((inner: unknown) =>
+    await fail(claim, `Nothing was erased: ${reason}`, backupRunId).catch((inner: unknown) =>
       console.error("[fresh-start] could not record the failure", inner),
     );
+    return 0;
   }
 }

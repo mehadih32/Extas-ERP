@@ -9,6 +9,7 @@ import { FormAlert } from "@/components/forms/field";
 import { GradeBadge, StatusBadge, VerifiedBadge } from "@/components/parties/badges";
 import { BuyerFigures, BuyerHistoryPanels, BuyerTopStyles } from "@/components/parties/buyer-360";
 import { accountsHref } from "@/components/accounts/labels";
+import { SentSection } from "@/components/documents/send-section";
 import { EmailPendingButton } from "@/components/parties/email-pending";
 import {
   balanceText,
@@ -486,6 +487,7 @@ export default async function PartyPage({
         <div className="grid content-start gap-6">
           <ContactPanel screen={screen} />
           <ActivityPanel screen={screen} currency={currency} />
+          {party.kind !== "SUPPLIER" && <SentSection partyId={party.id} showTitle />}
         </div>
       </div>
 

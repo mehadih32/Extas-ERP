@@ -62,6 +62,7 @@ export const ACCESS_TREE: readonly AccessBranch[] = [
       leaf("sales.order.create", "Make orders, invoices, packing lists and challans"),
       leaf("sales.invoice.edit", "Edit or void issued invoices"),
       leaf("sales.force_override", "Sell more than the stock (Force Override)"),
+      leaf("documents.send", "Send documents to buyers by email and WhatsApp"),
     ]),
     leaf("sales.returns.qc", "Check returned goods (QC)"),
     leaf("sales.campaigns.manage", "Win back quiet buyers (campaigns)"),

@@ -13,6 +13,7 @@ import { isZero, money, salesHref } from "@/components/sales/labels";
 import { MoneyRecords } from "@/components/sales/money-records";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { ProformaActions } from "@/components/sales/proforma-actions";
+import { SendBar, SentSection } from "@/components/documents/send-section";
 import { QuoteItems } from "@/components/sales/quote-items";
 import { SalesFlow } from "@/components/sales/sales-flow";
 import { localDay } from "@/lib/dates";
@@ -109,6 +110,12 @@ export default async function ProformaPage({
           today={localDay(new Date(), ctx.company.timezone)}
           notice={notice}
           templates={templates.ok ? templates.data : []}
+        />
+        <SendBar
+          ctx={ctx}
+          request={{ type: "PROFORMA_INVOICE", id: p.id }}
+          what={`Proforma invoice ${p.number}`}
+          partyId={p.buyer.id}
         />
       </div>
 
@@ -207,6 +214,7 @@ export default async function ProformaPage({
               </p>
             )}
           </Panel>
+          <SentSection referenceIds={[p.id]} type="PROFORMA_INVOICE" />
           <StartedProjects
             projects={p.production}
             startHref={

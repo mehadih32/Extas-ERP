@@ -1,9 +1,7 @@
 "use client";
 
-import { MessageCircleIcon } from "lucide-react";
-
 import { PrintDocumentButton } from "@/components/documents/print-button";
-import { IntegrationPendingButton } from "@/components/feedback/integration-pending";
+import { SendDocumentButtons } from "@/components/documents/send-buttons";
 
 /** What the sheet shows: chosen styles or a whole brand, in one warehouse or all. */
 export type StockSheetRequest = {
@@ -15,18 +13,22 @@ export type StockSheetRequest = {
 
 /**
  * Makes the price-free stock availability sheet (the total stock per colour and
- * size on the letterhead) and offers it to open or save, with "Share to
- * WhatsApp" beside it (Integration Pending for now). Anyone who sees the stock
- * may print it, as the documents API allows with inventory.view.
+ * size on the letterhead) and offers it to open or save. Anyone who sees the
+ * stock may print it, as the documents API allows with inventory.view. People
+ * who may send documents to buyers (`sendAs`, the company's name) also get
+ * "Send by email" and "Send on WhatsApp" (the buyer's address is typed in).
  */
 export function StockSheetButton({
   request,
   label = "Stock sheet (PDF)",
   className,
+  sendAs,
 }: {
   request: StockSheetRequest;
   label?: string;
   className?: string;
+  /** The company's name, when this person may send the sheet to a buyer. */
+  sendAs?: string | null;
 }) {
   return (
     <>
@@ -41,10 +43,9 @@ export function StockSheetButton({
           errorTitle: "We could not make the stock sheet",
         }}
       />
-      <IntegrationPendingButton icon={MessageCircleIcon} label="Share to WhatsApp">
-        Sending the stock sheet on WhatsApp comes with the integrations, which are on hold for now.
-        Until then, download the PDF and share it from your phone.
-      </IntegrationPendingButton>
+      {sendAs && (
+        <SendDocumentButtons request={request} what="the stock sheet" companyName={sendAs} />
+      )}
     </>
   );
 }

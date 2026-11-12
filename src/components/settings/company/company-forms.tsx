@@ -509,6 +509,7 @@ export function CompanyForms({
             lowStockThreshold: numberOrText(form, "lowStockThreshold"),
             defaultAdvancePercent: numberOrText(form, "defaultAdvancePercent"),
             dormantAfterMonths: numberOrText(form, "dormantAfterMonths"),
+            documentLinkDays: numberOrText(form, "documentLinkDays"),
           })
         }
       >
@@ -547,7 +548,18 @@ export function CompanyForms({
           min={1}
           max={60}
           step={1}
-          wide
+        />
+        <TextField
+          state={rules}
+          name="documentLinkDays"
+          label="WhatsApp PDF links work for (days)"
+          defaultValue={details.documentLinkDays}
+          hint="A PDF sent to a buyer on WhatsApp opens from its link for this many days."
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={90}
+          step={1}
         />
       </SettingsCard>
 

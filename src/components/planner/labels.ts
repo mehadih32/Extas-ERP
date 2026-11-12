@@ -61,6 +61,9 @@ export const REMINDER_TYPE_LABELS: Record<ReminderType, string> = {
   PAYMENT_DUE: "Payment due",
   INSTALLMENT_DUE: "Instalment due",
   CUSTOM: "Reminder",
+  QUOTATION_EXPIRY: "Quotation ends",
+  PROMISED_PAYMENT: "Promised payment",
+  FOLLOW_UP: "Follow-up",
 };
 
 /** What an agenda item is, as its small label. */

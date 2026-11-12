@@ -73,6 +73,8 @@ export const companyProfileSchema = z.object({
     .min(1, "Use 1 to 60 months")
     .max(60, "Use 1 to 60 months")
     .optional(),
+  /** Days a WhatsApp link to a document sent to a buyer keeps working. */
+  documentLinkDays: wholeNumber.min(1, "Use 1 to 90 days").max(90, "Use 1 to 90 days").optional(),
   /** Month the financial year starts in (7 = July, the Bangladesh income year). */
   fiscalYearStartMonth: wholeNumber.min(1, "Choose a month").max(12, "Choose a month").optional(),
 });
@@ -161,6 +163,7 @@ export async function getCompanyDetails(ctx: CompanyContext) {
     lowStockThreshold: company.lowStockThreshold,
     defaultAdvancePercent: company.defaultAdvancePercent.toString(),
     dormantAfterMonths: company.dormantAfterMonths,
+    documentLinkDays: company.documentLinkDays,
     fiscalYearStartMonth: company.fiscalYearStartMonth,
     /** The uploaded logo; its id changes with every upload, so it can version the image link. */
     logo: company.logoFile,

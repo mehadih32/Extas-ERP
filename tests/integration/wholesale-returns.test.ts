@@ -460,6 +460,80 @@ run("wholesale returns: receive, approve, QC and exchange (2026-11-12)", () => {
     await expectBooksBalanced(env.company.id);
   });
 
+  it("holds the invoice while a return waits, and takes no approval or QC on a void sale", async () => {
+    const env = await setup();
+    const ret = await wr.receiveWholesaleReturn(env.salesCtx, {
+      invoiceId: env.invoice.id,
+      reason: "Did not sell",
+      lines: [{ orderItemId: await env.line("Navy", "M"), quantity: 2, mode: "REFUND" }],
+    });
+    // The invoice cannot be voided while the return waits for approval.
+    const held = await appError(
+      documents.voidInvoice(env.ctx, env.invoice.id, { reason: "Wrong buyer" }),
+      "CONFLICT",
+    );
+    expect(held.message).toMatch(/wholesale return/);
+    expect(
+      (await prisma.invoice.findUniqueOrThrow({ where: { id: env.invoice.id } })).status,
+    ).not.toBe("VOID");
+
+    // Should the sale be undone anyway, the return takes no approval and no QC: no second credit.
+    await prisma.invoice.update({ where: { id: env.invoice.id }, data: { status: "VOID" } });
+    await appError(wr.approveWholesaleReturn(env.accountsCtx, ret.id, {}), "CONFLICT");
+    const qc = { lines: [{ lineId: ret.lines[0]!.id, a: 2, b: 0, reject: 0 }] };
+    await appError(wr.checkWholesaleReturn(env.warehouseCtx, ret.id, qc), "CONFLICT");
+    await prisma.invoice.update({ where: { id: env.invoice.id }, data: { status: "UNPAID" } });
+    await prisma.salesOrder.update({ where: { id: env.order.id }, data: { status: "CANCELLED" } });
+    await appError(wr.approveWholesaleReturn(env.accountsCtx, ret.id, {}), "CONFLICT");
+    await appError(wr.checkWholesaleReturn(env.warehouseCtx, ret.id, qc), "CONFLICT");
+    expect(await prisma.salesReturn.count({ where: { invoiceId: env.invoice.id } })).toBe(0);
+  });
+
+  it("counts the invoice's earlier credit notes toward the PIN amount", async () => {
+    const env = await setup();
+    await setPin(env.ctx, { pin: "2468" });
+    await wr.setWholesaleReturnSettings(env.ctx, { pinAbove: 1500, pin: "2468" });
+    const receive = async () =>
+      wr.receiveWholesaleReturn(env.salesCtx, {
+        invoiceId: env.invoice.id,
+        reason: "Did not sell",
+        lines: [{ orderItemId: await env.line("Navy", "M"), quantity: 1, mode: "REFUND" }],
+      });
+    // 900 alone is under 1,500: no PIN.
+    const first = await wr.approveWholesaleReturn(env.accountsCtx, (await receive()).id, {});
+    expect(first.creditNote?.amount).toBe("900.00");
+    // The second 900 brings the invoice to 1,800: the PIN is needed, though this part is small.
+    const second = await receive();
+    await expect(wr.approveWholesaleReturn(env.accountsCtx, second.id, {})).rejects.toThrow(/PIN/);
+    const approved = await wr.approveWholesaleReturn(env.accountsCtx, second.id, { pin: "2468" });
+    expect(approved.creditNote?.amount).toBe("900.00");
+  });
+
+  it("lets only those who also record money received approve (the money rule)", async () => {
+    const env = await setup();
+    const ret = await wr.receiveWholesaleReturn(env.salesCtx, {
+      invoiceId: env.invoice.id,
+      reason: "Did not sell",
+      lines: [{ orderItemId: await env.line("Navy", "M"), quantity: 1, mode: "REFUND" }],
+    });
+    // The store is given the approval permission, but not "Record money received".
+    const store = await prisma.companyMembership.findFirstOrThrow({
+      where: { companyId: env.company.id, userId: env.warehouseCtx.user.id },
+      select: { roleId: true },
+    });
+    const approve = await prisma.permission.findUniqueOrThrow({
+      where: { key: "sales.returns.approve" },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: store.roleId, permissionId: approve.id },
+    });
+    const storeCtx = await contextFor(env.warehouseCtx.user.id, env.company.id);
+    expect(storeCtx.can("sales.returns.approve")).toBe(true);
+    expect(wr.wholesaleReturnAccess(storeCtx).approve).toBe(false);
+    await appError(wr.approveWholesaleReturn(storeCtx, ret.id, {}), "FORBIDDEN");
+    expect(wr.wholesaleReturnAccess(env.accountsCtx).approve).toBe(true);
+  });
+
   it("keeps a company's returns to itself", async () => {
     const env = await setup("Extras");
     const other = await setup("Other Co");

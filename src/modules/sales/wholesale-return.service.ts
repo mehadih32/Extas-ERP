@@ -100,11 +100,35 @@ function assertCanReceive(ctx: CompanyContext) {
   }
 }
 
+/**
+ * Approving posts money to the buyer's account, so it takes both the approval
+ * permission and the money rule's "Record money received" (Accounts, Super Admin).
+ */
+export const canApproveWholesaleReturn = (ctx: Pick<CompanyContext, "can">) =>
+  ctx.can("sales.returns.approve") && ctx.can("accounts.receipts.record");
+
 function assertCanApprove(ctx: CompanyContext) {
-  if (!ctx.can("sales.returns.approve")) {
+  if (!canApproveWholesaleReturn(ctx)) {
     throw new AppError(
       "FORBIDDEN",
-      "Only someone who approves wholesale returns can decide the refund.",
+      "Only someone who approves wholesale returns and records money received can decide the refund.",
+    );
+  }
+}
+
+/** A void invoice or a cancelled order takes no refund and no QC (its sale is undone). */
+async function assertSaleStands(tx: Tx, invoiceId: string) {
+  const invoice = await tx.invoice.findUniqueOrThrow({
+    where: { id: invoiceId },
+    select: { number: true, status: true, order: { select: { number: true, status: true } } },
+  });
+  if (invoice.status === "VOID") {
+    throw new AppError("CONFLICT", `Invoice ${invoice.number} is void: this return cannot go on.`);
+  }
+  if (invoice.order.status === "CANCELLED") {
+    throw new AppError(
+      "CONFLICT",
+      `Order ${invoice.order.number} is cancelled: this return cannot go on.`,
     );
   }
 }
@@ -119,7 +143,7 @@ export function wholesaleReturnAccess(ctx: Pick<CompanyContext, "can">) {
   return {
     see: ctx.can("sales.view"),
     receive: canReceive(ctx),
-    approve: ctx.can("sales.returns.approve"),
+    approve: canApproveWholesaleReturn(ctx),
     check: ctx.can("sales.returns.qc"),
     /** Changing the PIN amount: the owner's setting. */
     settings: ctx.can("company.settings"),
@@ -687,6 +711,14 @@ export async function approveWholesaleReturn(
       },
     });
     if (ret.approvedAt) throw new AppError("CONFLICT", `${ret.number} is already approved.`);
+    await assertSaleStands(tx, ret.invoiceId);
+    // The invoice's credit notes so far count toward the PIN amount, so a return
+    // split in parts never slips under it.
+    const before = await tx.salesReturn.aggregate({
+      where: { invoiceId: ret.invoiceId, voidedAt: null },
+      _sum: { amount: true },
+    });
+    const creditedBefore = before._sum.amount ?? ZERO;
     const wanted = new Map(input.lines.map((l) => [l.lineId, l.refunded]));
     for (const lineId of wanted.keys()) {
       if (!ret.lines.some((l) => l.id === lineId)) {
@@ -730,17 +762,20 @@ export async function approveWholesaleReturn(
             last: position.returned + pieces >= position.ordered,
           })
         : { amounts: [], goods: ZERO, discount: ZERO, tax: ZERO, total: ZERO };
-    return { ret, refunds, taking, totals, fewer, position };
+    return { ret, refunds, taking, totals, fewer, position, creditedBefore };
   }, TX_OPTIONS);
   const company = await prisma.company.findUniqueOrThrow({
     where: { id: companyId },
     select: { wholesaleReturnPinAbove: true },
   });
-  if (plan.totals.total.gt(company.wholesaleReturnPinAbove)) {
+  const onInvoice = plan.totals.total.plus(plan.creditedBefore);
+  if (plan.totals.total.gt(0) && onInvoice.gt(company.wholesaleReturnPinAbove)) {
     await requirePin(
       ctx,
       input.pin || undefined,
-      `approve a refund of ${plan.totals.total.toFixed(2)} (over ${company.wholesaleReturnPinAbove.toFixed(2)})`,
+      plan.creditedBefore.gt(0)
+        ? `approve a refund of ${plan.totals.total.toFixed(2)} (with the ${plan.creditedBefore.toFixed(2)} already credited on this invoice, over ${company.wholesaleReturnPinAbove.toFixed(2)})`
+        : `approve a refund of ${plan.totals.total.toFixed(2)} (over ${company.wholesaleReturnPinAbove.toFixed(2)})`,
     );
   }
 
@@ -757,9 +792,15 @@ export async function approveWholesaleReturn(
       },
     });
     if (ret.approvedAt) throw new AppError("CONFLICT", `${ret.number} is already approved.`);
+    await assertSaleStands(tx, ret.invoiceId);
     // Nothing may have changed since the figures were worked out (and the PIN asked).
     const position = await returnPosition(tx, ret.orderId);
+    const after = await tx.salesReturn.aggregate({
+      where: { invoiceId: ret.invoiceId, voidedAt: null },
+      _sum: { amount: true },
+    });
     if (
+      !(after._sum.amount ?? ZERO).equals(plan.creditedBefore) ||
       position.returned !== plan.position.returned ||
       position.held !== plan.position.held ||
       !position.earlier.discount.equals(plan.position.earlier.discount)
@@ -923,6 +964,7 @@ export async function checkWholesaleReturn(
       },
     });
     if (ret.checkedAt) throw new AppError("CONFLICT", `${ret.number} is already checked.`);
+    await assertSaleStands(tx, ret.invoiceId);
     const splitOf = new Map(input.lines.map((l) => [l.lineId, l]));
     const grades = await tx.salesOrderItem.findMany({
       where: { id: { in: ret.lines.map((l) => l.orderItemId) } },

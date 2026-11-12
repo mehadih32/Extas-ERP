@@ -654,7 +654,19 @@ async function sourceLink(
         where: { id: sourceId },
         select: { number: true },
       });
-      if (!salesReturn) return null;
+      if (!salesReturn) {
+        // The QC of a wholesale return (2026-11-12) names the return itself.
+        const wholesale = await ctx.db.wholesaleReturn.findUnique({
+          where: { id: sourceId },
+          select: { number: true },
+        });
+        return wholesale
+          ? {
+              title: `Wholesale return ${wholesale.number}`,
+              href: sales ? `/sales/wholesale-returns/${sourceId}` : null,
+            }
+          : null;
+      }
       return {
         title: `Sales return ${salesReturn.number}`,
         href: sales ? `/sales/returns/${sourceId}` : null,

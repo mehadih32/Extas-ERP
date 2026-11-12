@@ -1645,7 +1645,7 @@ export const salesHelp: HelpSection = {
         "মাল ফেরত",
       ],
       routes: ["/sales/wholesale-returns"],
-      who: "যাঁরা Sales দেখেন, তাঁরা তালিকা দেখেন। ফেরত নেন অর্ডার-চালান বানানোর লোক (“Make orders, invoices, packing lists and challans”) আর Accounts (“Record money received”)। অনুমোদন করেন “Approve wholesale returns (refunds)” অনুমতির লোক (শুরুতে Accounts ও Super Admin), QC করেন “Check returned goods (QC)” অনুমতির লোক (শুরুতে গুদাম ও Super Admin)। “PIN amount” বদলান শুধু মালিক।",
+      who: "যাঁরা Sales দেখেন, তাঁরা তালিকা দেখেন। ফেরত নেন অর্ডার-চালান বানানোর লোক (“Make orders, invoices, packing lists and challans”) আর Accounts (“Record money received”)। অনুমোদন করেন যাঁর “Approve wholesale returns (refunds)” আর “Record money received” দুটো অনুমতিই আছে (শুরুতে Accounts ও Super Admin), কারণ এতে বায়ারের হিসাবে টাকা জমা হয়; QC করেন “Check returned goods (QC)” অনুমতির লোক (শুরুতে গুদাম ও Super Admin)। “PIN amount” বদলান শুধু মালিক।",
       what: [
         "“Sales” মেনুর “Wholesale returns” ট্যাবে পাইকারি বায়ারের সব ফেরত, প্রতিটির নম্বর WR- দিয়ে শুরু।",
         "প্রতিটি ফেরতের তিন ধাপ: ফেরত নেওয়া (“Receive return”), টাকা ফেরতের অনুমোদন (“Approve”) আর QC। অনুমোদন QC-র জন্য অপেক্ষা করে না।",
@@ -1853,7 +1853,7 @@ export const salesHelp: HelpSection = {
         "রিজেক্ট",
       ],
       routes: ["/sales/wholesale-returns/[returnId]"],
-      who: "“Approve” দেখেন “Approve wholesale returns (refunds)” অনুমতির লোক (শুরুতে Accounts ও Super Admin)। “QC” দেখেন “Check returned goods (QC)” অনুমতির লোক (শুরুতে গুদাম ও Super Admin)।",
+      who: "“Approve” দেখেন যাঁর “Approve wholesale returns (refunds)” আর “Record money received” দুটো অনুমতিই আছে (শুরুতে Accounts ও Super Admin): টাকার নিয়মে বায়ারের হিসাবে টাকা জমা শুধু তাঁরাই করেন। “QC” দেখেন “Check returned goods (QC)” অনুমতির লোক (শুরুতে গুদাম ও Super Admin)।",
       what: [
         "ওপরে ফেরতের নম্বর, বায়ার, কারণ, আর পিসের হিসাব: “Received”, “Refunded”, “Exchanged”, “A-grade”, “B-grade”, “Reject”।",
         "“Steps”-এ প্রতিটি ধাপ কে কখন করলেন, বিক্রির কত দিন পরে ফেরত এল, ক্রেডিট নোট আর এক্সচেঞ্জের অর্ডার, ইনভয়েস আর চালান।",
@@ -1916,7 +1916,7 @@ export const salesHelp: HelpSection = {
         },
         {
           label: "PIN",
-          text: "মালিকের ওয়েব PIN, শুধু ফেরতের টাকা “PIN amount”-এর বেশি হলে লাগে।",
+          text: "মালিকের ওয়েব PIN। লাগে যখন এই ফেরতের টাকা আর একই ইনভয়েসে আগের ক্রেডিট নোটগুলো মিলে “PIN amount”-এর বেশি হয়, তাই ফেরত ভাগ করে নিলেও PIN এড়ানো যায় না।",
         },
         {
           label: "Approve the refund",
@@ -1933,6 +1933,7 @@ export const salesHelp: HelpSection = {
         "QC-র যোগফল না মিলিয়ে সেভ করবেন না: তিনটার যোগফল ফেরত পিসের সমান না হলে সেভ হয় না।",
         "QC সেভের পরে বদলানো যায় না, তাই পিস দেখে তবেই ভাগ করুন; ভুল হলে Super Admin-কে জানান।",
         "PIN না জেনে বড় ফেরত অনুমোদনের চেষ্টা করবেন না: মালিককে জানান, তিনি PIN দেবেন বা নিজে অনুমোদন করবেন।",
+        "ইনভয়েস “Void” বা অর্ডার বাতিল হলে সেই ফেরতের অনুমোদন বা QC হয় না। আর অনুমোদনের অপেক্ষায় থাকা পাইকারি ফেরত থাকলে ইনভয়েস “Void” করা যায় না: আগে ফেরতটি অনুমোদন করুন।",
       ],
       tips: [
         "অনুমোদন আর QC যেকোনো ক্রমে হতে পারে; টাকা জমা QC-র জন্য আটকে থাকে না।",

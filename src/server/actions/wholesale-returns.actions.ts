@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache";
 
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
-import { requireCompany } from "@/modules/auth/context";
+import { requireCompany, requirePermission } from "@/modules/auth/context";
 import * as wr from "@/modules/sales/wholesale-return.service";
 
 /*
  * Sales > Wholesale returns (2026-11-12): receive, approve and QC. Who may do
  * each step is checked in the service (sales.order.create or Accounts to receive,
- * sales.returns.approve to approve, sales.returns.qc for the QC).
+ * sales.returns.approve with accounts.receipts.record to approve, here too, and
+ * sales.returns.qc for the QC).
  */
 
 const change = <T>(work: () => Promise<T>) =>
@@ -50,7 +51,9 @@ export const receiveWholesaleReturnAction = async (input: unknown) =>
 
 export const approveWholesaleReturnAction = async (id: string, input: unknown) =>
   change(async () => {
-    await wr.approveWholesaleReturn(await requireCompany(), id, input, await getRequestMeta());
+    // The money rule: approving credits the buyer's account (checked here and in the service).
+    const ctx = await requirePermission("sales.returns.approve", "accounts.receipts.record");
+    await wr.approveWholesaleReturn(ctx, id, input, await getRequestMeta());
     return null;
   });
 

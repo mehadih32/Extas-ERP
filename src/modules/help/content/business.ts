@@ -20,7 +20,7 @@ export const businessHelp: HelpSection = {
   id: "business",
   title: "ব্যবসা: রিটেল শপ (Business)",
   description:
-    "পুরো ব্যবসা এক নজরে (Overview), অনলাইন শপগুলোর হিসাব (Retail), আর রিটেল শপগুলো: ইআরপির বিশেষ হোলসেল বায়ার, তাদের দাম, ফেরত আর স্টক।",
+    "পুরো ব্যবসা এক নজরে (Overview), অনলাইন শপগুলোর হিসাব (Retail), নতুন হোলসেল বায়ার খোঁজার খরচ (B2B), আর রিটেল শপগুলো: ইআরপির বিশেষ হোলসেল বায়ার, তাদের দাম, ফেরত আর স্টক।",
   href: "/business",
   articles: [
     {
@@ -118,6 +118,97 @@ export const businessHelp: HelpSection = {
         "লাল সতর্কতা না দেখা: কোনো দিনের হিসাব না এলে রিটেলের লাভ সেদিন 0 ধরা থাকে না, বাদ থাকে।",
       ],
       shot: { target: "Profit by business" },
+    },
+    {
+      slug: "business-b2b",
+      title: "B2B: নতুন বায়ার খুঁজতে কত খরচ হলো",
+      summary:
+        "Accounts-এ লেখা “Customer acquisition (B2B)” খরচ মাস ধরে: কোন খাতে কত, এ মাসে কতজন নতুন বায়ার এল, একজন নতুন বায়ারে গড়ে কত খরচ, আর মাসের বাজেট।",
+      keywords: [
+        "b2b",
+        "customer acquisition",
+        "new buyers",
+        "cost per new buyer",
+        "trade fair",
+        "budget",
+        "নতুন বায়ার",
+        "বায়ার খোঁজা",
+        "ট্রেড ফেয়ার",
+        "বাজেট",
+      ],
+      routes: ["/business/b2b"],
+      who: "Business > Overview-এর মতো: যাদের ভূমিকায় টাকার হিসাব (financials) দেখার অনুমতি আছে। খরচ লেখে Accounts, আগের নিয়মেই।",
+      what: [
+        "Accounts-এর খরচে একটা খাত “Customer acquisition (B2B)”, তার নিচে 6টা ছোট খাত: “Online ads”, “Trade fairs and exhibitions”, “Samples to new buyers”, “B2B platforms”, “Travel and buyer visits” আর “Other”।",
+        "খরচ লেখা হয় অন্য খরচের মতোই, Accounts থেকে, খাতের তালিকায় নাম আগে “Customer acquisition (B2B)”, তারপর কোলন দিয়ে ছোট খাত, যেমন “Online ads”।",
+        "এটা অফিসের খরচ: অর্ডারের কস্টিংয়ে ঢোকে না, Net profit-এর আগে বাদ যায়। শপের বিজ্ঞাপনের খরচের সাথে কখনো মেশে না।",
+        "নতুন বায়ার মানে যে বায়ারের প্রথম হোলসেল অর্ডার এই মাসে। বাতিল অর্ডার আর রিটেল শপ গোনা হয় না।",
+        "বাজেটের 80% খরচ হলে হলুদ, 100% পেরোলে লাল। বাজেট শুধু তুলনার জন্য, টাকা নড়ে না।",
+      ],
+      why: "ধরুন অক্টোবরে ঢাকার একটা ট্রেড ফেয়ারে স্টলের খরচ 30,000, Facebook-LinkedIn বিজ্ঞাপনে 6,000 আর নতুন বায়ারদের স্যাম্পল পাঠাতে 4,000, মোট 40,000। এ মাসে মামুন ট্রেডার্স আর রাফি ফ্যাশন প্রথম অর্ডার দিল, তাই “Cost per new buyer” 20,000। ট্রেড ফেয়ারের বাজেট 25,000 দিলে সেই ঘর লাল হয়: পরের মাসে কোথায় খরচ কমাবেন বুঝতে পারেন।",
+      steps: [
+        {
+          text: "Accounts-এ খরচ লেখার সময় “Customer acquisition (B2B)” দিয়ে শুরু হওয়া খাত বাছুন, যেমন ট্রেড ফেয়ারের জন্য “Trade fairs and exhibitions”-ওয়ালাটা, তারপর অন্য খরচের মতোই সেভ করুন।",
+        },
+        {
+          text: "Business মেনুতে “B2B” ট্যাব খুলুন। “Month” থেকে মাস বেছে “Show” চাপুন। শুরুতে এই মাস।",
+        },
+        {
+          text: "ওপরে দেখুন “Acquisition spend” (মোট খরচ), “New buyers” আর “Cost per new buyer”।",
+        },
+        {
+          text: "“Spend by sub-head” অংশে প্রতিটা ছোট খাতে কত খরচ আর বাজেটের কত শতাংশ। বাজেট বসাতে “Set budget” চাপুন, খাত ধরে টাকা লিখে “Save the budget” চাপুন।",
+        },
+        {
+          text: "“New buyers this month” অংশে নতুন বায়ারদের নাম। নাম চাপলে বায়ারের পাতা খোলে।",
+        },
+      ],
+      tips: [
+        "কোনো খাতের বাজেট খালি রাখলে সেই খাতের শুধু খরচ দেখায়, রং হয় না।",
+        "ভুল খরচ Accounts-এ “Void” করলে এখান থেকেও বাদ যায়, কিছু মোছা হয় না।",
+        "নতুন বায়ার না এলে “Cost per new buyer”-এ “No new buyer yet” দেখায়।",
+      ],
+      fields: [
+        { label: "B2B", text: "Business মেনুর ট্যাব: নতুন হোলসেল বায়ার খুঁজতে খরচের পাতা।" },
+        { label: "Month", text: "কোন মাসের হিসাব দেখবেন। শুরুতে এই মাস।" },
+        { label: "Show", text: "বাছাই করা মাসের হিসাব দেখায়।" },
+        {
+          label: "Acquisition spend",
+          text: "এই মাসে “Customer acquisition (B2B)”-এর সব ছোট খাত মিলে খরচ, বাজেট থাকলে তার পাশে।",
+        },
+        { label: "New buyers", text: "যে বায়ারদের প্রথম হোলসেল অর্ডার এই মাসে, তাদের সংখ্যা।" },
+        { label: "Cost per new buyer", text: "মোট খরচ ভাগ নতুন বায়ারের সংখ্যা।" },
+        {
+          label: "No new buyer yet",
+          text: "এ মাসে কোনো নতুন বায়ার আসেনি, তাই গড় খরচ বের করা যায় না।",
+        },
+        {
+          label: "Spend by sub-head",
+          text: "প্রতিটা ছোট খাতে এ মাসের খরচ আর বাজেট। 80% থেকে হলুদ, 100% পেরোলে লাল।",
+        },
+        { label: "Online ads", text: "Facebook, LinkedIn, Google-এর মতো অনলাইন বিজ্ঞাপন।" },
+        {
+          label: "Trade fairs and exhibitions",
+          text: "ট্রেড ফেয়ার আর প্রদর্শনীর স্টল, সাজানো আর অন্য খরচ।",
+        },
+        { label: "Samples to new buyers", text: "নতুন বায়ারকে পাঠানো স্যাম্পল আর তার কুরিয়ার।" },
+        { label: "B2B platforms", text: "Alibaba-র মতো B2B সাইটের সদস্য ফি।" },
+        { label: "Travel and buyer visits", text: "বায়ারের কাছে যাওয়া-আসা আর থাকার খরচ।" },
+        { label: "Other", text: "বায়ার খোঁজার অন্য যেকোনো খরচ।" },
+        { label: "Set budget", text: "এই মাসের বাজেট বসানোর জানালা, ছোট খাত ধরে।" },
+        { label: "Save the budget", text: "লেখা বাজেট সেভ করে। খালি ঘরের বাজেট উঠে যায়।" },
+        {
+          label: "New buyers this month",
+          text: "এ মাসে প্রথম হোলসেল অর্ডার দেওয়া বায়ারদের নাম আর কোড।",
+        },
+      ],
+      next: "মাস শেষে কোন খাতে খরচ বেশি আর কতজন নতুন বায়ার এল তা মিলিয়ে পরের মাসের বাজেট ঠিক করুন। খরচ লেখা আর ভুল ঠিক করা Accounts-এ, আগের নিয়মেই।",
+      mistakes: [
+        "শপের বিজ্ঞাপনের খরচ এই খাতে লেখা: শপের বিজ্ঞাপন শপের সাইট দৈনিক হিসাবে পাঠায়, এখানে নয়।",
+        "অর্ডারের কস্টিংয়ে এই খরচ যোগ করা: এটা অফিসের খরচ, Net profit-এর আগে নিজেই বাদ যায়।",
+        "একই খরচ দুইবার লেখা: ভুল হলে Accounts-এ “Void” করুন।",
+      ],
+      shot: { target: "Spend by sub-head" },
     },
     {
       slug: "business-retail",

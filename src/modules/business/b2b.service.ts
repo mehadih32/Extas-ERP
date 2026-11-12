@@ -1,3 +1,4 @@
+import { readOnlyReason } from "@/lib/read-only";
 import { type B2bAcquisitionLine, Prisma, type SalesChannel } from "@prisma/client";
 import { z } from "zod";
 
@@ -194,7 +195,8 @@ export async function b2bPage(ctx: CompanyContext, raw: { month?: unknown } = {}
   if (!MONTH_RE.test(month)) {
     throw new AppError("VALIDATION", "Choose a month like 2026-11.", { month: ["A month"] });
   }
-  await ensureB2bAcquisitionHeads(ctx.company.id);
+  // A read-only session (Full check) never writes: the heads are made on a normal visit.
+  if (!(await readOnlyReason())) await ensureB2bAcquisitionHeads(ctx.company.id);
   const { start, end } = monthRange(month, tz);
   const heads = await ctx.db.expenseHead.findMany({
     where: { acquisitionLine: { not: null } },

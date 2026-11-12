@@ -180,6 +180,13 @@ const receiveLineSchema = z
     if (line.mode === "EXCHANGE" && !line.exchange) {
       issue.addIssue({ code: "custom", path: ["exchange"], message: "Choose the new piece" });
     }
+    if (line.mode === "REFUND" && line.exchange) {
+      issue.addIssue({
+        code: "custom",
+        path: ["exchange"],
+        message: "A Refund line sends no new piece: choose Exchange instead",
+      });
+    }
   });
 
 export const receiveWholesaleReturnSchema = z.object({
@@ -469,6 +476,13 @@ export async function receiveWholesaleReturn(
 ) {
   const input = receiveWholesaleReturnSchema.parse(raw);
   assertCanReceive(ctx);
+  // An exchange sells new pieces (its own order, invoice and challan): only those who may sell.
+  if (input.lines.some((l) => l.exchange) && !ctx.can("sales.order.create")) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Sending new pieces on an exchange makes a sale: it needs the right to make orders. Ask someone who makes orders, or choose Refund.",
+    );
+  }
   const companyId = ctx.company.id;
   const peek = await loadInvoice(prisma, companyId, input.invoiceId);
   if (!peek.partyId) {

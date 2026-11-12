@@ -1,3 +1,4 @@
+import { readOnlyReason } from "@/lib/read-only";
 import type { Expense, ExpenseHead, Party, Prisma } from "@prisma/client";
 
 import { dayRange, toInstant } from "@/lib/dates";
@@ -191,7 +192,8 @@ const headInclude = {
 export async function listExpenseHeads(ctx: CompanyContext, raw: unknown = {}) {
   const q = listExpenseHeadsSchema.parse(raw);
   await ensureGeneralExpenseHeads(ctx.company.id);
-  await ensureB2bAcquisitionHeads(ctx.company.id);
+  // A read-only session (Full check) never writes: the heads are made on a normal visit.
+  if (!(await readOnlyReason())) await ensureB2bAcquisitionHeads(ctx.company.id);
   return ctx.db.expenseHead.findMany({
     where: { isProductionCost: false, ...(q.includeInactive ? {} : { isActive: true }) },
     include: headInclude,

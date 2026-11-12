@@ -489,6 +489,51 @@ run("wholesale returns: receive, approve, QC and exchange (2026-11-12)", () => {
     expect(await prisma.salesReturn.count({ where: { invoiceId: env.invoice.id } })).toBe(0);
   });
 
+  it("lets an invoice be voided once its return is approved with every piece declined", async () => {
+    const env = await setup();
+    const ret = await wr.receiveWholesaleReturn(env.salesCtx, {
+      invoiceId: env.invoice.id,
+      reason: "Did not sell",
+      lines: [{ orderItemId: await env.line("Navy", "M"), quantity: 1, mode: "REFUND" }],
+    });
+    const approved = await wr.approveWholesaleReturn(env.accountsCtx, ret.id, {
+      lines: [{ lineId: ret.lines[0]!.id, refunded: 0 }],
+      reason: "Damaged by the buyer",
+    });
+    expect(approved.creditNote ?? null).toBeNull();
+    await documents.voidInvoice(env.ctx, env.invoice.id, { reason: "Wrong buyer" });
+    expect((await prisma.invoice.findUniqueOrThrow({ where: { id: env.invoice.id } })).status).toBe(
+      "VOID",
+    );
+  });
+
+  it("sends exchange pieces only for those who may sell, and never on a Refund line", async () => {
+    const env = await setup();
+    const navyM = await env.line("Navy", "M");
+    const exchange = { kind: "SIZE" as const, variantId: env.sku("Navy", "L"), quantity: 1 };
+    // A Refund line that carries a new piece is refused.
+    await expect(
+      wr.receiveWholesaleReturn(env.salesCtx, {
+        invoiceId: env.invoice.id,
+        reason: "Wrong size",
+        lines: [{ orderItemId: navyM, quantity: 1, mode: "REFUND", exchange }],
+      }),
+    ).rejects.toThrow(/Refund line sends no new piece/);
+    // Someone who may not make orders cannot send an exchange (it is a sale).
+    const accountsOnly = !env.accountsCtx.can("sales.order.create");
+    if (accountsOnly) {
+      await appError(
+        wr.receiveWholesaleReturn(env.accountsCtx, {
+          invoiceId: env.invoice.id,
+          reason: "Wrong size",
+          lines: [{ orderItemId: navyM, quantity: 1, mode: "EXCHANGE", exchange }],
+        }),
+        "FORBIDDEN",
+      );
+    }
+    expect(accountsOnly).toBe(true);
+  });
+
   it("counts the invoice's earlier credit notes toward the PIN amount", async () => {
     const env = await setup();
     await setPin(env.ctx, { pin: "2468" });

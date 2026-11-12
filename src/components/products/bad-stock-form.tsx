@@ -88,6 +88,12 @@ export function BadStockForm({
       setProblem(`There ${there === 1 ? "is" : "are"} only ${pieces(there, currency)} here.`);
       return;
     }
+    if (intoReserved) {
+      setProblem(
+        `Only ${pieces(Math.max(there - held, 0), currency)} can go: the rest are set aside for orders.`,
+      );
+      return;
+    }
     setProblem(undefined);
     startTransition(async () => {
       const result = await moveToBadStockAction({
@@ -199,7 +205,8 @@ export function BadStockForm({
 
       {intoReserved && (
         <FormAlert tone="note">
-          This takes pieces that are set aside for orders, so those orders will be short.
+          Pieces set aside for orders cannot be moved here. Deliver, change or cancel those orders
+          first.
         </FormAlert>
       )}
       <p className="text-sm text-muted-foreground">

@@ -86,21 +86,48 @@ const STOP_WORDS = /^(cancel|stop|বাতিল|না)$/i;
 type PinChecks = Record<string, { right: boolean; problem?: string; wrongToday?: number }>;
 
 /**
+ * The store a message names at its start ("Extas Uttara: status") when stores
+ * share this chat: the store of exactly that name, else the first whose name
+ * starts with it; null when it names none of them (or only one store is here).
+ */
+async function namedStore(mine: AiBotLink[], text: string): Promise<AiBotLink | null> {
+  if (mine.length < 2) return null;
+  const { store } = storePrefix(text);
+  if (!store) return null;
+  const companies = await prisma.company.findMany({
+    where: { id: { in: mine.map((l) => l.companyId) } },
+    select: { id: true, name: true },
+  });
+  const wanted = store.toLowerCase();
+  const named =
+    companies.find((c) => c.name.toLowerCase() === wanted) ??
+    companies.find((c) => c.name.toLowerCase().startsWith(wanted));
+  return named ? (mine.find((l) => l.companyId === named.id) ?? null) : null;
+}
+
+/**
  * The PIN a waiting store asked for, checked now (so it is never written
  * anywhere): null when no store of this chat waits for one, or the owner wrote
- * "বাতিল".
+ * "বাতিল". With stores sharing the chat, a message that names a store is for
+ * that store only: it is never taken as (a wrong) PIN for another one.
  */
 async function checkPinNow(mine: AiBotLink[], m: Incoming, now: Date): Promise<PinChecks | null> {
   const text = m.text?.trim() ?? "";
   if (!text || m.callback || STOP_WORDS.test(text)) return null;
-  const waiting = mine.filter((l) => l.pending && l.pendingUntil && l.pendingUntil > now);
+  let waiting = mine.filter((l) => l.pending && l.pendingUntil && l.pendingUntil > now);
   if (waiting.length === 0) return null;
+  const named = await namedStore(mine, text);
+  if (named) {
+    waiting = waiting.filter((l) => l.id === named.id);
+    if (waiting.length === 0) return null;
+  }
+  const typed = named ? storePrefix(text).rest : text;
   const checks: PinChecks = {};
   for (const link of waiting) {
     try {
       checks[link.id] = await checkBotPin(
         link.companyId,
-        westernDigits(text),
+        westernDigits(typed),
         link.ownerId ?? link.id,
       );
     } catch (error) {
@@ -607,15 +634,12 @@ async function pinNotWaited(mine: AiBotLink[], m: Incoming, now: Date) {
 /** Which store a message is for: the name at its start, else the only store, else one waiting for a PIN. */
 async function storeFor(mine: AiBotLink[], text: string) {
   if (mine.length === 1) return mine[0]!;
+  const named = await namedStore(mine, text);
+  if (named) return named;
   const companies = await prisma.company.findMany({
     where: { id: { in: mine.map((l) => l.companyId) } },
     select: { id: true, name: true },
   });
-  const { store } = storePrefix(text);
-  if (store) {
-    const named = companies.find((c) => c.name.toLowerCase().startsWith(store.toLowerCase()));
-    if (named) return mine.find((l) => l.companyId === named.id)!;
-  }
   const now = new Date();
   const waiting = mine.filter((l) => l.pendingUntil && l.pendingUntil > now);
   if (waiting.length === 1) return waiting[0]!;
@@ -638,7 +662,9 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
   ) {
     return pinNotWaited(mine, m, now);
   }
-  const picked = await storeFor(mine, text);
+  // A PIN checked for one store (named, or the only one waiting) is that store's.
+  const checkedFor = pin ? mine.filter((l) => l.id in pin) : [];
+  const picked = checkedFor.length === 1 ? checkedFor[0]! : await storeFor(mine, text);
   if ("ask" in picked) {
     return say(
       mine[0]!,

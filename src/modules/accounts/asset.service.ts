@@ -493,6 +493,13 @@ export async function disposeFixedAsset(
     if (asset.status === "DISPOSED") {
       throw new AppError("CONFLICT", `${asset.name} was already disposed of.`);
     }
+    // Depreciation already posted for the disposal day or later would stay in
+    // the books and put the gain or loss off: the disposal must come after it.
+    const depreciatedUntil = dateOnly(asset.depreciatedUntil);
+    if (depreciatedUntil && depreciatedUntil >= disposalDay) {
+      const message = `Depreciation of ${asset.name} is already posted up to ${depreciatedUntil}. Choose a disposal date after that day.`;
+      throw new AppError("VALIDATION", message, { date: [message] });
+    }
     const acc = await ensureControlAccounts(companyId, tx);
     const bookValue = asset.currentValue;
     const accumulated = asset.purchaseCost.minus(bookValue);

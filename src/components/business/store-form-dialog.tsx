@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
+import { asksForPin, PinField } from "@/components/ai/pin-prompt";
 import { Field } from "@/components/forms/field";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Input } from "@/components/ui/input";
@@ -24,7 +26,8 @@ export type StoreFields = {
 /**
  * "Add store" and "Edit store": the store's name, kind, warehouse, its online
  * shop (Settings > Integrations), address and phone. Adding one also adds it to
- * the buyer list as a buyer.
+ * the buyer list as a buyer. Moving an existing store to another warehouse asks
+ * for the owner's PIN (the field shows as soon as another one is picked).
  */
 export function StoreFormDialog({
   store,
@@ -42,6 +45,13 @@ export function StoreFormDialog({
   const router = useRouter();
   const adding = !store;
   const shops = onlineShops.filter((s) => !s.storeId || s.storeId === store?.id);
+  const [warehouseId, setWarehouseId] = useState(
+    store ? (store.warehouseId ?? "") : (warehouses.find((w) => w.isDefault)?.id ?? ""),
+  );
+  // The server asked for it (a change this screen did not foresee): show the field too.
+  const [pinAsked, setPinAsked] = useState(false);
+  // An existing store's warehouse moved to another: the owner's PIN.
+  const askPin = !adding && (pinAsked || warehouseId !== (store.warehouseId ?? ""));
 
   return (
     <FormDialog
@@ -64,11 +74,15 @@ export function StoreFormDialog({
           phone: text("phone"),
           warehouseId: text("warehouseId"),
           integrationId: text("integrationId"),
+          ...(form.has("pin") ? { pin: text("pin") } : {}),
         };
         const result = adding
           ? await createStoreAction(input)
           : await updateStoreAction(store.id, input);
-        if (!result.ok) return result.error;
+        if (!result.ok) {
+          if (asksForPin(result.error)) setPinAsked(true);
+          return result.error;
+        }
         if (adding && result.data) router.push(`/business/retail/stores/${result.data.id}`);
         else router.refresh();
         onClose();
@@ -106,7 +120,8 @@ export function StoreFormDialog({
             <NativeSelect
               id="store-warehouse"
               name="warehouseId"
-              defaultValue={store?.warehouseId ?? warehouses.find((w) => w.isDefault)?.id ?? ""}
+              value={warehouseId}
+              onChange={(event) => setWarehouseId(event.target.value)}
               containerClassName="sm:w-full"
             >
               <option value="">None yet</option>
@@ -154,6 +169,13 @@ export function StoreFormDialog({
               maxLength={40}
             />
           </Field>
+          {askPin && (
+            <PinField
+              id="store-pin"
+              error={fieldError("pin") ?? fieldError("pinNotSet")}
+              hint="Moving the store to another warehouse needs your PIN: its goods then go out from there."
+            />
+          )}
         </>
       )}
     </FormDialog>

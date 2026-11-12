@@ -1085,6 +1085,19 @@ run("E-commerce webhooks: ERP to shop (CN-005)", () => {
     await edit({ ...moved, ipAllowList: ["198.51.100.4"] });
     expect((await saved()).ipAllowList).toEqual(["198.51.100.4"]);
 
+    // Another warehouse: the shop's orders take their stock from there, so the PIN.
+    const other = await prisma.warehouse.create({
+      data: { companyId: shop.company.id, name: "Uttara store room" },
+    });
+    const elsewhere = { ...moved, ipAllowList: ["198.51.100.4"], warehouseId: other.id };
+    await expect(edit(elsewhere)).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "Give your PIN to change the shop's warehouse.",
+    });
+    expect((await saved()).warehouseId).toBe(shop.warehouse.id);
+    await edit({ ...elsewhere, pin: PIN });
+    expect((await saved()).warehouseId).toBe(other.id);
+
     // With no PIN set yet, the answer says to set one first.
     await prisma.aiSettings.updateMany({ data: { pinHash: null } });
     await expect(

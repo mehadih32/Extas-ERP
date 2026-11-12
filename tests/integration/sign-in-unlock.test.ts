@@ -98,6 +98,38 @@ run("Sign-in that waits, and unlocking it (v6.4.1 B5)", () => {
     expect((await signIn(HOME)).token).toBeTruthy();
   });
 
+  it("answers the same after five wrong passwords whether the account exists or not", async () => {
+    const REAL_PLACE = "203.0.113.70";
+    const GHOST_PLACE = "203.0.113.71";
+    const ghost = (email = "ghost@extas.test") =>
+      login({ email, password: "not-the-password" }, { ipAddress: GHOST_PLACE });
+    const answer = async (promise: Promise<unknown>) => {
+      const error = await promise.then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(AppError);
+      return { code: (error as AppError).code, message: (error as AppError).message };
+    };
+    // Before the fifth: the same plain answer for both.
+    expect(await answer(ghost())).toEqual(await answer(signIn(REAL_PLACE, "not-the-password")));
+    for (let i = 1; i < MAX_FAILED_LOGINS; i += 1) await ghost().catch(() => undefined);
+    await wrong(REAL_PLACE, MAX_FAILED_LOGINS - 1);
+    // After five: the same wait and the same words, so the answer tells nothing.
+    const real = await answer(signIn(REAL_PLACE, "not-the-password"));
+    const unknown = await answer(ghost());
+    expect(unknown).toEqual(real);
+    expect(real.code).toBe("ACCOUNT_LOCKED");
+    // The wait is for that email from that place only.
+    expect((await answer(ghost("nobody@extas.test"))).code).toBe("INVALID_CREDENTIALS");
+    // 15 minutes later the place gets the plain answer again.
+    await prisma.auditLog.updateMany({
+      where: { action: "LOGIN_FAILED", ipAddress: GHOST_PLACE },
+      data: { createdAt: new Date(Date.now() - 16 * 60_000) },
+    });
+    expect((await answer(ghost())).code).toBe("INVALID_CREDENTIALS");
+  });
+
   it("never makes the owner wait for wrong passwords from a Cloudflare address or none: that is no one place", async () => {
     // Someone else's wrong passwords through Cloudflare (no visitor address), or with no address.
     await wrong(CLOUDFLARE, MAX_FAILED_LOGINS * 2);

@@ -58,6 +58,8 @@ export const storeSchema = z.object({
   phone: optionalText(40),
   warehouseId: optionalId,
   integrationId: optionalId,
+  /** Asked only when an existing store's warehouse changes. */
+  pin,
 });
 
 /** A money box: up to 2 decimals, above 0. */
@@ -233,6 +235,9 @@ export async function updateStore(
   const input = storeSchema.parse(raw);
   await assertNameFree(ctx, input.name, store.id);
   await assertLinks(ctx, input, store.id);
+  // Its goods go out from its warehouse: moving the store to another needs the owner's PIN.
+  const warehouseChanged = input.warehouseId !== store.warehouseId;
+  if (warehouseChanged) await requirePin(ctx, input.pin, "change a store's warehouse");
   await ctx.db.retailStore.update({
     where: { id: store.id },
     data: {
@@ -252,7 +257,9 @@ export async function updateStore(
     action: "UPDATE",
     entityType: "RetailStore",
     entityId: store.id,
-    summary: `Changed the retail store "${input.name}"`,
+    summary: `Changed the retail store "${input.name}"${
+      warehouseChanged ? " (its warehouse changed, with the PIN)" : ""
+    }`,
   });
 }
 

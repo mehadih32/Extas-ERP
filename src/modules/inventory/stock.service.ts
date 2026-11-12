@@ -478,21 +478,38 @@ export async function listMovements(ctx: CompanyContext, raw: unknown = {}) {
 
 type Tx = Prisma.TransactionClient;
 
-/** Atomically removes stock; fails instead of going below zero. */
+/**
+ * Atomically removes stock (a count's shortage, a correction, a move to bad
+ * stock); fails instead of going below zero, and never takes pieces reserved
+ * for shop or sales orders (A-grade or B-grade): those leave only when their
+ * order is delivered, or come free when it is changed or cancelled.
+ */
 async function decrementBalance(
   tx: Tx,
   key: { variantId: string; warehouseId: string; grade: StockGrade },
   quantity: number,
+  sku: string,
 ) {
-  const { count } = await tx.stockBalance.updateMany({
-    where: { ...key, quantity: { gte: quantity } },
-    data: { quantity: { decrement: quantity } },
-  });
+  const count = await tx.$executeRaw`
+    UPDATE "StockBalance" SET quantity = quantity - ${quantity}, "updatedAt" = now()
+    WHERE "variantId" = ${key.variantId} AND "warehouseId" = ${key.warehouseId}
+      AND grade = ${key.grade}::"StockGrade"
+      AND quantity - GREATEST(reserved, 0) >= ${quantity}`;
   if (count === 0) {
     const current = await tx.stockBalance.findUnique({
       where: { variantId_warehouseId_grade: key },
-      select: { quantity: true },
+      select: { quantity: true, reserved: true },
     });
+    const inHand = current?.quantity ?? 0;
+    const reserved = Math.max(current?.reserved ?? 0, 0);
+    if (reserved > 0 && inHand >= quantity) {
+      const free = Math.max(inHand - reserved, 0);
+      const grade = key.grade === "B_GRADE" ? "B-grade " : "";
+      throw new AppError(
+        "CONFLICT",
+        `${sku}: ${reserved} of the ${inHand} ${grade}pieces in hand are reserved for shop or sales orders, so only ${free} can be taken off (${quantity} asked). Deliver, change or cancel those orders first.`,
+      );
+    }
     throw new AppError(
       "CONFLICT",
       `Not enough stock: ${current?.quantity ?? 0} in hand, ${quantity} requested.`,
@@ -595,7 +612,7 @@ async function applyAdjustment(tx: Tx, ctx: CompanyContext, change: Adjustment) 
   // The grade's pieces before incoming ones with a cost, which re-weight its average.
   let before: number | undefined;
   if (quantity < 0) {
-    await decrementBalance(tx, key, -quantity);
+    await decrementBalance(tx, key, -quantity, variant.sku);
   } else {
     if (change.unitCost !== undefined) {
       const onHand = await tx.stockBalance.aggregate({
@@ -855,7 +872,7 @@ export async function moveToBadStock(ctx: CompanyContext, raw: unknown, meta?: R
     const lossValue = unitCost
       .times(input.quantity)
       .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-    await decrementBalance(tx, key, input.quantity);
+    await decrementBalance(tx, key, input.quantity, variant.sku);
     const created = await tx.badStockEntry.create({
       data: {
         companyId: ctx.company.id,

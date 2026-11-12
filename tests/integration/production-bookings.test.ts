@@ -756,6 +756,67 @@ run("Bookings", () => {
     expect(!refused.ok && refused.error.code).toBe("CONFLICT");
   });
 
+  it("refuses goods received on lines a booking save wrote again at the same moment, plainly, with nothing half-saved", async () => {
+    const env = await setup();
+    const input = { ...knitwear(env), collar: null, lines: knitwear(env).lines.slice(0, 1) };
+    const b = await bookings.createBooking(env.pm, input);
+    await bookings.approveBooking(env.owner, b.id);
+    const fabricLine = b.lines[0]!;
+
+    // Another receipt from the mill holds the mill's account: this one reads the
+    // order, then waits for it. Meanwhile the booking is saved (its lines written again).
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let holding!: () => void;
+    const held = new Promise<void>((resolve) => (holding = resolve));
+    const other = prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`supplier-settle:${env.mill.id}`}))`;
+        holding();
+        await released;
+      },
+      { timeout: 30_000 },
+    );
+    await held;
+    const receipt = purchases
+      .createPurchase(env.pm, {
+        purchaseOrderId: b.orderId,
+        paymentType: "DUE",
+        items: [{ purchaseOrderLineId: fabricLine.id, quantity: 100 }],
+      })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    for (let i = 0; i < 100; i += 1) {
+      const [row] = await prisma.$queryRaw<Array<{ waiting: number }>>`
+        SELECT COUNT(*)::int AS waiting FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
+      if ((row?.waiting ?? 0) > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const saved = await bookings.updateBooking(env.pm, b.id, input);
+    expect(saved.stage).toBe("APPROVED");
+    expect(saved.lines[0]!.id).not.toBe(fabricLine.id);
+    release();
+    await other;
+
+    const error = await receipt;
+    expect(error).toBeInstanceOf(AppError);
+    expect((error as AppError).code).toBe("CONFLICT");
+    expect((error as AppError).message).toBe(
+      `${b.number} was changed while these goods were being received. Open it again and receive the goods on its lines as they are now.`,
+    );
+    expect(await prisma.supplierBill.count()).toBe(0);
+    expect(await prisma.journalEntry.count({ where: { sourceType: "SUPPLIER_BILL" } })).toBe(0);
+    // Received again on the lines as they are now, it goes through.
+    await purchases.createPurchase(env.pm, {
+      purchaseOrderId: b.orderId,
+      paymentType: "DUE",
+      items: [{ purchaseOrderLineId: saved.lines[0]!.id, quantity: 100 }],
+    });
+    expect(await prisma.supplierBill.count()).toBe(1);
+  });
+
   it("changes everything until goods arrive, then only the paperwork", async () => {
     const env = await setup();
     const b = await bookings.createBooking(env.pm, knitwear(env));

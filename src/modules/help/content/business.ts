@@ -472,7 +472,10 @@ export const businessHelp: HelpSection = {
           text: "“Set on each product”: B-গ্রেড পিসের দাম প্রতিটা প্রোডাক্টে বসে, না বসালে A-গ্রেডের দামই। “Not offered”: এই শপকে B-গ্রেড পিস দেওয়া চালু নেই।",
         },
         { label: "Hand prices", text: "কয়টা স্টাইল, কালার বা SKU-তে হাতে দাম দেওয়া আছে।" },
-        { label: "Warehouse", text: "শপের মাল কোন গুদাম থেকে যায়।" },
+        {
+          label: "Warehouse",
+          text: "শপের মাল কোন গুদাম থেকে যায়। যোগ করা শপের গুদাম পরে “Edit store”-এ বদলাতে মালিকের PIN লাগে।",
+        },
         {
           label: "Online shop",
           text: "শপের ওয়েবসাইটের সংযোগ, যার চাবি দিয়ে সাইট ইআরপির সাথে কথা বলে। শোরুমে লাগে না।",
@@ -487,6 +490,10 @@ export const businessHelp: HelpSection = {
         { label: "Phone", text: "শপের ফোন। বায়ার লিস্টেও এটা যায়।" },
         { label: "Save changes", text: "শপের বদল সেভ করে।" },
         { label: "Add the store", text: "শপ যোগ করে, বায়ার লিস্টেও যোগ করে, আর শপের পাতা খোলে।" },
+        {
+          label: "PIN",
+          text: "মালিকের ওয়েব PIN। “Edit store”-এ অন্য গুদাম বাছলে (বা গুদাম সরালে) ঘরটি আসে; ভুল হলে কিছু সেভ হয় না।",
+        },
       ],
       next: "শপের পাতায় “Change the price rules” দিয়ে দামের নিয়ম বসান। তারপর “Prices the store sees” অংশে দেখুন কোন স্টাইল কোন দামে শপ পাবে।",
       mistakes: [
@@ -548,7 +555,7 @@ export const businessHelp: HelpSection = {
       fields: [
         {
           label: "Edit store",
-          text: "শপের নাম, ধরন, গুদাম, অনলাইন শপ, ঠিকানা আর ফোন বদলানোর জানালা।",
+          text: "শপের নাম, ধরন, গুদাম, অনলাইন শপ, ঠিকানা আর ফোন বদলানোর জানালা। অন্য গুদাম বাছলে নিচে PIN-এর ঘর আসে: গুদাম বদলাতে মালিকের PIN লাগে, কারণ শপের মাল তখন সেই গুদাম থেকে যায়।",
         },
         {
           label: "Save changes",
@@ -591,7 +598,10 @@ export const businessHelp: HelpSection = {
         },
         { label: "A-grade", text: "ভালো মাল: শপ পুরো দামে কেনে।" },
         { label: "B-grade", text: "দাগ বা ছোট খুঁতের মাল: কম দামে যায়।" },
-        { label: "PIN", text: "মালিকের ওয়েব PIN। দামের প্রতিটা বদলে লাগে।" },
+        {
+          label: "PIN",
+          text: "মালিকের ওয়েব PIN। দামের প্রতিটা বদলে লাগে, আর “Edit store”-এ শপের গুদাম বদলাতেও।",
+        },
         { label: "Style", text: "কোন স্টাইলের দাম। পাতায় খোঁজা স্টাইলগুলো এখানে আসে।" },
         {
           label: "Colour",

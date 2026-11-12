@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { rawBalance } from "@/modules/accounts/balances";
 import * as reconcile from "@/modules/accounts/bank-reconcile.service";
 import * as bank from "@/modules/accounts/bank.service";
+import * as chart from "@/modules/accounts/chart.service";
 import { ensureControlAccounts } from "@/modules/accounts/control-accounts";
 import * as moneyInOut from "@/modules/accounts/money-in-out.service";
 import * as vouchers from "@/modules/accounts/voucher.service";
@@ -227,6 +228,46 @@ run("Bank reconcile", () => {
     });
     holdsTogether(s.summary);
     expect((await screen("ticked")).lines.map((l) => l.id)).toEqual([env.lines.t1]);
+  });
+
+  it("keeps a ticked opening balance ticked when it is corrected", async () => {
+    const dutch = await bank.createBankAccount(env.owner.ctx, {
+      bankName: "Dutch-Bangla Bank",
+      accountName: "Extas Ltd",
+      accountNumber: "777-0001",
+      openingBalance: 20000,
+      openingDate: addDays(env.today, -60),
+    });
+    const view = (show?: string) =>
+      reconcile.getReconcileScreen(env.accounts.ctx, dutch.id, { show });
+    const [opening] = (await view()).lines;
+    await reconcile.setBankLinesCleared(env.accounts.ctx, dutch.id, {
+      lineIds: [opening!.id],
+      cleared: true,
+    });
+    const ticked = await prisma.journalLine.findUniqueOrThrow({ where: { id: opening!.id } });
+
+    // The opening was 25,000, not 20,000: corrected, and still ticked.
+    await chart.setAccountOpeningBalance(env.accounts.ctx, dutch.ledgerAccountId, {
+      amount: 25000,
+    });
+    const s = await view();
+    expect(s.summary).toMatchObject({
+      books: "25000.00",
+      cleared: "25000.00",
+      depositsOpen: "0.00",
+      openCount: 0,
+      tickedCount: 1,
+    });
+    holdsTogether(s.summary);
+    const [now] = (await view("ticked")).lines;
+    expect(now!.id).not.toBe(opening!.id);
+    const line = await prisma.journalLine.findUniqueOrThrow({ where: { id: now!.id } });
+    // Who ticked it and when come with it.
+    expect(line).toMatchObject({
+      clearedAt: ticked.clearedAt,
+      clearedById: env.accounts.user.id,
+    });
   });
 
   it("only lets Accounts tick, and only this bank account's waiting lines", async () => {

@@ -689,6 +689,25 @@ run("fixed assets and depreciation", () => {
     expect(await balance(env.accounts, env.acc.DEPRECIATION)).toBe(preview.total);
     await expectBooksOk(env.accounts);
 
+    // Depreciation is posted up to June 30: a sale dated on or before that day
+    // would keep depreciation after the sale, so it is refused and nothing changes.
+    const early = await expectAppError(
+      assets.disposeFixedAsset(env.accounts, van.id, {
+        date: "2026-06-30",
+        proceeds: 1000000,
+        method: "BANK_TRANSFER",
+        reason: "Sold to Karim Motors",
+      }),
+      "VALIDATION",
+    );
+    expect(early.message).toBe(
+      "Depreciation of Delivery van is already posted up to 2026-06-30. Choose a disposal date after that day.",
+    );
+    expect(await assets.getFixedAsset(env.accounts, van.id)).toMatchObject({
+      status: "IN_USE",
+      depreciatedUntil: "2026-06-30",
+    });
+
     // Sold in August at a loss: depreciation to the 14th first.
     const sold = await assets.disposeFixedAsset(env.accounts, van.id, {
       date: "2026-08-15",

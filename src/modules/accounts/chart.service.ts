@@ -375,6 +375,12 @@ export async function postAccountOpeningTx(
         ),
     );
   if (!unchanged) {
+    // A bank's opening line ticked in the bank check stays ticked when it is
+    // corrected: the corrected opening takes over the tick (who and when), so it
+    // need not be ticked again. The replaced pair is left out of the check anyway.
+    const tick = live
+      .flatMap((entry) => entry.lines)
+      .find((l) => l.accountId === account.id && l.clearedAt !== null);
     for (const entry of live) {
       await reverseJournalEntry(tx, entry.id, {
         description: `Opening balance of ${account.code} ${account.name} replaced`,
@@ -384,7 +390,7 @@ export async function postAccountOpeningTx(
     }
     if (!amount.isZero()) {
       const abs = amount.abs();
-      await postJournalEntry(tx, {
+      const posted = await postJournalEntry(tx, {
         companyId,
         date,
         description: `Opening balance — ${account.code} ${account.name}`,
@@ -401,6 +407,12 @@ export async function postAccountOpeningTx(
               { accountId: account.id, credit: abs },
             ],
       });
+      if (tick) {
+        await tx.journalLine.updateMany({
+          where: { entryId: posted.id, accountId: account.id },
+          data: { clearedAt: tick.clearedAt, clearedById: tick.clearedById },
+        });
+      }
     }
   }
   await tx.ledgerAccount.update({ where: { id: account.id }, data: { openingBalance: amount } });

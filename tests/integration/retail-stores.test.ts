@@ -48,9 +48,48 @@ run("Retail stores and their prices (plan v6)", () => {
       name: "Extas Retail Online",
       kind: "ONLINE",
       address: "Uttara, Dhaka",
+      warehouseId: shop.warehouse.id,
     });
     const renamed = await prisma.party.findUniqueOrThrow({ where: { id: store.partyId } });
     expect(renamed).toMatchObject({ name: "Extas Retail Online", address: "Uttara, Dhaka" });
+  });
+
+  it("needs the owner's PIN to move a store to another warehouse, or to take its warehouse away", async () => {
+    const store = await addStore();
+    const other = await prisma.warehouse.create({
+      data: { companyId: shop.company.id, name: "Uttara store room" },
+    });
+    const edit = (changes: Record<string, unknown>) =>
+      stores.updateStore(shop.owner, store.id, {
+        name: store.name,
+        kind: "ONLINE",
+        warehouseId: shop.warehouse.id,
+        integrationId: shop.integration.id,
+        ...changes,
+      });
+    const warehouseNow = async () =>
+      (await prisma.retailStore.findUniqueOrThrow({ where: { id: store.id } })).warehouseId;
+
+    // The same warehouse: no PIN.
+    await edit({ phone: "01800-000000" });
+    for (const changes of [{ warehouseId: other.id }, { warehouseId: "" }]) {
+      await expect(edit(changes)).rejects.toMatchObject({
+        code: "VALIDATION",
+        message: "Give your PIN to change a store's warehouse.",
+        details: { pin: expect.any(Array) },
+      });
+      await expect(edit({ ...changes, pin: "0000" })).rejects.toMatchObject({
+        details: { pin: ["The PIN is not right"] },
+      });
+    }
+    expect(await warehouseNow()).toBe(shop.warehouse.id);
+    await edit({ warehouseId: other.id, pin: PIN });
+    expect(await warehouseNow()).toBe(other.id);
+    const logged = await prisma.auditLog.findFirstOrThrow({
+      where: { entityType: "RetailStore", entityId: store.id, action: "UPDATE" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(logged.summary).toMatch(/its warehouse changed, with the PIN/);
   });
 
   it("lets only those with the retail rights see or change stores", async () => {

@@ -25,6 +25,7 @@ import { SalesNoAccess } from "@/components/sales/no-access";
 import { OrderActions } from "@/components/sales/order-actions";
 import { ReturnRecords } from "@/components/sales/return-records";
 import { SalesFlow } from "@/components/sales/sales-flow";
+import { OrderTaPanel } from "@/components/ta/order-ta";
 import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ import type { TemplateChoice } from "@/modules/reports/screens.service";
 import type { OrderScreen } from "@/modules/sales/screens.service";
 import { getAiRecordCostAction } from "@/server/actions/ai.actions";
 import { getOrderScreenAction } from "@/server/actions/sales.actions";
+import { getOrderTaAction } from "@/server/actions/ta.actions";
 import { templateChoicesAction } from "@/server/actions/templates.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
@@ -255,12 +257,15 @@ export default async function OrderPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ orderId }, query] = await Promise.all([params, searchParams]);
-  const [result, invoiceTemplates, challanTemplates, aiBox] = await Promise.all([
+  const [result, invoiceTemplates, challanTemplates, aiBox, taResult] = await Promise.all([
     getOrderScreenAction(orderId),
     templateChoicesAction("COMMERCIAL_INVOICE"),
     templateChoicesAction("DELIVERY_CHALLAN"),
     getAiRecordCostAction("SalesOrder", orderId),
+    getOrderTaAction(orderId),
   ]);
+  // The order's T&A calendar, for people who see it (sales.view or production.view).
+  const ta = taResult.ok ? taResult.data : null;
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
     if (result.error.code === "FORBIDDEN") return <SalesNoAccess />;
@@ -298,6 +303,11 @@ export default async function OrderPage({
               {o.shipmentOn && (
                 <span className="text-sm text-muted-foreground">
                   Ship by {formatDay(o.shipmentOn)}
+                </span>
+              )}
+              {ta?.atRisk && (
+                <span className="rounded-full border border-destructive/50 bg-destructive/10 px-2 py-0.5 text-[0.75rem] font-medium text-destructive">
+                  Ship date at risk
                 </span>
               )}
             </>
@@ -370,6 +380,7 @@ export default async function OrderPage({
               )}
             </dl>
           </Panel>
+          {ta && <OrderTaPanel ta={ta} orderNumber={o.number} />}
           <StartedProjects
             projects={o.production}
             startHref={

@@ -209,6 +209,16 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-11-12 (T&A calendar): the company has one T&A template (Production > T&A calendar > "T&A template", only
+  with company.settings), its steps so many days before the ship date; the starting steps are the Order check
+  card's days, and the AI order runs read the same template, so both show the same dates. Every order with a ship
+  date gets its own copy; a later template change counts only for orders that get their T&A after it. An order's
+  step days can be changed on the order (audit-logged; a later ship date change leaves a changed day alone). Steps
+  tick themselves from the ERP's records, the rest by hand; a step the ERP ticked cannot be unticked by hand. Seen
+  with sales.view or production.view; changed with sales.order.create or production.manage. A late step tells the
+  person who made the order and the owner once (inbox, and the owner's bot as an alarm, with the AI on or off); a
+  late step on the critical path shows "Ship date at risk".
+
 - 2026-11-12 (leads, phase 1): Sales has a "Leads" tab for companies that are not buyers yet; phase 1 has no AI
   and the ERP sends nothing itself (email and WhatsApp open in the person's own app, and "I sent it" logs it).
   Staff see their own leads and those not given to anyone; only "See every lead" (the owner) sees all, and only the

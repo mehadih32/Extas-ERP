@@ -41,7 +41,9 @@ import {
   stepsFor,
   stylesOf,
   taDates,
+  type TaTemplateDays,
 } from "./order-run";
+import { taTemplateOf } from "@/modules/ta/ta.service";
 
 /*
  * AI Center > Orders: a new order from the buyer's PO, order sheet or photos.
@@ -514,6 +516,7 @@ async function checksFor(ctx: CompanyContext, run: AiOrderRun, f: OrderFields) {
     rules: await rulesFor(ctx.company.id, f.buyer),
     buyerFound: run.buyerId !== null,
     styles: known.map((s) => s.code),
+    template: await taTemplateOf(ctx.company.id),
   });
 }
 
@@ -653,10 +656,12 @@ function planText(input: {
   blocked: string[];
   mode: "DRY_RUN" | "ASK";
   dryRunNo: number;
+  /** The company's T&A template. */
+  template: TaTemplateDays;
 }) {
   const { f } = input;
   const pieces = f.lines.reduce((sum, l) => sum + l.quantity, 0);
-  const ta = f.shipDate ? taDates(f.shipDate) : [];
+  const ta = f.shipDate ? taDates(f.shipDate, input.template) : [];
   const risks = [...input.checks, ...(input.card ?? [])].filter((c) => c.signal !== "green");
   return [
     `Order ${input.run.number}: ${input.run.title}`,
@@ -747,6 +752,7 @@ export async function makePlan(
     blocked: estimate.blocked,
     mode,
     dryRunNo: approved + 1,
+    template: await taTemplateOf(ctx.company.id),
   });
 
   let plan = facts;
@@ -983,6 +989,7 @@ async function stepsOf(companyId: string, timezone: string, run: AiOrderRun, now
     shipDate: fieldsOf(run).shipDate,
     done,
     hrefs,
+    template: await taTemplateOf(companyId),
   });
 }
 
@@ -1225,7 +1232,8 @@ export async function runOrderFollowUps(
       const ship = fieldsOf(run).shipDate;
       const near =
         ship !== null &&
-        localDay(now, company.timezone) >= taDates(ship).find((d) => d.key === "packed")!.by;
+        localDay(now, company.timezone) >=
+          taDates(ship, await taTemplateOf(company.id)).find((d) => d.key === "packed")!.by;
       if (near || late.some((s) => s.key === "booking" || s.key === "making")) {
         await pushToBot(company.id, {
           kind: "text",

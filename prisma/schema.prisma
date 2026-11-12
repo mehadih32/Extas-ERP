@@ -264,6 +264,9 @@ model Company {
   leadSources            LeadSource[]
   leadSettings           LeadSettings?
   leadSuppressions       LeadSuppression[]
+  taTemplateSteps        TaTemplateStep[]
+  taSettings             TaSettings?
+  orderTaSteps           OrderTaStep[]
 }
 
 /// A person who can log in. Global across companies.
@@ -403,6 +406,7 @@ model User {
   serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
   bugGuardEvents      BugGuardEvent[]        @relation("BugGuardEventBy")
   leadsOwned          Lead[]                 @relation("LeadOwner")
+  taStepsDone         OrderTaStep[]          @relation("TaStepDoneBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -1683,6 +1687,8 @@ model SalesOrder {
   productionProjects ProductionProject[]
   costings           OrderCosting[]
   aiOrderRuns        AiOrderRun[]
+  /// Its T&A calendar: one row per step, from the company template.
+  taSteps            OrderTaStep[]
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
@@ -8377,4 +8383,92 @@ model LeadSuppression {
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, kind, valueHash])
+}
+
+// --- T&A calendar (time and action) -------------------------------------------------------
+
+/// What ERP fact finishes a T&A step by itself; a step without one is ticked by hand.
+enum TaFact {
+  TECH_PACK_APPROVED
+  BOOKING_APPROVED
+  FABRIC_IN_HOUSE
+  CUTTING_STARTED
+  SEWING_DONE
+  PACKED
+  SHIPPED
+}
+
+/// How a T&A step was finished.
+enum TaDoneHow {
+  AUTO
+  MANUAL
+}
+
+/// One step of a company's T&A template: so many days before the ship date.
+model TaTemplateStep {
+  id             String   @id @default(cuid())
+  companyId      String
+  /// Stable key: TECH_PACK, FABRIC_BOOKING ... for the starting steps, or a made-up one.
+  key            String
+  name           String
+  daysBeforeShip Int
+  position       Int
+  fact           TaFact?
+  /// On the critical path: late here puts the ship date at risk.
+  critical       Boolean  @default(true)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, key])
+  @@index([companyId, position])
+}
+
+/// A company's T&A settings.
+model TaSettings {
+  id          String   @id @default(cuid())
+  companyId   String   @unique
+  /// A step due within this many days shows yellow.
+  dueSoonDays Int      @default(3)
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// One T&A step of one sales order, copied from the template when the order has a ship date.
+model OrderTaStep {
+  id             String     @id @default(cuid())
+  companyId      String
+  salesOrderId   String
+  key            String
+  name           String
+  position       Int
+  fact           TaFact?
+  critical       Boolean    @default(true)
+  daysBeforeShip Int
+  /// The day the template gives (ship date minus its days).
+  plannedOn      DateTime   @db.Date
+  /// The day it is due: the planned day, or the day changed on this order.
+  dueOn          DateTime   @db.Date
+  /// Changed on this order by hand: a new ship date then leaves it alone.
+  dueChanged     Boolean    @default(false)
+  doneAt         DateTime?
+  doneOn         DateTime?  @db.Date
+  doneHow        TaDoneHow?
+  doneById       String?
+  /// When the one "late" reminder went out (never twice for a step).
+  lateNotifiedAt DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  doneBy     User?      @relation("TaStepDoneBy", fields: [doneById], references: [id], onDelete: SetNull)
+
+  @@unique([salesOrderId, key])
+  @@index([companyId, dueOn])
+  @@index([companyId, doneAt])
 }

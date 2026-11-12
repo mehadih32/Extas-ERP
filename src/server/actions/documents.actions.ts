@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
-import { requireAnyPermission } from "@/modules/auth/context";
+import { requireAnyPermission, requirePermission } from "@/modules/auth/context";
 import * as printing from "@/modules/documents/print.service";
+import * as sending from "@/modules/documents/send.service";
 import * as screens from "@/modules/reports/screens.service";
 
 /*
@@ -37,3 +38,39 @@ export const getDocumentsScreenAction = async (query: unknown = {}) =>
   runAction(async () => screens.getDocumentsScreen(await printer(), query));
 export const listDocumentRowsAction = async (query: unknown) =>
   runAction(async () => screens.listDocumentRows(await printer(), query));
+
+// --- Sending to buyers (documents/send.service.ts): only when the person presses Send ------
+
+const sender = () => requirePermission("documents.send");
+
+export const sendDocumentByEmailAction = async (input: unknown) =>
+  runAction(async () => {
+    const sent = await sending.sendDocumentByEmail(await sender(), input, await getRequestMeta());
+    revalidatePath("/", "layout");
+    return sent;
+  });
+export const createWhatsAppLinkAction = async (input: unknown) =>
+  runAction(async () => {
+    const made = await sending.createWhatsAppLink(await sender(), input, await getRequestMeta());
+    revalidatePath("/", "layout");
+    return made;
+  });
+export const recordShareAction = async (input: unknown) =>
+  runAction(async () => sending.recordShare(await sender(), input, await getRequestMeta()));
+export const stopDocumentLinkAction = async (linkId: string) =>
+  runAction(async () => {
+    const stopped = await sending.stopDocumentLink(await sender(), linkId, await getRequestMeta());
+    revalidatePath("/", "layout");
+    return stopped;
+  });
+/** Whether email can go yet, and whether this person can set it up (AI Center > Settings). */
+export const documentSendSetupAction = async () =>
+  runAction(async () => {
+    const ctx = await sender();
+    return {
+      emailReady: await sending.emailReady(ctx.company.id),
+      canSetUpEmail: ctx.can("ai.manage"),
+    };
+  });
+export const listDocumentSendsAction = async (query: unknown) =>
+  runAction(async () => sending.listDocumentSends(await printer(), query));

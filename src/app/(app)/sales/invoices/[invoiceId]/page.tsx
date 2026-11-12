@@ -7,6 +7,8 @@ import { FormAlert } from "@/components/forms/field";
 import { BackLink } from "@/components/settings/back-link";
 import { BGradeBadge, InvoiceBadge, RefundBadge, RevisedBadge } from "@/components/sales/badges";
 import { Fact, Panel, RecordHeader, Totals } from "@/components/sales/detail-bits";
+import { SendBar, SentSection } from "@/components/documents/send-section";
+import { PromiseSection } from "@/components/follow-ups/sections";
 import { InvoiceActions } from "@/components/sales/invoice-actions";
 import { invoiceTotalLines } from "@/components/sales/invoice-totals";
 import { METHOD_LABELS, money, salesHref } from "@/components/sales/labels";
@@ -87,6 +89,14 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
           today={localDay(new Date(), ctx.company.timezone)}
           templates={templates.ok ? templates.data : []}
         />
+        {inv.status !== "VOID" && (
+          <SendBar
+            ctx={ctx}
+            request={{ type: "COMMERCIAL_INVOICE", id: inv.id }}
+            what={`Invoice ${inv.number}`}
+            partyId={inv.buyer.id}
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,8fr)_minmax(0,4fr)]">
@@ -179,6 +189,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ invoic
               </p>
             )}
           </Panel>
+          <PromiseSection invoiceId={inv.id} />
+          <SentSection referenceIds={[inv.id]} type="COMMERCIAL_INVOICE" />
           <ReturnRecords returns={inv.returns} currency={currency} />
           <Panel title="Payments" id="payments-heading">
             {inv.payments.length === 0 && inv.refunds.length === 0 && inv.credits.length === 0 ? (

@@ -16,6 +16,7 @@ import {
   AUTO_TYPES,
   complianceSteps,
   dueStep,
+  isFollowUpType,
   loadRules,
   RULE_INFO,
   type RuleSettings,
@@ -32,8 +33,10 @@ import { dueItems, reminderText } from "@/modules/reminders/sources";
  *      one reminder, from the rule's send time on. Its sourceKey (kind, record,
  *      date, step) is unique, so a step never fires twice, not even when two
  *      servers run at once; a moved date starts its steps afresh.
- * Only in-app messages go out for now; WhatsApp and email come with the
- * integrations stage.
+ * Only in-app messages go out to staff. Follow-ups with buyers (a quotation
+ * ending, an invoice due, a promised payment, a "Follow up on" date) also go,
+ * as one message per run, to the owner's bot when one is linked (an alarm:
+ * whether the AI is on or off). None of it ever goes to a buyer.
  */
 
 type CompanyRow = { id: string; timezone: string };
@@ -147,6 +150,8 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
   const rules = await loadRules(company.id);
   let fired = 0;
   let messages = 0;
+  /** Follow-ups with buyers fired in this run, for the owner's bot. */
+  const followUps: string[] = [];
 
   for (const type of AUTO_TYPES) {
     const rule = rules[type];
@@ -159,8 +164,10 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
     );
     const steps = items.flatMap((item) => {
       const daysLeft = daysBetween(today, item.dueDay);
-      const days =
-        type === "COMPLIANCE_EXPIRY"
+      // A follow-up snoozed from Home comes back on its new day, not days before it.
+      const days = item.originalDay
+        ? [0]
+        : type === "COMPLIANCE_EXPIRY"
           ? complianceSteps(rule.daysBefore, item.alertDaysBefore ?? 30)
           : rule.daysBefore;
       const step = dueStep(daysLeft, days, rule.overdueEveryDays);
@@ -210,7 +217,11 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
         userIds,
         employeeIds.map((employeeId) => ({ employeeId, userId: staff.get(employeeId)!.userId })),
       );
-      const text = reminderText(item, daysLeft);
+      // The text tells the record's own date (a snoozed one's too), not the snoozed day.
+      const text = reminderText(
+        item,
+        item.originalDay ? daysBetween(today, item.originalDay) : daysLeft,
+      );
       try {
         const sent = await prisma.$transaction(async (tx) => {
           const reminder = await tx.reminder.create({
@@ -253,6 +264,7 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
         });
         fired += 1;
         messages += sent;
+        if (isFollowUpType(type)) followUps.push(`${text.subject}. ${text.body}`);
       } catch (error) {
         // Another run sent this step at the same moment.
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -262,5 +274,26 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
       }
     }
   }
+  if (followUps.length > 0) await tellOwnersBot(company.id, followUps);
   return { fired, messages };
+}
+
+/** The follow-ups that fired, as one message on the owner's bot (never to anyone outside). */
+async function tellOwnersBot(companyId: string, lines: string[]) {
+  try {
+    const { pushToBot } = await import("@/modules/ai/bot/push");
+    const shown = lines.slice(0, 10);
+    const more = lines.length - shown.length;
+    const text = [
+      `Follow-ups for today (${lines.length}):`,
+      ...shown.map((line) => `• ${line}`),
+      ...(more > 0 ? [`…and ${more} more in the ERP inbox.`] : []),
+    ].join("\n");
+    await pushToBot(companyId, { kind: "text", text: text.slice(0, 3500) }, { alarm: true });
+  } catch (error) {
+    console.error(
+      "[reminders] follow-ups not sent to the bot",
+      error instanceof Error ? error.message : error,
+    );
+  }
 }

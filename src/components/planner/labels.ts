@@ -61,6 +61,9 @@ export const REMINDER_TYPE_LABELS: Record<ReminderType, string> = {
   PAYMENT_DUE: "Payment due",
   INSTALLMENT_DUE: "Instalment due",
   CUSTOM: "Reminder",
+  QUOTATION_EXPIRY: "Quotation ends",
+  PROMISED_PAYMENT: "Promised payment",
+  FOLLOW_UP: "Follow-up",
 };
 
 /** What an agenda item is, as its small label. */
@@ -70,6 +73,10 @@ export const AGENDA_KIND_LABELS: Record<string, string> = {
   SHIPMENT: "Shipment",
   COMPLIANCE_EXPIRY: "Renewal",
   TASK_DUE: "Task",
+  QUOTATION_EXPIRY: "Quotation",
+  PAYMENT_DUE: "Payment due",
+  PROMISED_PAYMENT: "Promised",
+  FOLLOW_UP: "Follow-up",
   REMINDER: "Reminder",
 };
 
@@ -99,6 +106,10 @@ export const RULE_MANAGER_WORDS: Record<string, string | null> = {
   SHIPMENT: "People who take sales orders",
   COMPLIANCE_EXPIRY: "People who see the licences",
   TASK_DUE: null,
+  QUOTATION_EXPIRY: "People who make quotations, and the owner",
+  PAYMENT_DUE: "People who take orders or record money received, and the owner",
+  PROMISED_PAYMENT: "People who take orders or record money received, and the owner",
+  FOLLOW_UP: "The owner",
 };
 
 /** "Today", "Tomorrow", "Yesterday" or "12 Oct 2026". */

@@ -79,6 +79,8 @@ model Company {
   defaultAdvancePercent Decimal         @default(30) @db.Decimal(5, 2)
   dormantAfterMonths    Int             @default(6)
   fiscalYearStartMonth  Int             @default(7) // 7 = July (Bangladesh income year July-June)
+  /// Days a WhatsApp PDF link to a buyer keeps working (Settings > Company, "Business rules").
+  documentLinkDays      Int             @default(7)
   isActive              Boolean         @default(true)
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
@@ -243,6 +245,9 @@ model Company {
   aiFollowUps            AiFollowUp[]
   houseRules             HouseRule[]
   mailSettings           CompanyMailSettings?
+  documentSends          DocumentSend[]
+  documentLinks          DocumentLink[]
+  followUps              FollowUp[]
   aiBotLinks             AiBotLink[]
   aiPinTries             AiPinTry[]
   aiBotMessages          AiBotMessage[]
@@ -583,6 +588,7 @@ model FileAsset {
   complianceDocuments ComplianceDocument[]
   templates           DocumentTemplate[]
   generatedDocuments  GeneratedDocument[]
+  documentLinks       DocumentLink[]
   reportExports       ReportExport[]
   supplierBills       SupplierBill[]
   expenses            Expense[]
@@ -1766,6 +1772,9 @@ model Invoice {
   /// number stays, the PDF says "(Revised)". Back to 0 when a void is re-issued.
   revision       Int           @default(0)
   revisedAt      DateTime?
+  /// The day the buyer promised to pay (a follow-up date for our own staff; never sent to the buyer).
+  promisedPayOn  DateTime?     @db.Date
+  promiseNote    String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -6155,6 +6164,9 @@ enum ReminderType {
   PAYMENT_DUE
   INSTALLMENT_DUE
   CUSTOM
+  QUOTATION_EXPIRY
+  PROMISED_PAYMENT
+  FOLLOW_UP
 }
 
 enum ReminderStatus {
@@ -8132,4 +8144,124 @@ model StyleSizeChart {
   style   Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
 
   @@index([companyId, updatedAt])
+}
+
+enum DocumentSendChannel {
+  EMAIL
+  WHATSAPP
+  SHARE
+}
+
+enum DocumentSendStatus {
+  SENT
+  FAILED
+}
+
+/// One send of a document to a buyer (quotation, proforma, invoice, statement, stock sheet,
+/// packing list): who sent it, when, which document, to whom and how. Only ever made when a
+/// person presses the button (never by the AI or a clock). Never deleted.
+model DocumentSend {
+  id            String              @id @default(cuid())
+  companyId     String
+  channel       DocumentSendChannel
+  status        DocumentSendStatus  @default(SENT)
+  documentType  DocumentType
+  /// The printed document (GeneratedDocument) that went.
+  documentId    String?
+  /// What it was printed for ("Quotation", "Invoice", "Party"...), as on GeneratedDocument.
+  referenceType String?
+  referenceId   String?
+  partyId       String?
+  title         String
+  /// Email addresses (comma separated) or the phone number; empty for the phone's own Share.
+  recipients    String
+  subject       String?
+  message       String?
+  error         String?
+  /// The WhatsApp link made for it.
+  linkId        String?
+  sentById      String?
+  createdAt     DateTime            @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, referenceId])
+  @@index([companyId, partyId, createdAt])
+  @@index([companyId, createdAt])
+}
+
+/// A secure link to one PDF, sent on WhatsApp: a random token (only its SHA-256 kept), working
+/// until expiresAt unless stopped. It serves only its own copy of the PDF, without sign-in.
+model DocumentLink {
+  id            String       @id @default(cuid())
+  companyId     String
+  tokenHash     String       @unique
+  documentType  DocumentType
+  documentId    String?
+  referenceType String?
+  referenceId   String?
+  partyId       String?
+  title         String
+  /// Its own copy of the PDF (the kept sales PDFs are cleared after a day).
+  fileId        String?
+  fileName      String
+  expiresAt     DateTime
+  stoppedAt     DateTime?
+  stoppedById   String?
+  openCount     Int          @default(0)
+  lastOpenedAt  DateTime?
+  createdById   String?
+  createdAt     DateTime     @default(now())
+
+  company Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  file    FileAsset? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, referenceId])
+  @@index([companyId, partyId])
+}
+
+enum FollowUpKind {
+  MANUAL
+  QUOTATION_EXPIRY
+  PAYMENT_DUE
+  PROMISED_PAYMENT
+}
+
+enum FollowUpStatus {
+  OPEN
+  DONE
+}
+
+/// A follow-up for our own staff (never sent to a buyer). MANUAL: a "Follow up on" date set
+/// by hand on a buyer, a quotation or an order, with a short note. The other kinds are the
+/// marks put on a watched date from "Today's follow-ups" (Done, or Snooze to a later day),
+/// one per record and date (sourceKey).
+model FollowUp {
+  id           String         @id @default(cuid())
+  companyId    String
+  kind         FollowUpKind   @default(MANUAL)
+  status       FollowUpStatus @default(OPEN)
+  /// Marks on watched dates: "KIND:recordId:2026-11-12" (null for a manual follow-up).
+  sourceKey    String?
+  partyId      String?
+  quotationId  String?
+  orderId      String?
+  invoiceId    String?
+  dueOn        DateTime       @db.Date
+  /// Snoozed to this day (reminders and the Home card wait for it).
+  snoozedUntil DateTime?      @db.Date
+  note         String?
+  createdById  String?
+  doneAt       DateTime?
+  doneById     String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceKey])
+  @@index([companyId, status, dueOn])
+  @@index([companyId, partyId])
+  @@index([companyId, quotationId])
+  @@index([companyId, orderId])
 }

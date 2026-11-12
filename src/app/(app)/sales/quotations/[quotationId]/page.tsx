@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
+import { SendBar, SentSection } from "@/components/documents/send-section";
+import { FollowUpSection } from "@/components/follow-ups/sections";
 import { FormAlert } from "@/components/forms/field";
 import { VerifiedBadge } from "@/components/parties/badges";
 import { BackLink } from "@/components/settings/back-link";
@@ -36,7 +38,7 @@ export default async function QuotationPage({
   params: Promise<{ quotationId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireCompanyPage();
+  const ctx = await requireCompanyPage();
   const [{ quotationId }, query] = await Promise.all([params, searchParams]);
   const [result, templates] = await Promise.all([
     getQuotationScreenAction(quotationId),
@@ -96,6 +98,12 @@ export default async function QuotationPage({
           screen={screen}
           notice={notice}
           templates={templates.ok ? templates.data : []}
+        />
+        <SendBar
+          ctx={ctx}
+          request={{ type: "QUOTATION", id: q.id }}
+          what={`Quotation ${q.number}`}
+          partyId={q.buyer.id}
         />
       </div>
 
@@ -169,6 +177,8 @@ export default async function QuotationPage({
               )}
             </dl>
           </Panel>
+          <SentSection referenceIds={[q.id]} type="QUOTATION" />
+          <FollowUpSection on={{ quotationId: q.id }} what={`Quotation ${q.number}`} />
           {q.customFields.length > 0 && (
             <Panel title="More details" id="fields-heading">
               <dl className="mt-4 grid grid-cols-2 gap-4">

@@ -6,6 +6,7 @@ import { formatAmount, formatDay } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { COMPLIANCE_TYPE_LABELS } from "@/modules/compliance/status";
 import { STAGE_LABELS } from "@/modules/production/timeline";
+import type { PermissionKey } from "@/modules/rbac/permissions";
 import type { AutoType } from "@/modules/reminders/rules";
 
 /*
@@ -16,7 +17,13 @@ import type { AutoType } from "@/modules/reminders/rules";
  *   SHIPMENT             open sales orders' shipment dates
  *   COMPLIANCE_EXPIRY    current licences' expiry dates
  *   TASK_DUE             open tasks' due dates
- * The same list feeds the "coming up" agenda.
+ *   QUOTATION_EXPIRY     draft and sent quotations' Valid until dates
+ *   PAYMENT_DUE          unpaid invoices' due dates
+ *   PROMISED_PAYMENT     the day a buyer promised to pay an unpaid invoice
+ *   FOLLOW_UP            "Follow up on" dates set by hand on a buyer, quotation or order
+ * The same list feeds the "coming up" agenda and Home's "Today's follow-ups".
+ * A follow-up marked Done from Home is left out; a snoozed one comes back on
+ * its new day (FollowUp rows, follow-up.service.ts).
  */
 
 export type DueItem = {
@@ -35,6 +42,10 @@ export type DueItem = {
   /** Licences: days before expiry when the renewal window opens. */
   alertDaysBefore: number | null;
   link: { type: string; id: string };
+  /** Follow-ups: the mark that Done and Snooze put on this date ("KIND:record:day"). */
+  markKey?: string;
+  /** Follow-ups: the day it was due before it was snoozed. */
+  originalDay?: string;
   /** Reminder columns that point at the record. */
   refs: {
     projectId?: string;
@@ -63,6 +74,57 @@ const ORDER_STATUS: Record<(typeof OPEN_ORDER_STATUSES)[number], string> = {
 
 const join = (...parts: Array<string | null | undefined | false>) =>
   parts.filter(Boolean).join(" · ");
+
+/** Quotations a buyer may still take (their end date matters). */
+const LIVE_QUOTATIONS = ["DRAFT", "SENT"] as const;
+const OPEN_INVOICES = ["UNPAID", "PARTIALLY_PAID"] as const;
+
+/** The mark on a watched date (Done or Snooze from Home). */
+export const followUpKey = (type: string, recordId: string, day: string) =>
+  `${type}:${recordId}:${day}`;
+
+/** Whether this person opens the record a follow-up is about. */
+export function mayOpenFollowUp(
+  ctx: { can: (p: PermissionKey) => boolean },
+  item: Pick<DueItem, "link">,
+) {
+  return item.link.type === "Party" ? ctx.can("parties.view") : ctx.can("sales.view");
+}
+
+/**
+ * Leaves out watched dates marked Done, and moves snoozed ones to their new
+ * day (only those on or before `untilDay` stay).
+ */
+async function applyMarks(
+  db: Db,
+  companyId: string,
+  items: DueItem[],
+  untilDay: string,
+): Promise<DueItem[]> {
+  if (items.length === 0) return items;
+  const marks = await db.followUp.findMany({
+    where: { companyId, sourceKey: { in: items.map((i) => i.markKey!) } },
+    select: { sourceKey: true, status: true, snoozedUntil: true },
+  });
+  const byKey = new Map(marks.map((m) => [m.sourceKey, m]));
+  return items.flatMap((item) => {
+    const mark = byKey.get(item.markKey!);
+    if (!mark) return [item];
+    if (mark.status === "DONE") return [];
+    if (!mark.snoozedUntil) return [item];
+    const day = dateOnly(mark.snoozedUntil);
+    if (day <= item.dueDay) return [item];
+    return day <= untilDay ? [{ ...item, originalDay: item.dueDay, dueDay: day }] : [];
+  });
+}
+
+async function currencyOf(db: Db, companyId: string) {
+  const company = await db.company.findUnique({
+    where: { id: companyId },
+    select: { currency: true },
+  });
+  return company?.currency ?? "BDT";
+}
 
 /**
  * Open records of one kind whose date is on or before `untilDay` (overdue ones
@@ -254,6 +316,178 @@ export async function dueItems(
         };
       });
     }
+    case "QUOTATION_EXPIRY": {
+      const quotes = await db.quotation.findMany({
+        where: {
+          companyId,
+          status: { in: [...LIVE_QUOTATIONS] },
+          // Kept as the typed day at midnight UTC (like the other date-only columns).
+          validUntil: { not: null, lte: dateColumn(untilDay) },
+        },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          validUntil: true,
+          party: { select: { name: true } },
+        },
+        orderBy: [{ validUntil: "asc" }, { id: "asc" }],
+        take: limit,
+      });
+      const items = quotes.map((q): DueItem => {
+        const day = dateOnly(q.validUntil!);
+        return {
+          type,
+          recordId: q.id,
+          dueDay: day,
+          dueTime: null,
+          title: `Quotation ${q.number} for ${q.party.name}`,
+          detail: q.status === "DRAFT" ? "Still a draft" : "Sent to the buyer",
+          ownerUserIds: [],
+          ownerEmployeeIds: [],
+          alertDaysBefore: null,
+          link: { type: "Quotation", id: q.id },
+          markKey: followUpKey(type, q.id, day),
+          refs: {},
+        };
+      });
+      return applyMarks(db, companyId, items, untilDay);
+    }
+    case "PAYMENT_DUE":
+    case "PROMISED_PAYMENT": {
+      const promised = type === "PROMISED_PAYMENT";
+      const [invoices, currency] = await Promise.all([
+        db.invoice.findMany({
+          where: {
+            companyId,
+            status: { in: [...OPEN_INVOICES] },
+            dueAmount: { gt: 0 },
+            ...(promised
+              ? { promisedPayOn: { not: null, lte: dateColumn(untilDay) } }
+              : { dueDate: { not: null, lt: endInstant } }),
+          },
+          select: {
+            id: true,
+            number: true,
+            dueDate: true,
+            promisedPayOn: true,
+            promiseNote: true,
+            dueAmount: true,
+            orderId: true,
+            party: { select: { name: true } },
+            order: { select: { customerName: true } },
+          },
+          orderBy: [promised ? { promisedPayOn: "asc" } : { dueDate: "asc" }, { id: "asc" }],
+          take: limit,
+        }),
+        currencyOf(db, companyId),
+      ]);
+      // Who wrote down each promise (the person to remind first).
+      const promisers = promised
+        ? await db.auditLog.findMany({
+            where: {
+              companyId,
+              entityType: "InvoicePromise",
+              entityId: { in: invoices.map((i) => i.id) },
+            },
+            select: { entityId: true, userId: true },
+            orderBy: { createdAt: "desc" },
+          })
+        : [];
+      const items = invoices.map((inv): DueItem => {
+        const day = promised ? dateOnly(inv.promisedPayOn!) : localDay(inv.dueDate!, timeZone);
+        const promiser = promisers.find((a) => a.entityId === inv.id)?.userId;
+        return {
+          type,
+          recordId: inv.id,
+          dueDay: day,
+          dueTime: null,
+          title: `Invoice ${inv.number} for ${inv.party?.name ?? inv.order.customerName ?? "walk-in customer"}`,
+          detail: join(
+            `${formatAmount(inv.dueAmount, 2, currency)} ${currency} still due`,
+            promised && inv.promiseNote,
+          ),
+          ownerUserIds: promiser ? [promiser] : [],
+          ownerEmployeeIds: [],
+          alertDaysBefore: null,
+          link: { type: "Invoice", id: inv.id },
+          markKey: followUpKey(type, inv.id, day),
+          refs: { orderId: inv.orderId },
+        };
+      });
+      return applyMarks(db, companyId, items, untilDay);
+    }
+    case "FOLLOW_UP": {
+      const rows = await db.followUp.findMany({
+        where: {
+          companyId,
+          kind: "MANUAL",
+          status: "OPEN",
+          OR: [
+            { snoozedUntil: null, dueOn: { lte: dateColumn(untilDay) } },
+            { snoozedUntil: { lte: dateColumn(untilDay) } },
+          ],
+        },
+        orderBy: [{ dueOn: "asc" }, { id: "asc" }],
+        take: limit,
+      });
+      const [parties, quotes, orders] = await Promise.all([
+        db.party.findMany({
+          where: { companyId, id: { in: rows.flatMap((r) => (r.partyId ? [r.partyId] : [])) } },
+          select: { id: true, name: true },
+        }),
+        db.quotation.findMany({
+          where: {
+            companyId,
+            id: { in: rows.flatMap((r) => (r.quotationId ? [r.quotationId] : [])) },
+          },
+          select: { id: true, number: true, party: { select: { name: true } } },
+        }),
+        db.salesOrder.findMany({
+          where: { companyId, id: { in: rows.flatMap((r) => (r.orderId ? [r.orderId] : [])) } },
+          select: { id: true, number: true, customerName: true, party: { select: { name: true } } },
+        }),
+      ]);
+      return rows.flatMap((r): DueItem[] => {
+        const day = dateOnly(r.snoozedUntil ?? r.dueOn);
+        let title: string;
+        let link: DueItem["link"];
+        let refs: DueItem["refs"] = {};
+        if (r.quotationId) {
+          const q = quotes.find((x) => x.id === r.quotationId);
+          if (!q) return [];
+          title = `Quotation ${q.number} for ${q.party.name}`;
+          link = { type: "Quotation", id: q.id };
+        } else if (r.orderId) {
+          const o = orders.find((x) => x.id === r.orderId);
+          if (!o) return [];
+          title = `Order ${o.number} for ${o.party?.name ?? o.customerName ?? "walk-in customer"}`;
+          link = { type: "SalesOrder", id: o.id };
+          refs = { orderId: o.id };
+        } else {
+          const party = parties.find((x) => x.id === r.partyId);
+          if (!party) return [];
+          title = party.name;
+          link = { type: "Party", id: party.id };
+        }
+        return [
+          {
+            type,
+            recordId: r.id,
+            dueDay: day,
+            dueTime: null,
+            title,
+            detail: r.note ?? "",
+            ownerUserIds: r.createdById ? [r.createdById] : [],
+            ownerEmployeeIds: [],
+            alertDaysBefore: null,
+            link,
+            markKey: `MANUAL:${r.id}`,
+            refs,
+          },
+        ];
+      });
+    }
   }
 }
 
@@ -263,6 +497,10 @@ const SUBJECT: Record<AutoType, string> = {
   SHIPMENT: "Shipment due",
   COMPLIANCE_EXPIRY: "Renewal due",
   TASK_DUE: "Task due",
+  QUOTATION_EXPIRY: "Quotation ends",
+  PAYMENT_DUE: "Payment due",
+  PROMISED_PAYMENT: "Promised payment",
+  FOLLOW_UP: "Follow up",
 };
 
 const DATE_LABEL: Record<AutoType, string> = {
@@ -271,6 +509,10 @@ const DATE_LABEL: Record<AutoType, string> = {
   SHIPMENT: "Ship by",
   COMPLIANCE_EXPIRY: "Expires",
   TASK_DUE: "Due",
+  QUOTATION_EXPIRY: "Valid until",
+  PAYMENT_DUE: "Due",
+  PROMISED_PAYMENT: "Promised for",
+  FOLLOW_UP: "Follow up on",
 };
 
 /** "today", "tomorrow", "in 3 days", "1 day ago". */
@@ -284,11 +526,21 @@ export function relativeDays(daysLeft: number): string {
 /** A licence that has run out is "expired", not "overdue". */
 const EXPIRED = { subject: "Licence expired", label: "Expired" };
 
-/** The reminder's subject and text: what, when (and how far off), and the details. */
+/**
+ * The reminder's subject and text: what, when (and how far off), and the details.
+ * `daysLeft` counts to the record's own date (before any snooze).
+ */
 export function reminderText(item: DueItem, daysLeft: number) {
+  const day = item.originalDay ?? item.dueDay;
+  if (item.type === "QUOTATION_EXPIRY" && daysLeft < 0) {
+    return {
+      subject: `Quotation expired: ${item.title}`,
+      body: `Its validity ended on ${formatDay(day)} (${relativeDays(daysLeft)}). ${item.detail}`.trim(),
+    };
+  }
   const expired = item.type === "COMPLIANCE_EXPIRY" && daysLeft < 0;
   const label = expired ? EXPIRED.label : DATE_LABEL[item.type];
-  const when = `${label} ${formatDay(item.dueDay)}${item.dueTime ? ` ${item.dueTime}` : ""}`;
+  const when = `${label} ${formatDay(day)}${item.dueTime ? ` ${item.dueTime}` : ""}`;
   const relative =
     daysLeft < 0 && !expired ? `overdue, ${relativeDays(daysLeft)}` : relativeDays(daysLeft);
   return {

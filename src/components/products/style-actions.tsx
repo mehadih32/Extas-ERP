@@ -63,9 +63,12 @@ export function StyleActions({
   screen,
   currency,
   notice: initialNotice,
+  sendAs,
 }: {
   screen: StyleScreen;
   currency: string;
+  /** The company's name, when this person may send the stock sheet to a buyer. */
+  sendAs?: string | null;
   /** A message to show first (the style was just added or saved). */
   notice?: string;
 }) {
@@ -121,6 +124,7 @@ export function StyleActions({
             styleIds: [style.id],
             warehouseId: screen.warehouseId ?? undefined,
           }}
+          sendAs={sendAs}
         />
         {can.manage && (
           <div className="flex gap-2">

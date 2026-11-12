@@ -35,6 +35,15 @@ export default async function LeadReportsPage({ searchParams }: { searchParams: 
   }
   const r = result.data;
   const money = (v: string) => `${r.currency} ${groupAmount(v, r.currency)}`;
+  const cards: Array<[string, string]> = [
+    ["Leads", String(r.total.leads)],
+    ["Open", String(r.total.open)],
+    ["Won", String(r.total.won)],
+    ["Lost", String(r.total.lost)],
+    ["Open value", money(r.total.pipeline)],
+  ];
+  // What their orders came to: only for those who see sales amounts.
+  if (r.total.orders !== null) cards.push(["Orders from them", money(r.total.orders)]);
 
   return (
     <section aria-labelledby="lead-report-heading" className="grid gap-6">
@@ -66,14 +75,7 @@ export default async function LeadReportsPage({ searchParams }: { searchParams: 
       ) : (
         <>
           <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            {[
-              ["Leads", String(r.total.leads)],
-              ["Open", String(r.total.open)],
-              ["Won", String(r.total.won)],
-              ["Lost", String(r.total.lost)],
-              ["Open value", money(r.total.pipeline)],
-              ["Orders from them", money(r.total.orders)],
-            ].map(([label, value]) => (
+            {cards.map(([label, value]) => (
               <div key={label} className="rounded-md border p-3">
                 <dt className="text-[0.8125rem] text-muted-foreground">{label}</dt>
                 <dd className="mt-1 text-lg break-words tabular-nums">{value}</dd>
@@ -93,7 +95,9 @@ export default async function LeadReportsPage({ searchParams }: { searchParams: 
                   <th className="px-3 py-2 text-right font-medium">Lost</th>
                   <th className="px-3 py-2 text-right font-medium">Became buyers</th>
                   <th className="px-3 py-2 text-right font-medium">Open value</th>
-                  <th className="px-3 py-2 text-right font-medium">Orders from them</th>
+                  {r.seesOrders && (
+                    <th className="px-3 py-2 text-right font-medium">Orders from them</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -106,7 +110,9 @@ export default async function LeadReportsPage({ searchParams }: { searchParams: 
                     <td className="px-3 py-2 text-right tabular-nums">{l.lost}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{l.buyers}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{money(l.pipeline)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{money(l.orders)}</td>
+                    {l.orders !== null && (
+                      <td className="px-3 py-2 text-right tabular-nums">{money(l.orders)}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>

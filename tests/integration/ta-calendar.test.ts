@@ -176,12 +176,30 @@ run("T&A calendar for every order", () => {
       doneBy: env.production.user.name,
     });
     await ta.markTaDone(env.production.ctx, { stepId: pp.id, done: false });
-    // A step the ERP ticked cannot be taken back by hand.
+    // A step the ERP ticked is taken back only with a reason (activity log); the ERP
+    // then leaves it to be ticked by hand.
     const tech = got.steps.find((s) => s.key === "TECH_PACK")!;
     await expectAppError(
       ta.markTaDone(env.production.ctx, { stepId: tech.id, done: false }),
-      "CONFLICT",
+      "VALIDATION",
     );
+    await ta.markTaDone(env.production.ctx, {
+      stepId: tech.id,
+      done: false,
+      reason: "Buyer reopened the fit comments",
+    });
+    again = await ta.orderTa(env.production.ctx, o.id);
+    expect(again.steps.find((s) => s.key === "TECH_PACK")!.done).toBe(false);
+    const log = await prisma.auditLog.findFirst({
+      where: { entityId: o.id, summary: { contains: "Buyer reopened the fit comments" } },
+    });
+    expect(log?.summary).toContain("tick taken back");
+    await ta.markTaDone(env.production.ctx, { stepId: tech.id, done: true });
+    again = await ta.orderTa(env.production.ctx, o.id);
+    expect(again.steps.find((s) => s.key === "TECH_PACK")).toMatchObject({
+      done: true,
+      doneHow: "MANUAL",
+    });
 
     // Shipped: packing and ship tick themselves.
     await prisma.salesOrder.update({ where: { id: o.id }, data: { status: "SHIPPED" } });
@@ -222,27 +240,174 @@ run("T&A calendar for every order", () => {
     expect(lateOnly.days.flatMap((d) => d.items).every((i) => i.colour === "red")).toBe(true);
   });
 
-  it("tells each late step once: the order's maker and the owner", async () => {
-    const o = await order(env, addDays(today, 30), env.sales.user.id);
-    const first = await ta.runTaClock(new Date());
-    // Tech pack, booking, fabric in-house, PP sample and cutting (64, 62, 35, 34, 32 days).
+  it("tells each step that becomes late once, in one combined message: the maker and the owner", async () => {
+    // Made today, shipping in 70 days: every step is still ahead.
+    const o = await order(env, addDays(today, 70), env.sales.user.id);
+    await ta.orderTa(env.sales.ctx, o.id);
+    // 40 days on: tech pack, booking, fabric in-house, PP sample and cutting are late
+    // (64, 62, 35, 34 and 32 days before the ship date).
+    const later = new Date(Date.now() + 40 * 86_400_000);
+    const first = await ta.runTaClock(later);
     expect(first.told).toBe(5);
+    // One message each, not one per step.
+    expect(first.messages).toBe(2);
     const messages = await prisma.notificationLog.findMany({
-      where: { companyId: env.company.id, entityType: "SalesOrder", entityId: o.id },
+      where: { companyId: env.company.id, channel: "IN_APP" },
     });
-    expect(new Set(messages.map((m) => m.userId))).toEqual(
-      new Set([env.sales.user.id, env.owner.user.id]),
+    expect(messages.map((m) => m.userId).sort()).toEqual(
+      [env.sales.user.id, env.owner.user.id].sort(),
     );
     expect(messages.some((m) => m.userId === env.production.user.id)).toBe(false);
-    expect(messages.find((m) => m.subject?.includes("Tech pack approval"))?.body).toContain(
-      "ship date is at risk",
-    );
+    const toOwner = messages.find((m) => m.userId === env.owner.user.id)!;
+    expect(toOwner.subject).toBe(`T&A late: 5 steps on 1 order`);
+    expect(toOwner.entityId).toBe(o.id);
+    expect(toOwner.body).toContain("Tech pack approval");
+    expect(toOwner.body).toContain("ship date is at risk");
     // Run again (another hour, a restart): nothing twice.
-    const second = await ta.runTaClock(new Date());
-    expect(second.told).toBe(0);
-    expect(
-      await prisma.notificationLog.count({ where: { entityId: o.id, entityType: "SalesOrder" } }),
-    ).toBe(messages.length);
+    const second = await ta.runTaClock(later);
+    expect(second).toEqual({ told: 0, messages: 0 });
+    expect(await prisma.notificationLog.count({ where: { companyId: env.company.id } })).toBe(
+      messages.length,
+    );
+  });
+
+  it("never floods: steps already past their day when made, and draft orders, are not told", async () => {
+    // The first run of the clock on an order shipping in 30 days: its first five steps
+    // were already past their day when its T&A was made.
+    const old = await order(env, addDays(today, 30));
+    const first = await ta.runTaClock(new Date());
+    expect(first.told).toBe(0);
+    const colours = (await ta.orderTa(env.sales.ctx, old.id)).steps.filter(
+      (s) => s.colour === "red",
+    );
+    expect(colours).toHaveLength(5); // still shown late on the screen
+    // A draft order's steps are never told, even when they become late.
+    const draft = await order(env, addDays(today, 70));
+    await prisma.salesOrder.update({ where: { id: draft.id }, data: { status: "DRAFT" } });
+    await ta.orderTa(env.sales.ctx, draft.id);
+    const later = await ta.runTaClock(new Date(Date.now() + 40 * 86_400_000));
+    // Only the first order's sewing, packing and ship steps, which became late since.
+    expect(later.told).toBe(3);
+    const sent = await prisma.notificationLog.findMany({
+      where: { companyId: env.company.id },
+    });
+    expect(sent.length).toBeGreaterThan(0);
+    expect(sent.every((m) => m.entityId === old.id)).toBe(true);
+    expect(sent.some((m) => m.body?.includes(draft.number))).toBe(false);
+  });
+
+  it("ticks fabric steps only from fabric bookings and this order's own fabric", async () => {
+    const o = await order(env, addDays(today, 90));
+    const mine = await prisma.productionProject.create({
+      data: {
+        companyId: env.company.id,
+        code: "PRJ-TA-A",
+        name: "Polo",
+        salesOrderId: o.id,
+        targetDate: dateColumn(addDays(today, 80)),
+        targetQuantity: 1000,
+      },
+    });
+    const other = await order(env, addDays(today, 90));
+    const theirs = await prisma.productionProject.create({
+      data: {
+        companyId: env.company.id,
+        code: "PRJ-TA-B",
+        name: "Tee",
+        salesOrderId: other.id,
+        targetDate: dateColumn(addDays(today, 80)),
+        targetQuantity: 1000,
+      },
+    });
+    const supplier = await prisma.party.create({
+      data: { companyId: env.company.id, code: "SUP-TA-1", kind: "SUPPLIER", name: "Mill" },
+    });
+    const material = async (kind: "FABRIC" | "TRIM", name: string) =>
+      prisma.rawMaterial.create({
+        data: {
+          companyId: env.company.id,
+          code: `RM-${name}`,
+          kind,
+          name,
+          unit: kind === "FABRIC" ? "KG" : "PCS",
+        },
+      });
+    const fabric = await material("FABRIC", "Pique 220");
+    const trim = await material("TRIM", "Button");
+    let n = 0;
+    const po = async (
+      projectId: string,
+      item: { id: string },
+      received: number,
+      stage: "DRAFT" | "APPROVED" = "APPROVED",
+    ) => {
+      n += 1;
+      const row = await prisma.purchaseOrder.create({
+        data: {
+          companyId: env.company.id,
+          number: `PO-TA-${n}`,
+          supplierId: supplier.id,
+          orderDate: dateColumn(today),
+          projectId,
+          lines: {
+            create: [
+              {
+                rawMaterialId: item.id,
+                quantity: 100,
+                receivedQty: received,
+                unitPrice: 1,
+                amount: 100,
+              },
+            ],
+          },
+        },
+      });
+      await prisma.booking.create({
+        data: {
+          companyId: env.company.id,
+          orderId: row.id,
+          source: "SUPPLIER_PO",
+          category: "KNITWEAR",
+          terms: "",
+          stage,
+        },
+      });
+      return row;
+    };
+    // An approved trims booking is not "fabric booked".
+    await po(mine.id, trim, 0);
+    let got = await ta.orderTa(env.sales.ctx, o.id);
+    expect(got.steps.find((s) => s.key === "FABRIC_BOOKING")!.done).toBe(false);
+    // The other order's fabric, all received, does not tick this order's fabric in-house.
+    await po(theirs.id, fabric, 100);
+    got = await ta.orderTa(env.sales.ctx, o.id);
+    expect(got.steps.find((s) => s.key === "FABRIC_IN_HOUSE")!.done).toBe(false);
+    // This order's own approved fabric booking, received in full: both tick.
+    await po(mine.id, fabric, 100);
+    got = await ta.orderTa(env.sales.ctx, o.id);
+    expect(got.steps.find((s) => s.key === "FABRIC_BOOKING")).toMatchObject({
+      done: true,
+      doneHow: "AUTO",
+    });
+    expect(got.steps.find((s) => s.key === "FABRIC_IN_HOUSE")!.done).toBe(true);
+  });
+
+  it("keeps the starting steps' own keys when renamed on the first save", async () => {
+    const template = await ta.getTaTemplate(env.owner.ctx);
+    await ta.saveTaTemplate(env.owner.ctx, {
+      dueSoonDays: 3,
+      steps: template.steps.map((s) =>
+        s.key === "PACKING" ? { ...s, name: "Final packing", daysBeforeShip: 9 } : s,
+      ),
+    });
+    const saved = await ta.taTemplateOf(env.company.id);
+    expect(saved.find((s) => s.key === "PACKING")).toMatchObject({
+      name: "Final packing",
+      daysBeforeShip: 9,
+    });
+    expect(taDates(addDays(today, 100), saved).find((d) => d.key === "packed")!.by).toBe(
+      addDays(today, 91),
+    );
   });
 
   it("keeps each company's T&A to itself, and to those whose role sees orders", async () => {

@@ -73,42 +73,60 @@ export async function findPossibleDuplicates(
  * Creates a buyer, supplier or both. The code is generated when not given.
  * Possible duplicates (same phone / email) are returned so the UI can warn.
  */
-export async function createParty(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
+/**
+ * Makes a buyer or supplier. Given a transaction (`tx`), it runs inside it and
+ * does not retry a code clash itself (the caller retries the whole transaction).
+ */
+export async function createParty(
+  ctx: CompanyContext,
+  raw: unknown,
+  meta?: RequestMeta,
+  tx?: Prisma.TransactionClient,
+) {
   const input = createPartySchema.parse(raw);
   const { customFields, code: requestedCode, ...fields } = input;
   const buyerType = input.kind === "SUPPLIER" ? null : (input.buyerType ?? ("WHOLESALE" as const));
   const possibleDuplicates = await findPossibleDuplicates(ctx, input);
 
-  if (requestedCode && (await ctx.db.party.findFirst({ where: { code: requestedCode } }))) {
+  if (
+    requestedCode &&
+    (await (tx ?? prisma).party.findFirst({
+      where: { companyId: ctx.company.id, code: requestedCode },
+    }))
+  ) {
     const taken = `Code ${requestedCode} is already used.`;
     throw new AppError("CONFLICT", taken, { code: [taken] });
   }
 
   // Two people creating at once can pick the same generated code: retry.
   for (let attempt = 0; ; attempt++) {
-    const code = requestedCode ?? (await nextPartyCode(prisma, ctx.company.id, input.kind));
+    const code = requestedCode ?? (await nextPartyCode(tx ?? prisma, ctx.company.id, input.kind));
     try {
-      const party = await ctx.db.party.create({
-        data: {
-          ...fields,
-          code,
-          buyerType,
-          companyId: ctx.company.id,
-          country: fields.country ?? "Bangladesh",
-          customFields: (customFields ?? undefined) as Prisma.InputJsonValue | undefined,
+      const data = {
+        ...fields,
+        code,
+        buyerType,
+        companyId: ctx.company.id,
+        country: fields.country ?? "Bangladesh",
+        customFields: (customFields ?? undefined) as Prisma.InputJsonValue | undefined,
+      } satisfies Prisma.PartyUncheckedCreateInput;
+      const party = tx ? await tx.party.create({ data }) : await ctx.db.party.create({ data });
+      await auditInCompany(
+        ctx,
+        meta,
+        {
+          action: "CREATE",
+          entityType: "Party",
+          entityId: party.id,
+          summary: `Created ${party.kind.toLowerCase()} ${party.code} "${party.name}"`,
         },
-      });
-      await auditInCompany(ctx, meta, {
-        action: "CREATE",
-        entityType: "Party",
-        entityId: party.id,
-        summary: `Created ${party.kind.toLowerCase()} ${party.code} "${party.name}"`,
-      });
+        tx,
+      );
       return { party, possibleDuplicates };
     } catch (error) {
       const isCodeClash =
         error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
-      if (!isCodeClash || requestedCode || attempt >= 9) throw error;
+      if (!isCodeClash || requestedCode || tx || attempt >= 9) throw error;
     }
   }
 }

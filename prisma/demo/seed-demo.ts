@@ -22,7 +22,10 @@
  *   9. and the retail sample store "Extas Retail" (./retail-store.ts), once, with
  *      its price rules and one hand price;
  *  10. and the loans sample (./loans-samples.ts), once: a bank loan kept in capital,
- *      a person's money on terms and the office rent as a monthly fixed cost.
+ *      a person's money on terms and the office rent as a monthly fixed cost;
+ *  11. and the Release 6 samples (./r6-samples.ts): five leads in different stages
+ *      and one "Do not contact" entry, once; ship dates on two sample orders and the
+ *      T&A of every order with a ship date (one with late steps).
  * It stops, loading nothing, unless DEMO_SITE=on and the database is the demo's own.
  *   SEED_ADMIN_EMAIL          the owner's email
  *   DEMO_OWNER_PASSWORD_HASH  the owner's password hash on the live ERP
@@ -35,9 +38,11 @@ import { POLO_BATCH } from "./five-style-polo";
 import {
   assertDemoDatabase,
   loadFiveStylePoloDemo,
+  loadLeadsSamplesDemo,
   loadLoansSamplesDemo,
   loadRetailStoreDemo,
   loadSampleShopDemo,
+  loadTaSamplesDemo,
   loadTestBookingsDemo,
   loadV62SamplesDemo,
   loadV63SamplesDemo,
@@ -161,6 +166,26 @@ async function main() {
     );
   } catch (error) {
     console.error("! Loans sample: it could not be made", error);
+  }
+
+  try {
+    const leads = await loadLeadsSamplesDemo(owner.id, company.id);
+    console.log(
+      leads
+        ? `✓ Leads sample: ${leads.leads} leads (${leads.late} with a late follow-up) and a "Do not contact" entry`
+        : "✓ The leads sample is there already",
+    );
+  } catch (error) {
+    console.error("! Leads sample: it could not be made", error);
+  }
+
+  try {
+    const ta = await loadTaSamplesDemo(owner.id, company.id);
+    console.log(
+      `✓ T&A sample: ${ta.dated} order(s) given a ship date; ${ta.orders} order(s) with ${ta.steps} T&A steps`,
+    );
+  } catch (error) {
+    console.error("! T&A sample: it could not be made", error);
   }
 }
 

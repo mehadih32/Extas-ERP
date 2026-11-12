@@ -177,14 +177,14 @@ export const leadsHelpArticles: HelpArticle[] = [
         text: "“Next step” (যেমন “Email”), “Next step on” (তারিখ) আর “Next step note” দিন, তারপর “Save the lead” চাপুন।",
       },
       {
-        text: "“Looks like one already there” এলে তালিকার লিড বা বায়ার খুলে দেখুন। সত্যিই আলাদা কোম্পানি হলে “Save anyway” চাপুন; একই ইমেইল বা ওয়েবসাইটের লিড থাকলে নতুনটি রাখা যায় না।",
+        text: "“Looks like one already there” এলে তালিকার লিড বা বায়ার খুলে দেখুন। সত্যিই আলাদা কোম্পানি হলে “Save anyway” চাপুন; একই ইমেইল বা ওয়েবসাইটের লিড থাকলে নতুনটি রাখা যায় না। অন্য কেউ যে লিড দেখছেন আর আপনি যা খুলতে পারেন না, তার নাম দেখায় না: শুধু লেখা থাকে a lead already followed by someone else; তখন মালিক বা সেই সহকর্মীকে জিজ্ঞেস করুন।",
       },
     ],
     fields: [
       { label: "Company name", text: "কোম্পানির নাম; জরুরি।" },
       {
         label: "Website",
-        text: "কোম্পানির ওয়েবসাইট; একই ওয়েবসাইটের লিড আগেই থাকলে ERP নতুনটি রাখে না।",
+        text: "কোম্পানির ওয়েবসাইট; একই ওয়েবসাইটের লিড আগেই থাকলে ERP নতুনটি রাখে না। Facebook, LinkedIn, Alibaba, Amazon বা wa.me-র মতো সবার ব্যবহারের সাইটে শুধু সেই কোম্পানির নিজের পাতা মেলানো হয় (যেমন linkedin.com/company/nordic), পুরো সাইট নয়।",
       },
       { label: "Country", text: "কোম্পানির দেশ; লিড চেকের ঝুঁকির দেশ মেলাতে কাজে লাগে।" },
       { label: "City", text: "শহর।" },
@@ -517,7 +517,7 @@ export const leadsHelpArticles: HelpArticle[] = [
       { label: "Open value", text: "খোলা লিডগুলোর “Expected value”-এর যোগফল।" },
       {
         label: "Orders from them",
-        text: "যে লিডগুলো ক্রেতা হয়েছেন তাঁদের সব অর্ডারের মোট টাকা (বাতিল বাদে)।",
+        text: "যে লিডগুলো ক্রেতা হয়েছেন তাঁদের সব অর্ডারের মোট টাকা (বাতিল বাদে)। শুধু যাঁরা বিক্রির টাকা দেখতে পারেন (Sales বা হিসাবের অনুমতি) তাঁরা এই ঘর আর কলাম দেখেন।",
       },
       { label: "Became buyers", text: "কয়টি লিড ক্রেতা হয়েছেন।" },
       { label: "By stage", text: "প্রতিটি ধাপে কয়টি লিড।" },

@@ -42,6 +42,7 @@ export function ColourChip({ colour }: { colour: TaColour }) {
 export function OrderTaPanel({ ta, orderNumber }: { ta: OrderTa; orderNumber: string }) {
   const router = useRouter();
   const [editing, setEditing] = useState<Step | null>(null);
+  const [untick, setUntick] = useState<Step | null>(null);
   const [message, setMessage] = useState<string>();
   const [pending, startTransition] = useTransition();
 
@@ -134,13 +135,15 @@ export function OrderTaPanel({ ta, orderNumber }: { ta: OrderTa; orderNumber: st
                         Mark done
                       </Button>
                     )}
-                    {step.done && step.doneHow === "MANUAL" && (
+                    {step.done && (
                       <Button
                         type="button"
                         size="sm"
                         variant="ghost"
                         disabled={pending}
-                        onClick={() => tick(step, false)}
+                        onClick={() =>
+                          step.doneHow === "AUTO" ? setUntick(step) : tick(step, false)
+                        }
                       >
                         <Undo2Icon aria-hidden />
                         Not done
@@ -182,6 +185,35 @@ export function OrderTaPanel({ ta, orderNumber }: { ta: OrderTa; orderNumber: st
                 <Input id="ta-reason" name="reason" maxLength={300} />
               </Field>
             </>
+          )}
+        </FormDialog>
+      )}
+      {untick && (
+        <FormDialog
+          title="Not done"
+          description={`The ERP ticked "${untick.name}" of order ${orderNumber} from its records (${
+            untick.factLabel ?? "a record"
+          }). Say why it is not done: the reason is kept in the activity log, and the ERP stops ticking this step by itself.`}
+          submitLabel="Take back the tick"
+          pendingLabel="Saving"
+          errorTitle="We could not take back the tick"
+          onClose={() => setUntick(null)}
+          onSubmit={async (form) => {
+            const result = await markTaDoneAction({
+              stepId: untick.id,
+              done: false,
+              reason: String(form.get("reason") ?? "").trim() || undefined,
+            });
+            if (!result.ok) return result.error;
+            setUntick(null);
+            router.refresh();
+            return undefined;
+          }}
+        >
+          {(fieldError) => (
+            <Field id="ta-untick-reason" label="Why" error={fieldError("reason")}>
+              <Input id="ta-untick-reason" name="reason" maxLength={300} required minLength={3} />
+            </Field>
           )}
         </FormDialog>
       )}

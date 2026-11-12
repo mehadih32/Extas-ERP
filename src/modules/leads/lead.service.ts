@@ -4,7 +4,9 @@ import type { Db } from "@/lib/db-types";
 import { addDays, dateColumn, dateOnly, localDay, startOfDayInZone, nextDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { readOnlyReason } from "@/lib/read-only";
 import type { RequestMeta } from "@/lib/request-meta";
+import { canSeeSalesAmounts } from "@/modules/dashboard/access";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { requirePin } from "@/modules/ai/settings.service";
@@ -15,12 +17,13 @@ import {
   type Candidate,
   cleanEmail,
   companyDomain,
+  isFollowUpStage,
   isOpenStage,
   keysOf,
   leadCheck,
   leadNumber,
   matchDuplicates,
-  OPEN_STAGES,
+  FOLLOW_UP_STAGES,
   phoneDigits,
   STAGE_LABELS,
   suppressionHash,
@@ -195,8 +198,12 @@ async function assertSource(ctx: CompanyContext, sourceId: string | null | undef
 // Settings and sources
 // =============================================================================
 
-/** The company's sources, made the first time leads are opened (each company its own). */
+/**
+ * The company's sources, made the first time leads are opened (each company its
+ * own); never where nothing may be written (a Full check session, Bug Guard).
+ */
 export async function ensureSources(companyId: string, db: Db = prisma) {
+  if (await readOnlyReason()) return;
   const count = await db.leadSource.count({ where: { companyId } });
   if (count > 0) return;
   await db.leadSource.createMany({
@@ -435,6 +442,7 @@ async function candidates(ctx: CompanyContext, excludeLeadId?: string | null) {
         country: true,
         website: true,
         archivedAt: true,
+        ownerUserId: true,
         owner: { select: { name: true } },
         contacts: { select: { email: true, phone: true, whatsapp: true } },
       },
@@ -452,19 +460,28 @@ async function candidates(ctx: CompanyContext, excludeLeadId?: string | null) {
       },
     }),
   ]);
+  const seesAll = ctx.can("leads.all");
   const list: Candidate[] = [
-    ...leads.map((l) => ({
-      ...keysOf({
-        name: l.name,
-        country: l.country,
-        website: l.website,
-        emails: l.contacts.map((c) => c.email),
-        phones: l.contacts.flatMap((c) => [c.phone, c.whatsapp]),
-      }),
-      id: l.id,
-      kind: "LEAD" as const,
-      label: `${l.number} ${l.name}${l.owner ? ` (followed by ${l.owner.name})` : ""}${l.archivedAt ? " (archived)" : ""}`,
-    })),
+    ...leads.map((l) => {
+      // A lead someone else follows, for a person who sees only their own and free
+      // leads: it still warns, but without its name, number or link.
+      const hidden = !seesAll && !!l.ownerUserId && l.ownerUserId !== ctx.user.id;
+      return {
+        ...keysOf({
+          name: l.name,
+          country: l.country,
+          website: l.website,
+          emails: l.contacts.map((c) => c.email),
+          phones: l.contacts.flatMap((c) => [c.phone, c.whatsapp]),
+        }),
+        id: l.id,
+        kind: "LEAD" as const,
+        hidden,
+        label: hidden
+          ? "a lead already followed by someone else"
+          : `${l.number} ${l.name}${l.owner ? ` (followed by ${l.owner.name})` : ""}${l.archivedAt ? " (archived)" : ""}`,
+      };
+    }),
     ...buyers.map((b) => ({
       ...keysOf({
         name: b.name,
@@ -538,8 +555,8 @@ function presentRow(row: ListRow, today: string, tz: string) {
     nextActionKind: row.nextActionKind,
     nextActionNote: row.nextActionNote,
     /** The next step's day has passed (open leads only). */
-    late: next !== null && isOpenStage(row.stage) && next < today,
-    dueToday: next !== null && isOpenStage(row.stage) && next === today,
+    late: next !== null && isFollowUpStage(row.stage) && next < today,
+    dueToday: next !== null && isFollowUpStage(row.stage) && next === today,
     expectedValue: row.expectedValue?.toFixed(2) ?? null,
     buyer: row.party,
     lastActivityOn: localDay(row.lastActivityAt, tz),
@@ -568,7 +585,9 @@ export async function listLeads(ctx: CompanyContext, raw: unknown = {}) {
             : {},
       f.sourceId ? { sourceId: f.sourceId } : {},
       f.country ? { country: { equals: f.country, mode: "insensitive" } } : {},
-      f.due ? { stage: { in: [...OPEN_STAGES] }, nextActionOn: { lte: dateColumn(today) } } : {},
+      f.due
+        ? { stage: { in: [...FOLLOW_UP_STAGES] }, nextActionOn: { lte: dateColumn(today) } }
+        : {},
       f.q
         ? {
             OR: [
@@ -726,7 +745,7 @@ export async function getLead(ctx: CompanyContext, leadId: string) {
     nextActionOn: next,
     nextActionKind: full.nextActionKind,
     nextActionNote: full.nextActionNote,
-    late: next !== null && isOpenStage(full.stage) && next < today,
+    late: next !== null && isFollowUpStage(full.stage) && next < today,
     lostReason: full.lostReason,
     doNotContact: full.doNotContact,
     archived: full.archivedAt !== null,
@@ -1241,9 +1260,11 @@ export async function updateLeadContact(
 
 /**
  * "Erase personal data" (leads.erase, with the PIN): the person's name, job title,
- * email and phones are blanked for good, and their email, its company domain and
- * phones go on the "Do not contact" list as a hash, so they are never contacted
- * again. The lead, its history (which names no one) and anything else stay.
+ * email and phones are blanked for good, and their own email and phones go on the
+ * "Do not contact" list as a hash, so they are never contacted again. Their email's
+ * company domain is not added: other people at that company may still be contacted.
+ * The lead, its history (which names no one) and anything else stay. The reason
+ * typed is kept in the lead's history and the activity log.
  */
 export async function eraseLeadContact(
   ctx: CompanyContext,
@@ -1302,7 +1323,9 @@ export async function eraseLeadContact(
     });
     await addActivity(tx, ctx, lead.id, {
       kind: "ERASE",
-      summary: 'A contact\'s personal data was erased; they stay on "Do not contact"',
+      summary: `A contact's personal data was erased; they stay on "Do not contact"${
+        input.reason ? ` (why: ${input.reason})` : ""
+      }`,
       contactId: contact.id,
     });
   });
@@ -1311,7 +1334,9 @@ export async function eraseLeadContact(
     action: "UPDATE",
     entityType: "LeadContact",
     entityId: contact.id,
-    summary: `Erased the personal data of a contact of lead ${lead.number}`,
+    summary: `Erased the personal data of a contact of lead ${lead.number}${
+      input.reason ? ` (why: ${input.reason})` : ""
+    }`,
   });
 }
 
@@ -1462,9 +1487,10 @@ export async function addLeadFile(
 // =============================================================================
 
 /**
- * "Make buyer": the buyer is made through the normal path (code, audit,
- * duplicate hint), or an existing buyer is linked. The lead keeps its history,
- * and the buyer's page shows where it came from.
+ * "Make buyer": the buyer is made through the normal path (code, audit), or an
+ * existing buyer is linked. One transaction that locks the lead first, so two
+ * clicks never make two buyers. The lead keeps its history, and the buyer's page
+ * shows where it came from.
  */
 export async function makeBuyer(
   ctx: CompanyContext,
@@ -1482,64 +1508,92 @@ export async function makeBuyer(
     if (party) return { partyId: party.id, code: party.code, created: false };
   }
   const { partyId } = makeBuyerSchema.parse(raw);
+  const companyId = ctx.company.id;
+  const contact = partyId
+    ? null
+    : await ctx.db.leadContact.findFirst({
+        where: { leadId: lead.id, erasedAt: null },
+        orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+      });
 
-  let party: { id: string; code: string; name: string };
-  let created = false;
-  if (partyId) {
-    const found = await ctx.db.party.findFirst({
-      where: { id: partyId, kind: { in: ["BUYER", "BOTH"] }, systemRole: null },
-    });
-    if (!found) throw new AppError("NOT_FOUND", "Buyer not found.");
-    const taken = await ctx.db.lead.findFirst({ where: { partyId: found.id } });
-    if (taken) {
-      throw new AppError("CONFLICT", `That buyer already came from lead ${taken.number}.`);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        // The lead is locked and checked first: a second click waits here, then stops.
+        await tx.$queryRaw`SELECT "id" FROM "Lead" WHERE "id" = ${lead.id} AND "companyId" = ${companyId} FOR UPDATE`;
+        const fresh = await tx.lead.findFirst({
+          where: { id: lead.id, companyId },
+          select: { partyId: true },
+        });
+        if (fresh?.partyId) {
+          throw new AppError("CONFLICT", "This lead was just made a buyer by someone else.");
+        }
+        let party: { id: string; code: string; name: string };
+        let created = false;
+        if (partyId) {
+          const found = await tx.party.findFirst({
+            where: { id: partyId, companyId, kind: { in: ["BUYER", "BOTH"] }, systemRole: null },
+          });
+          if (!found) throw new AppError("NOT_FOUND", "Buyer not found.");
+          const taken = await tx.lead.findFirst({ where: { companyId, partyId: found.id } });
+          if (taken) {
+            throw new AppError("CONFLICT", `That buyer already came from lead ${taken.number}.`);
+          }
+          party = found;
+        } else {
+          const result = await createParty(
+            ctx,
+            {
+              kind: "BUYER",
+              buyerType: ["CORPORATE_UNIFORM", "PROMOTIONAL"].includes(lead.category)
+                ? "B2B_CORPORATE"
+                : "WHOLESALE",
+              name: lead.name,
+              contactPerson: contact?.name ?? null,
+              phone: contact?.phone ?? null,
+              whatsapp: contact?.whatsapp ?? null,
+              email: contact?.email ?? null,
+              city: lead.city,
+              country: lead.country,
+              tradePayment: lead.paymentTerms,
+              notes: `From lead ${lead.number}${lead.website ? ` · ${lead.website}` : ""}`,
+            },
+            meta,
+            tx,
+          );
+          party = result.party;
+          created = true;
+        }
+        await tx.lead.update({
+          where: { id: lead.id, companyId },
+          data: { partyId: party.id, convertedAt: new Date(), convertedById: ctx.user.id },
+        });
+        await addActivity(tx, ctx, lead.id, {
+          kind: "CONVERT",
+          summary: `${created ? "Made buyer" : "Linked to buyer"} ${party.code} ${party.name}`,
+        });
+        await auditInCompany(
+          ctx,
+          meta,
+          {
+            action: "UPDATE",
+            entityType: "Lead",
+            entityId: lead.id,
+            summary: `Lead ${lead.number} ${created ? "made buyer" : "linked to buyer"} ${party.code}`,
+          },
+          tx,
+        );
+        return { partyId: party.id, code: party.code, created };
+      });
+    } catch (error) {
+      // Two people made a buyer at once and picked the same code: try again.
+      const codeClash =
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002" &&
+        String(error.meta?.target ?? "").includes("code");
+      if (!codeClash || attempt >= 4) throw error;
     }
-    party = found;
-  } else {
-    const contact = await ctx.db.leadContact.findFirst({
-      where: { leadId: lead.id, erasedAt: null },
-      orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
-    });
-    const result = await createParty(
-      ctx,
-      {
-        kind: "BUYER",
-        buyerType: ["CORPORATE_UNIFORM", "PROMOTIONAL"].includes(lead.category)
-          ? "B2B_CORPORATE"
-          : "WHOLESALE",
-        name: lead.name,
-        contactPerson: contact?.name ?? null,
-        phone: contact?.phone ?? null,
-        whatsapp: contact?.whatsapp ?? null,
-        email: contact?.email ?? null,
-        city: lead.city,
-        country: lead.country,
-        tradePayment: lead.paymentTerms,
-        notes: `From lead ${lead.number}${lead.website ? ` · ${lead.website}` : ""}`,
-      },
-      meta,
-    );
-    party = result.party;
-    created = true;
   }
-  const claimed = await ctx.db.lead.updateMany({
-    where: { id: lead.id, partyId: null },
-    data: { partyId: party.id, convertedAt: new Date(), convertedById: ctx.user.id },
-  });
-  if (claimed.count === 0) {
-    throw new AppError("CONFLICT", "This lead was just made a buyer by someone else.");
-  }
-  await addActivity(prisma, ctx, lead.id, {
-    kind: "CONVERT",
-    summary: `${created ? "Made buyer" : "Linked to buyer"} ${party.code} ${party.name}`,
-  });
-  await auditInCompany(ctx, meta, {
-    action: "UPDATE",
-    entityType: "Lead",
-    entityId: lead.id,
-    summary: `Lead ${lead.number} ${created ? "made buyer" : "linked to buyer"} ${party.code}`,
-  });
-  return { partyId: party.id, code: party.code, created };
 }
 
 /**
@@ -1605,14 +1659,14 @@ export async function leadOfBuyer(ctx: CompanyContext, partyId: string) {
 // Follow-ups, reports and the export
 // =============================================================================
 
-/** Home's "Lead follow-ups" card: open leads whose next step is today or late. */
+/** Home's "Lead follow-ups" card: open or Nurture leads whose next step is today or late. */
 export async function leadFollowUps(ctx: CompanyContext, now = new Date(), limit = 6) {
   if (!leadAccess(ctx).view) return null;
   const today = todayOf(ctx, now);
   const where: Prisma.LeadWhereInput = {
     AND: [
       visibleLeads(ctx),
-      { archivedAt: null, stage: { in: [...OPEN_STAGES] } },
+      { archivedAt: null, stage: { in: [...FOLLOW_UP_STAGES] } },
       { nextActionOn: { lte: dateColumn(today) } },
     ],
   };
@@ -1667,14 +1721,17 @@ export async function leadReport(ctx: CompanyContext, raw: unknown = {}) {
       source: { select: { id: true, name: true } },
     },
   });
+  // The orders money column only for those who see sales or the money figures.
+  const seesOrders = canSeeSalesAmounts(ctx);
   const partyIds = leads.map((l) => l.partyId).filter(Boolean) as string[];
-  const sales = partyIds.length
-    ? await ctx.db.salesOrder.groupBy({
-        by: ["partyId"],
-        where: { partyId: { in: partyIds }, status: { not: "CANCELLED" } },
-        _sum: { total: true },
-      })
-    : [];
+  const sales =
+    seesOrders && partyIds.length
+      ? await ctx.db.salesOrder.groupBy({
+          by: ["partyId"],
+          where: { partyId: { in: partyIds }, status: { not: "CANCELLED" } },
+          _sum: { total: true },
+        })
+      : [];
   const salesOf = new Map(sales.map((s) => [s.partyId, s._sum.total ?? new Prisma.Decimal(0)]));
 
   type Line = {
@@ -1749,8 +1806,17 @@ export async function leadReport(ctx: CompanyContext, raw: unknown = {}) {
     to: f.to ?? null,
     currency: ctx.company.currency,
     seesAll: ctx.can("leads.all"),
-    lines: lines.map((l) => ({ ...l, pipeline: money(l.pipeline), orders: money(l.orders) })),
-    total: { ...total, pipeline: money(total.pipeline), orders: money(total.orders) },
+    seesOrders,
+    lines: lines.map((l) => ({
+      ...l,
+      pipeline: money(l.pipeline),
+      orders: seesOrders ? money(l.orders) : null,
+    })),
+    total: {
+      ...total,
+      pipeline: money(total.pipeline),
+      orders: seesOrders ? money(total.orders) : null,
+    },
     stages: [...byStage].map(([stage, count]) => ({ stage, count })),
     lostReasons: [...lost]
       .map(([reason, count]) => ({ reason, count }))

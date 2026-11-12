@@ -281,14 +281,18 @@ export function AddLeadForm({ form }: { form: Form }) {
             </p>
           )}
           <ul className="grid gap-1">
-            {matches.map((m) => (
-              <li key={`${m.kind}-${m.id}`} className="break-words">
-                <Link
-                  href={m.kind === "LEAD" ? `/sales/leads/${m.id}` : `/parties/buyers/${m.id}`}
-                  className="font-medium text-primary hover:underline"
-                >
-                  {m.kind === "LEAD" ? "Lead" : "Buyer"} {m.label}
-                </Link>{" "}
+            {matches.map((m, i) => (
+              <li key={`${m.kind}-${m.id || i}`} className="break-words">
+                {m.hidden ? (
+                  <span className="font-medium">Lead: {m.label}</span>
+                ) : (
+                  <Link
+                    href={m.kind === "LEAD" ? `/sales/leads/${m.id}` : `/parties/buyers/${m.id}`}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {m.kind === "LEAD" ? "Lead" : "Buyer"} {m.label}
+                  </Link>
+                )}{" "}
                 <span className="text-muted-foreground">({m.why})</span>
               </li>
             ))}

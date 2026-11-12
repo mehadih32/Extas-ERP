@@ -109,7 +109,22 @@ run("Leads (Sales > Leads, phase 1)", () => {
       leads.addLead(env.karim.ctx, { name: "NW Sweden", website: "nordicwear.se" }),
       "CONFLICT",
     );
-    expect(same.message).toContain("LD-0001");
+    // Karim may not open Rahim's lead: the warning never names it.
+    expect(same.message).toContain("a lead already followed by someone else");
+    expect(same.message).not.toContain("LD-0001");
+    expect(same.message).not.toContain("Nordic Wear AB");
+    const hidden = await leads.checkLeadDuplicates(env.karim.ctx, {
+      name: "NW",
+      website: "nordicwear.se",
+    });
+    expect(hidden.matches[0]).toMatchObject({ id: "", hidden: true });
+    // The owner sees every lead: named, with its link.
+    const named = await leads.checkLeadDuplicates(env.owner.ctx, {
+      name: "NW",
+      website: "nordicwear.se",
+    });
+    expect(named.matches[0]!.label).toContain("LD-0001");
+    expect(named.matches[0]!.hidden).toBe(false);
     // Same email, another spelling of the name: blocked too.
     await expectAppError(
       leads.addLead(env.karim.ctx, {
@@ -254,8 +269,22 @@ run("Leads (Sales > Leads, phase 1)", () => {
     expect(party.tradePayment).toBe("LC");
     // Again: the same buyer, not a second one.
     const again = await leads.makeBuyer(env.rahim.ctx, id);
+    // Two clicks at once on another lead: one buyer, the other click stops.
+    const second = await leads.addLead(env.rahim.ctx, {
+      name: "Baltic Basics",
+      country: "Germany",
+      confirmDuplicate: true,
+    });
+    const both = await Promise.allSettled([
+      leads.makeBuyer(env.rahim.ctx, second.id),
+      leads.makeBuyer(env.rahim.ctx, second.id),
+    ]);
+    expect(both.filter((r) => r.status === "fulfilled" && r.value.created)).toHaveLength(1);
+    expect(
+      await prisma.party.count({ where: { companyId: env.company.id, name: "Baltic Basics" } }),
+    ).toBe(1);
     expect(again).toMatchObject({ partyId: made.partyId, created: false });
-    expect(await prisma.party.count({ where: { companyId: env.company.id } })).toBe(1);
+    expect(await prisma.party.count({ where: { companyId: env.company.id } })).toBe(2);
 
     // Buyer 360's "Came from lead" block carries the history.
     const block = await leads.leadOfBuyer(env.rahim.ctx, made.partyId);
@@ -370,6 +399,36 @@ run("Leads (Sales > Leads, phase 1)", () => {
     // A lost lead is not chased.
     await leads.changeLeadStage(env.rahim.ctx, id, { stage: "LOST", reason: "No reply" });
     expect((await runReminders(at(1), { companyId: env.company.id })).automatic).toBe(0);
+  });
+
+  it("reminds on a Nurture lead's look-again day: inbox, Home card and the due filter", async () => {
+    const { id } = await leads.addLead(env.rahim.ctx, {
+      ...nordic,
+      nextActionOn: addDays(today(env), 30),
+    });
+    await leads.changeLeadStage(env.rahim.ctx, id, {
+      stage: "NURTURE",
+      lookAgainOn: addDays(today(env), 2),
+    });
+    const tz = env.company.timezone;
+    const at = (days: number) =>
+      new Date(startOfDayInZone(addDays(today(env), days), tz).getTime() + 10 * 3600_000);
+    expect((await runReminders(at(2), { companyId: env.company.id })).automatic).toBe(1);
+    const inbox = await prisma.notificationLog.findMany({
+      where: { companyId: env.company.id, channel: "IN_APP", entityId: id },
+    });
+    expect(inbox.map((n) => n.userId)).toEqual([env.rahim.user.id]);
+    // On and after that day it is on Home's card and in "Due" like an open lead.
+    const later = at(3);
+    const card = await leads.leadFollowUps(env.rahim.ctx, later);
+    expect(card?.items.map((r) => r.id)).toContain(id);
+    await prisma.lead.update({
+      where: { id },
+      data: { nextActionOn: new Date(`${addDays(today(env), -1)}T00:00:00.000Z`) },
+    });
+    const due = await leads.listLeads(env.rahim.ctx, { due: true });
+    expect(due.rows.map((r) => r.id)).toContain(id);
+    expect(due.rows.find((r) => r.id === id)!.late).toBe(true);
   });
 
   it("locks every lead to its company", async () => {

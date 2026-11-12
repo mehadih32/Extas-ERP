@@ -6,6 +6,7 @@ import { addDays, dateColumn, dateOnly, localDay, weekday } from "@/lib/dates";
 import type { Db } from "@/lib/db-types";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { readOnlyReason } from "@/lib/read-only";
 import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -28,8 +29,10 @@ import {
  * its own copy, whose days can be changed on the order (audit-logged). Steps
  * finish by themselves from the ERP's facts (tech pack approved, booking
  * approved, fabric received, cutting report, sewing done, packing list, shipped)
- * or are ticked by hand. A late step tells the order's maker and the owner once
- * (inbox and bot alarm, sent with the AI on or off).
+ * or are ticked by hand. A step that becomes late tells the order's maker and the
+ * owner once, in one combined message per run (inbox and one bot alarm, sent with
+ * the AI on or off); a step that was already past its day when it was made is
+ * never told, and draft orders are never told.
  */
 
 /** Orders whose T&A still runs: not shipped, delivered, returned or cancelled. */
@@ -39,6 +42,8 @@ export const TA_OPEN_STATUSES: readonly SalesOrderStatus[] = [
   "PROCESSING",
   "PACKED",
 ];
+/** Orders whose late steps are told: running orders, never a draft. */
+export const TA_ALARM_STATUSES: readonly SalesOrderStatus[] = ["CONFIRMED", "PROCESSING", "PACKED"];
 const SHIPPED_STATUSES: readonly SalesOrderStatus[] = [
   "SHIPPED",
   "DELIVERED",
@@ -107,6 +112,7 @@ export async function getTaTemplate(ctx: CompanyContext) {
     rows.length > 0
       ? rows.map((r) => ({
           id: r.id as string | null,
+          key: r.key as string | null,
           name: r.name,
           daysBeforeShip: r.daysBeforeShip,
           fact: r.fact,
@@ -131,6 +137,8 @@ export const templateSchema = z.object({
     .array(
       z.object({
         id: z.string().min(1).nullable().optional(),
+        /** A starting step's own key (the AI order runs read it); other keys are made here. */
+        key: z.string().max(40).nullable().optional(),
         name: z.string().trim().min(1, "Give the step a name.").max(80),
         daysBeforeShip: z.coerce
           .number()
@@ -177,10 +185,15 @@ export async function saveTaTemplate(ctx: CompanyContext, raw: unknown, meta?: R
       if (found) {
         await tx.taTemplateStep.update({ where: { id: found.id }, data });
       } else {
+        // A starting step keeps its own key, matched by that key (or, without one, by its
+        // place in the starting list), never by its name: a renamed step is still the same step.
         const starter = starting
-          ? DEFAULT_TA_STEPS.find((d) => d.name === step.name && !usedKeys.has(d.key))
+          ? (DEFAULT_TA_STEPS.find((d) => d.key === step.key) ??
+            (step.key === undefined ? DEFAULT_TA_STEPS[position] : undefined))
           : undefined;
-        const key = starter?.key ?? `STEP-${randomBytes(4).toString("hex").toUpperCase()}`;
+        const key =
+          (starter && !usedKeys.has(starter.key) ? starter.key : undefined) ??
+          `STEP-${randomBytes(4).toString("hex").toUpperCase()}`;
         usedKeys.add(key);
         await tx.taTemplateStep.create({ data: { ...data, companyId, key } });
       }
@@ -209,8 +222,20 @@ export async function saveTaTemplate(ctx: CompanyContext, raw: unknown, meta?: R
  * Gives orders with a ship date their T&A from the template (once), and moves
  * the days of steps not changed by hand when the ship date moved.
  */
-export async function syncOrderTa(companyId: string, orderIds: readonly string[]) {
+export async function syncOrderTa(
+  companyId: string,
+  orderIds: readonly string[],
+  now: Date = new Date(),
+) {
   if (orderIds.length === 0) return;
+  const company = await prisma.company.findUniqueOrThrow({
+    where: { id: companyId },
+    select: { timezone: true },
+  });
+  const today = localDay(now, company.timezone);
+  // A step whose day has already passed when it is made (or moved) is not news: it is
+  // marked as told, so the clock never floods anyone with old steps.
+  const toldIfPast = (day: string) => (day < today ? now : null);
   const orders = await prisma.salesOrder.findMany({
     where: { companyId, id: { in: [...orderIds] }, shipmentDate: { not: null } },
     select: {
@@ -242,6 +267,7 @@ export async function syncOrderTa(companyId: string, orderIds: readonly string[]
             daysBeforeShip: step.daysBeforeShip,
             plannedOn: day,
             dueOn: day,
+            lateNotifiedAt: toldIfPast(stepDay(ship, step.daysBeforeShip)),
           };
         }),
         skipDuplicates: true,
@@ -256,7 +282,11 @@ export async function syncOrderTa(companyId: string, orderIds: readonly string[]
         data:
           step.dueChanged || step.doneAt
             ? { plannedOn: dateColumn(planned) }
-            : { plannedOn: dateColumn(planned), dueOn: dateColumn(planned), lateNotifiedAt: null },
+            : {
+                plannedOn: dateColumn(planned),
+                dueOn: dateColumn(planned),
+                lateNotifiedAt: toldIfPast(planned),
+              },
       });
     }
   }
@@ -322,8 +352,15 @@ export async function orderFacts(
     if (mine.length > 0 && mine.every((p) => p.techPack?.status === "APPROVED")) {
       set.add("TECH_PACK_APPROVED");
     }
-    if (pos.some((po) => po.booking && po.booking.stage !== "DRAFT")) set.add("BOOKING_APPROVED");
-    const fabric = pos.flatMap((po) => po.lines);
+    // Only a fabric booking counts (a trims booking is not "fabric booked").
+    if (pos.some((po) => po.booking && po.booking.stage !== "DRAFT" && po.lines.length > 0)) {
+      set.add("BOOKING_APPROVED");
+    }
+    // Fabric in-house: only the fabric bought for this order's own projects (a batch
+    // purchase may carry other orders' fabric).
+    const fabric = pos
+      .filter((po) => po.projectId && ids.has(po.projectId))
+      .flatMap((po) => po.lines);
     if (fabric.length > 0 && fabric.every((l) => l.receivedQty.gte(l.quantity))) {
       set.add("FABRIC_IN_HOUSE");
     }
@@ -355,7 +392,13 @@ export async function completeFromFacts(
   for (const [orderId, set] of facts) {
     if (set.size === 0) continue;
     const { count } = await prisma.orderTaStep.updateMany({
-      where: { companyId, salesOrderId: orderId, doneAt: null, fact: { in: [...set] } },
+      where: {
+        companyId,
+        salesOrderId: orderId,
+        doneAt: null,
+        autoOff: false,
+        fact: { in: [...set] },
+      },
       data: { doneAt: now, doneOn: dateColumn(today), doneHow: "AUTO" },
     });
     done += count;
@@ -425,8 +468,12 @@ export async function orderTa(ctx: CompanyContext, orderId: string, now = new Da
   });
   if (!order) throw new AppError("NOT_FOUND", "Order not found.");
   const today = todayOf(ctx, now);
-  await syncOrderTa(ctx.company.id, [order.id]);
-  await completeFromFacts(ctx.company.id, [order.id], today, now);
+  // Opening the page brings the T&A up to date, except where nothing may be written
+  // (a Full check session, Bug Guard's checks): the hourly clock does it then.
+  if (!(await readOnlyReason())) {
+    await syncOrderTa(ctx.company.id, [order.id], now);
+    await completeFromFacts(ctx.company.id, [order.id], today, now);
+  }
   const [rows, settings] = await Promise.all([
     ctx.db.orderTaStep.findMany({
       where: { salesOrderId: order.id },
@@ -491,18 +538,28 @@ export async function changeTaDate(ctx: CompanyContext, raw: unknown, meta?: Req
   return { changed: true };
 }
 
-export const markDoneSchema = z.object({ stepId: z.string().min(1), done: z.boolean() });
+export const markDoneSchema = z.object({
+  stepId: z.string().min(1),
+  done: z.boolean(),
+  reason: z.string().trim().max(300).optional(),
+});
 
-/** Ticks a step done by hand, or takes a hand tick back (a step the ERP ticked stays). */
+/**
+ * Ticks a step done by hand, or takes a tick back. A tick the ERP made from its
+ * records is taken back only with a reason (kept in the activity log), and the ERP
+ * then leaves that step to be ticked by hand.
+ */
 export async function markTaDone(ctx: CompanyContext, raw: unknown, meta?: RequestMeta) {
   mustManage(ctx);
   const input = markDoneSchema.parse(raw);
   const step = await stepOrThrow(ctx, input.stepId);
   if (input.done === (step.doneAt !== null)) return { changed: false };
-  if (!input.done && step.doneHow === "AUTO") {
+  const wasAuto = !input.done && step.doneHow === "AUTO";
+  if (wasAuto && (input.reason ?? "").length < 3) {
     throw new AppError(
-      "CONFLICT",
-      "The ERP ticked this step from its records; it cannot be taken back by hand.",
+      "VALIDATION",
+      "The ERP ticked this step from its records. Say why it is not done.",
+      { reason: ["Say why the step is not done."] },
     );
   }
   const today = todayOf(ctx);
@@ -510,13 +567,21 @@ export async function markTaDone(ctx: CompanyContext, raw: unknown, meta?: Reque
     where: { id: step.id },
     data: input.done
       ? { doneAt: new Date(), doneOn: dateColumn(today), doneHow: "MANUAL", doneById: ctx.user.id }
-      : { doneAt: null, doneOn: null, doneHow: null, doneById: null },
+      : {
+          doneAt: null,
+          doneOn: null,
+          doneHow: null,
+          doneById: null,
+          ...(wasAuto ? { autoOff: true } : {}),
+        },
   });
   await auditInCompany(ctx, meta, {
     action: "STATUS_CHANGE",
     entityType: "SalesOrder",
     entityId: step.salesOrder.id,
-    summary: `T&A ${step.salesOrder.number} "${step.name}": ${input.done ? "done" : "not done"}`,
+    summary: `T&A ${step.salesOrder.number} "${step.name}": ${
+      input.done ? "done" : wasAuto ? "the ERP's tick taken back" : "not done"
+    }${input.reason ? ` (${input.reason})` : ""}`,
   });
   return { changed: true };
 }
@@ -569,8 +634,10 @@ export async function taCalendar(ctx: CompanyContext, raw: unknown, now = new Da
     take: 500,
   });
   const ids = orders.map((o) => o.id);
-  await syncOrderTa(ctx.company.id, ids);
-  await completeFromFacts(ctx.company.id, ids, today, now);
+  if (!(await readOnlyReason())) {
+    await syncOrderTa(ctx.company.id, ids, now);
+    await completeFromFacts(ctx.company.id, ids, today, now);
+  }
 
   const settings = await taSettingsOf(ctx.company.id);
   const rows = await ctx.db.orderTaStep.findMany({
@@ -696,10 +763,48 @@ async function ownersOf(companyId: string) {
   return rows.map((r) => r.userId);
 }
 
+const MAX_LINES = 20;
+
+/** One message listing late steps (subject and body), shortened past MAX_LINES steps. */
+function lateMessage(
+  steps: ReadonlyArray<{
+    name: string;
+    dueOn: Date;
+    critical: boolean;
+    salesOrder: {
+      number: string;
+      shipmentDate: Date | null;
+      customerName: string | null;
+      party: { name: string } | null;
+    };
+  }>,
+) {
+  const orders = new Set(steps.map((s) => s.salesOrder.number));
+  const first = steps[0]!;
+  const subject =
+    steps.length === 1
+      ? `T&A late: ${first.salesOrder.number} ${first.name}`
+      : `T&A late: ${steps.length} steps on ${orders.size} order${orders.size === 1 ? "" : "s"}`;
+  const lines = steps.slice(0, MAX_LINES).map((step) => {
+    const order = step.salesOrder;
+    const buyer = order.party?.name ?? order.customerName ?? "walk-in customer";
+    return `${order.number} for ${buyer}: "${step.name}" was due ${dateOnly(step.dueOn)} (ship date ${
+      dateOnly(order.shipmentDate) ?? "not set"
+    })${step.critical ? "; on the critical path, so the ship date is at risk" : ""}.`;
+  });
+  if (steps.length > MAX_LINES) {
+    lines.push(`And ${steps.length - MAX_LINES} more: see the T&A calendar.`);
+  }
+  lines.push("Open the order's T&A to tick a step or change its day.");
+  return { subject, body: lines.join("\n") };
+}
+
 /**
  * The hourly T&A clock: gives running orders their T&A, ticks what the ERP's
- * records show, and tells each late step once (the order's maker and the owner,
- * in the inbox, and the owner on the bot as an alarm). Works with the AI off.
+ * records show, and tells each step that became late once, in one combined
+ * message per run: the owner gets every late step, each order's maker the steps
+ * of their own orders (inbox), and the owner one bot alarm. Draft orders are
+ * never told. Works with the AI off.
  */
 export async function runTaClock(now: Date = new Date()) {
   const companies = await prisma.company.findMany({
@@ -707,6 +812,7 @@ export async function runTaClock(now: Date = new Date()) {
     select: { id: true, timezone: true },
   });
   let told = 0;
+  let messages = 0;
   for (const company of companies) {
     const today = localDay(now, company.timezone);
     const running = await prisma.salesOrder.findMany({
@@ -715,16 +821,18 @@ export async function runTaClock(now: Date = new Date()) {
         shipmentDate: { not: null },
         status: { in: [...TA_OPEN_STATUSES] },
       },
-      select: { id: true },
+      select: { id: true, status: true },
       take: 2000,
     });
     const ids = running.map((o) => o.id);
-    await syncOrderTa(company.id, ids);
+    await syncOrderTa(company.id, ids, now);
     await completeFromFacts(company.id, ids, today, now);
+    const alarmIds = running.filter((o) => TA_ALARM_STATUSES.includes(o.status)).map((o) => o.id);
+    if (alarmIds.length === 0) continue;
     const late = await prisma.orderTaStep.findMany({
       where: {
         companyId: company.id,
-        salesOrderId: { in: ids },
+        salesOrderId: { in: alarmIds },
         doneAt: null,
         lateNotifiedAt: null,
         dueOn: { lt: dateColumn(today) },
@@ -742,42 +850,58 @@ export async function runTaClock(now: Date = new Date()) {
       },
       orderBy: [{ dueOn: "asc" }, { position: "asc" }],
     });
-    if (late.length === 0) continue;
-    const members = new Set((await activeMembers(company.id)).map((m) => m.userId));
-    const owners = (await ownersOf(company.id)).filter((id) => members.has(id));
+    // Each step is claimed first, so a second run (or a second server) never tells it twice.
+    const claimed: typeof late = [];
     for (const step of late) {
-      // Claimed first, so a second run (or a second server) never tells it twice.
-      const claimed = await prisma.orderTaStep.updateMany({
+      const { count } = await prisma.orderTaStep.updateMany({
         where: { id: step.id, lateNotifiedAt: null, doneAt: null },
         data: { lateNotifiedAt: now },
       });
-      if (claimed.count === 0) continue;
-      const maker = await prisma.auditLog.findFirst({
-        where: {
-          companyId: company.id,
-          entityType: "SalesOrder",
-          entityId: step.salesOrder.id,
-          action: "CREATE",
-        },
-        select: { userId: true },
-        orderBy: { createdAt: "asc" },
-      });
-      const people = [
-        ...new Set([
-          ...(maker?.userId && members.has(maker.userId) ? [maker.userId] : []),
-          ...owners,
-        ]),
-      ];
-      const order = step.salesOrder;
-      const buyer = order.party?.name ?? order.customerName ?? "walk-in customer";
-      const subject = `T&A late: ${order.number} ${step.name}`;
-      const body = `${order.number} for ${buyer}: "${step.name}" was due ${dateOnly(step.dueOn)} and is not done. Ship date ${dateOnly(order.shipmentDate) ?? "not set"}${step.critical ? "; this step is on the critical path, so the ship date is at risk" : ""}. Open the order's T&A to tick it or change its day.`;
+      if (count === 1) claimed.push(step);
+    }
+    if (claimed.length === 0) continue;
+    told += claimed.length;
+
+    const members = new Set((await activeMembers(company.id)).map((m) => m.userId));
+    const owners = (await ownersOf(company.id)).filter((id) => members.has(id));
+    const orderIds = [...new Set(claimed.map((s) => s.salesOrder.id))];
+    const created = await prisma.auditLog.findMany({
+      where: {
+        companyId: company.id,
+        entityType: "SalesOrder",
+        entityId: { in: orderIds },
+        action: "CREATE",
+      },
+      select: { entityId: true, userId: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const makerOf = new Map<string, string>();
+    for (const row of created) {
+      if (row.entityId && row.userId && !makerOf.has(row.entityId)) {
+        makerOf.set(row.entityId, row.userId);
+      }
+    }
+    // Who hears about which steps: the owners all of them, a maker their own orders'.
+    const byPerson = new Map<string, typeof claimed>();
+    for (const userId of owners) byPerson.set(userId, claimed);
+    for (const step of claimed) {
+      const maker = makerOf.get(step.salesOrder.id);
+      if (!maker || !members.has(maker) || owners.includes(maker)) continue;
+      byPerson.set(maker, [...(byPerson.get(maker) ?? []), step]);
+    }
+    for (const [userId, steps] of byPerson) {
+      const { subject, body } = lateMessage(steps);
+      const single = new Set(steps.map((s) => s.salesOrder.id)).size === 1;
       try {
-        await sendInApp(
+        messages += await sendInApp(
           prisma,
           company.id,
-          people.map((userId) => ({ userId })),
-          { subject, body, entityType: "SalesOrder", entityId: order.id },
+          [{ userId }],
+          {
+            subject,
+            body,
+            ...(single ? { entityType: "SalesOrder", entityId: steps[0]!.salesOrder.id } : {}),
+          },
           now,
         );
       } catch (error) {
@@ -786,17 +910,17 @@ export async function runTaClock(now: Date = new Date()) {
           error instanceof Error ? error.message : error,
         );
       }
-      try {
-        const { pushToBot } = await import("@/modules/ai/bot/push");
-        await pushToBot(company.id, { kind: "text", text: `${subject}. ${body}` }, { alarm: true });
-      } catch (error) {
-        console.error(
-          "[ta] alarm not sent to the bot",
-          error instanceof Error ? error.message : error,
-        );
-      }
-      told += 1;
+    }
+    try {
+      const { subject, body } = lateMessage(claimed);
+      const { pushToBot } = await import("@/modules/ai/bot/push");
+      await pushToBot(company.id, { kind: "text", text: `${subject}.\n${body}` }, { alarm: true });
+    } catch (error) {
+      console.error(
+        "[ta] alarm not sent to the bot",
+        error instanceof Error ? error.message : error,
+      );
     }
   }
-  return { told };
+  return { told, messages };
 }

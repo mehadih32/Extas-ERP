@@ -214,10 +214,14 @@ overwrites a stored total or figure.
   card's days, and the AI order runs read the same template, so both show the same dates. Every order with a ship
   date gets its own copy; a later template change counts only for orders that get their T&A after it. An order's
   step days can be changed on the order (audit-logged; a later ship date change leaves a changed day alone). Steps
-  tick themselves from the ERP's records, the rest by hand; a step the ERP ticked cannot be unticked by hand. Seen
-  with sales.view or production.view; changed with sales.order.create or production.manage. A late step tells the
-  person who made the order and the owner once (inbox, and the owner's bot as an alarm, with the AI on or off); a
-  late step on the critical path shows "Ship date at risk".
+  tick themselves from the ERP's records, the rest by hand; a person who may change T&A steps can take back the
+  ERP's own tick only with a reason (activity log), and the ERP then leaves that step to be ticked by hand. Seen
+  with sales.view or production.view; changed with sales.order.create or production.manage. A step that becomes
+  late is told once, in one combined message per company per hourly run: the owner gets every late step, the
+  person who made the order the steps of their own orders (inbox), and the owner one bot alarm (with the AI on or
+  off). A step already past its day when the T&A is made is never told, nor a draft order's steps. A late step on
+  the critical path shows "Ship date at risk". Opening a T&A page where nothing may be written (a Full check
+  session) writes nothing.
 
 - 2026-11-12 (leads, phase 1): Sales has a "Leads" tab for companies that are not buyers yet; phase 1 has no AI
   and the ERP sends nothing itself (email and WhatsApp open in the person's own app, and "I sent it" logs it).
@@ -227,7 +231,9 @@ overwrites a stored total or figure.
   history is append-only. "Erase personal data" (only with "Erase a contact's personal data" and the PIN) blanks
   one contact's name, job title, email and phones for good and keeps only a hashed "Do not contact" marker, so
   nobody contacts them again; the lead, its history, money, stock and posted documents are never touched. Nothing
-  is ever taken off "Do not contact".
+  is ever taken off "Do not contact". A Nurture lead's "look again" day reminds like any next step. On shared sites
+  (Facebook, LinkedIn, Alibaba, Amazon, wa.me ...) only the company's own page counts as the same website. The
+  duplicate warning never names a lead the person may not open.
 
 - 2026-11-11 (B-grade lines for the shops): a shop order line may be A-grade or B-grade. A B line takes the
   factory's own B-grade stock at the B-grade cost; an approved returned B piece goes back to B-grade stock. A

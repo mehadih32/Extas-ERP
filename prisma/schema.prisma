@@ -8461,6 +8461,8 @@ model OrderTaStep {
   doneById       String?
   /// When the one "late" reminder went out (never twice for a step).
   lateNotifiedAt DateTime?
+  /// A person took back the ERP's own tick: the ERP no longer ticks this step by itself.
+  autoOff        Boolean   @default(false)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 

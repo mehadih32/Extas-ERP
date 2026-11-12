@@ -23,6 +23,13 @@ export const OPEN_STAGES: readonly LeadStage[] = [
 
 export const isOpenStage = (stage: LeadStage) => OPEN_STAGES.includes(stage);
 
+/**
+ * Stages whose next step date still reminds: the open ones and Nurture (its
+ * "look again" day). Won and Lost leads never remind.
+ */
+export const FOLLOW_UP_STAGES: readonly LeadStage[] = [...OPEN_STAGES, "NURTURE"];
+export const isFollowUpStage = (stage: LeadStage) => FOLLOW_UP_STAGES.includes(stage);
+
 /** Email domains many people share: never a sign that two leads are one company. */
 export const FREE_MAIL = new Set([
   "gmail.com",
@@ -47,18 +54,109 @@ export const FREE_MAIL = new Set([
   "163.com",
 ]);
 
-/** "https://www.Brand.com/about" -> "brand.com"; null when it is not a web address. */
-export function websiteDomain(raw: string | null | undefined): string | null {
+function parseWeb(raw: string | null | undefined): URL | null {
   if (!raw) return null;
   let text = raw.trim().toLowerCase();
   if (!text) return null;
   if (!/^[a-z][a-z0-9+.-]*:\/\//.test(text)) text = `https://${text}`;
   try {
-    const host = new URL(text).hostname.replace(/^www\./, "").replace(/\.$/, "");
-    return host.includes(".") ? host : null;
+    return new URL(text);
   } catch {
     return null;
   }
+}
+
+/** "https://www.Brand.com/about" -> "brand.com"; null when it is not a web address. */
+export function webHost(raw: string | null | undefined): string | null {
+  const url = parseWeb(raw);
+  if (!url) return null;
+  const host = url.hostname.replace(/^(www|m|mobile)\./, "").replace(/\.$/, "");
+  return host.includes(".") ? host : null;
+}
+
+/**
+ * Sites where many companies have their own page (social networks, marketplaces,
+ * link pages): their host says nothing about which company it is.
+ */
+const SHARED_HOSTS = [
+  "facebook.com",
+  "fb.com",
+  "fb.me",
+  "instagram.com",
+  "linkedin.com",
+  "twitter.com",
+  "x.com",
+  "tiktok.com",
+  "youtube.com",
+  "pinterest.com",
+  "wa.me",
+  "whatsapp.com",
+  "t.me",
+  "linktr.ee",
+  "alibaba.com",
+  "aliexpress.com",
+  "1688.com",
+  "made-in-china.com",
+  "globalsources.com",
+  "indiamart.com",
+  "etsy.com",
+  "shopee.com",
+  "daraz.com.bd",
+  "sites.google.com",
+  "business.site",
+];
+/** Marketplaces with a site per country: amazon.com, amazon.de, amazon.co.uk ... */
+const SHARED_BRANDS = /^(amazon|ebay|daraz|shopee|lazada|alibaba|aliexpress)\.[a-z.]+$/;
+/** A first path part that only says what kind of page follows ("/company/brand"). */
+const GENERIC_PARTS = new Set([
+  "company",
+  "companies",
+  "in",
+  "pg",
+  "pages",
+  "profile",
+  "people",
+  "p",
+  "shop",
+  "store",
+  "stores",
+  "s",
+  "c",
+  "channel",
+  "user",
+  "groups",
+  "showroom",
+]);
+
+export function isSharedHost(host: string) {
+  return SHARED_HOSTS.some((h) => host === h || host.endsWith(`.${h}`)) || SHARED_BRANDS.test(host);
+}
+
+/**
+ * What a website says about which company it is, for spotting duplicates:
+ * "https://www.Brand.com/about" -> "brand.com". On a shared site (Facebook,
+ * LinkedIn, Alibaba, Amazon, wa.me ...) the host and the company's own page:
+ * "linkedin.com/company/nordic-wear" or "facebook.com/nordicwear"; the shared
+ * site alone says nothing (null).
+ */
+export function websiteDomain(raw: string | null | undefined): string | null {
+  const host = webHost(raw);
+  if (!host) return null;
+  if (!isSharedHost(host)) return host;
+  const url = parseWeb(raw)!;
+  const parts = url.pathname
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  // facebook.com/profile.php?id=123: the page is its id.
+  if (parts[0] === "profile.php") {
+    const id = url.searchParams.get("id");
+    return id ? `${host}/profile.php?id=${id}` : null;
+  }
+  const take = parts[0] && GENERIC_PARTS.has(parts[0]) ? 2 : 1;
+  const page = parts.slice(0, take);
+  if (page.length < take || page.length === 0) return null;
+  return `${host}/${page.join("/")}`;
 }
 
 /** An email, trimmed and in lower case; null when empty. */
@@ -119,7 +217,13 @@ export type LeadKeys = {
 };
 
 /** An existing lead or buyer, cleaned the same way. */
-export type Candidate = LeadKeys & { id: string; label: string; kind: "LEAD" | "BUYER" };
+export type Candidate = LeadKeys & {
+  id: string;
+  label: string;
+  kind: "LEAD" | "BUYER";
+  /** A lead the person may not open: shown without its name or link. */
+  hidden?: boolean;
+};
 
 export type DuplicateMatch = {
   id: string;
@@ -129,6 +233,8 @@ export type DuplicateMatch = {
   why: string;
   /** Same email or website: almost surely the same company. */
   strong: boolean;
+  /** A lead the person may not open (its id is left out). */
+  hidden: boolean;
 };
 
 /** The keys of a lead or buyer, cleaned. */
@@ -190,7 +296,14 @@ export function matchDuplicates(lead: LeadKeys, candidates: Candidate[]): Duplic
       why.push("similar name in the same country");
     }
     if (why.length > 0) {
-      matches.push({ id: c.id, kind: c.kind, label: c.label, why: why.join(", "), strong });
+      matches.push({
+        id: c.hidden ? "" : c.id,
+        kind: c.kind,
+        label: c.label,
+        why: why.join(", "),
+        strong,
+        hidden: !!c.hidden,
+      });
     }
   }
   return matches.sort((a, b) => Number(b.strong) - Number(a.strong));
@@ -204,7 +317,7 @@ export function suppressionValue(kind: LeadSuppressionKind, raw: string): string
     const email = cleanEmail(raw);
     return email && email.includes("@") ? email : null;
   }
-  if (kind === "DOMAIN") return websiteDomain(raw.replace(/^.*@/, ""));
+  if (kind === "DOMAIN") return webHost(raw.replace(/^.*@/, ""));
   return phoneDigits(raw);
 }
 

@@ -25,6 +25,40 @@ describe("Lead duplicates", () => {
     expect(cleanCompanyName("Nordic Wear GmbH")).toBe(cleanCompanyName("nordic wear"));
   });
 
+  it("on shared sites (Facebook, LinkedIn, Alibaba, Amazon, wa.me) compares the company's own page", () => {
+    expect(websiteDomain("https://www.facebook.com/nordicwear")).toBe("facebook.com/nordicwear");
+    expect(websiteDomain("m.facebook.com/NordicWear/about")).toBe("facebook.com/nordicwear");
+    expect(websiteDomain("https://www.facebook.com/balticbasics")).not.toBe(
+      websiteDomain("https://www.facebook.com/nordicwear"),
+    );
+    expect(websiteDomain("https://facebook.com/profile.php?id=123")).toBe(
+      "facebook.com/profile.php?id=123",
+    );
+    expect(websiteDomain("https://www.linkedin.com/company/nordic-wear/")).toBe(
+      "linkedin.com/company/nordic-wear",
+    );
+    expect(websiteDomain("linkedin.com/company/baltic")).not.toBe(
+      websiteDomain("linkedin.com/company/nordic-wear"),
+    );
+    expect(websiteDomain("https://nordicwear.en.alibaba.com/")).toBeNull();
+    expect(websiteDomain("https://www.alibaba.com/")).toBeNull();
+    expect(websiteDomain("https://www.amazon.de/stores/NordicWear/page/1")).toBe(
+      "amazon.de/stores/nordicwear",
+    );
+    expect(websiteDomain("https://wa.me/46701234567")).toBe("wa.me/46701234567");
+    expect(websiteDomain("https://www.etsy.com/shop/NordicWear")).toBe("etsy.com/shop/nordicwear");
+    // The company's own site stays the host alone.
+    expect(websiteDomain("https://shop.nordic-wear.com/x")).toBe("shop.nordic-wear.com");
+
+    const fb = (page: string) => keysOf({ name: page, website: `facebook.com/${page}` });
+    expect(
+      matchDuplicates(fb("aaa"), [{ ...fb("bbb"), id: "b", kind: "LEAD", label: "B" }]),
+    ).toEqual([]);
+    expect(
+      matchDuplicates(fb("aaa"), [{ ...fb("aaa"), id: "a", kind: "LEAD", label: "A" }])[0],
+    ).toMatchObject({ id: "a", strong: true });
+  });
+
   it("calls the same email or website a strong match, a similar name a weak one", () => {
     const lead = keysOf({
       name: "Nordic Wear",

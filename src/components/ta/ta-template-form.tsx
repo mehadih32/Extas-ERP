@@ -35,6 +35,7 @@ export function TaTemplateForm({ template }: { template: Template }) {
         .sort((a, b) => b.daysBeforeShip - a.daysBeforeShip)
         .map((r) => ({
           id: r.id,
+          key: r.key ?? null,
           name: r.name,
           daysBeforeShip: r.daysBeforeShip,
           fact: r.fact,
@@ -133,6 +134,7 @@ export function TaTemplateForm({ template }: { template: Template }) {
               ...all,
               {
                 id: null,
+                key: null,
                 uid: `new-${Date.now()}`,
                 name: "",
                 daysBeforeShip: 0,

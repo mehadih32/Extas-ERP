@@ -31,8 +31,9 @@ import {
  * AI Center > Server Health (the platform owner only, like backups): the
  * checks in code (checks.ts), a report in Bengali (the AI's while it is on,
  * else the ERP's own), and the safe fixes, one click each. Weekly on
- * Saturdays at 09:00 when the platform owner turns it on; a run with an
- * ERROR goes to the bot at once. Code fixes are not made from here: live code
+ * Saturdays at 09:00 (company time) when the platform owner turns it on, its
+ * report to the inbox and the bot; any other run with an ERROR goes to the bot
+ * at once. Code fixes are not made from here: live code
  * only changes through a pull request the owner merges.
  */
 
@@ -126,7 +127,7 @@ export async function runServerHealth(
 ) {
   const now = options.now ?? new Date();
   const checks = await runChecks(options.probes ?? serverProbes, now);
-  const day = localDay(now, TIMEZONE);
+  const day = localDay(now, await timeZoneOf(companyId));
   let report = plainReport(checks, day);
   let reportByAi = false;
   const startedCost = await costSince(companyId, now);
@@ -167,8 +168,12 @@ export async function runServerHealth(
       fixes: fixes as unknown as Prisma.InputJsonArray,
     },
   });
-  if (worst === "ERROR") {
-    const bad = checks.filter((c) => c.level === "ERROR").map((c) => `${c.label}: ${c.detail}`);
+  const bad = checks.filter((c) => c.level === "ERROR").map((c) => `${c.label}: ${c.detail}`);
+  if (trigger === "WEEKLY") {
+    // The weekly report reaches the bot every week, all well or not, as the
+    // owner's own system alarm (AI on or off), like a failed backup.
+    await pushToBot(companyId, { kind: "text", text: weeklyBotText(checks) }, { alarm: true });
+  } else if (worst === "ERROR") {
     await pushToBot(
       companyId,
       { kind: "text", text: `Server Health: ${bad.join(" ")}` },
@@ -176,6 +181,21 @@ export async function runServerHealth(
     );
   }
   return run;
+}
+
+/** The weekly report's line on the bot: how it went, what to look at, where to read it. */
+export function weeklyBotText(checks: readonly HealthCheck[]): string {
+  const worst = worstOf(checks);
+  const wrong = checks.filter((c) => c.level === worst && worst !== "OK");
+  const head =
+    worst === "OK"
+      ? "Weekly Server Health: all is well."
+      : worst === "WARN"
+        ? `Weekly Server Health: something to look at. ${wrong.map((c) => c.label).join(", ")}.`
+        : `Weekly Server Health: a problem to fix today. ${wrong
+            .map((c) => `${c.label}: ${c.detail}`)
+            .join(" ")}`;
+  return `${head} Read the report in AI Center > Server Health.`;
 }
 
 /** AI cost written for the Server Health task since a moment (its report). */
@@ -306,7 +326,7 @@ export async function getServerHealth(ctx: CompanyContext) {
   ]);
   return {
     weekly: settings?.healthWeekly ?? false,
-    weeklyText: "Every Saturday at 09:00 (Bangladesh time).",
+    weeklyText: `Every Saturday at 09:00 (${ctx.company.timezone || TIMEZONE} time). The report comes to your inbox and the bot.`,
     runs: runs.map((r) => ({
       id: r.id,
       trigger: r.trigger,
@@ -324,10 +344,19 @@ export async function getServerHealth(ctx: CompanyContext) {
 
 export type ServerHealthScreen = Awaited<ReturnType<typeof getServerHealth>>;
 
-/** Is it Saturday from 09:00 in Bangladesh? */
-function weeklyDue(now: Date) {
+/** The company's own time zone (Bangladesh time when none is set). */
+async function timeZoneOf(companyId: string) {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { timezone: true },
+  });
+  return company?.timezone || TIMEZONE;
+}
+
+/** Is it Saturday from 09:00 in the company's time? */
+function weeklyDue(now: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: TIMEZONE,
+    timeZone,
     weekday: "short",
     hour: "numeric",
     hourCycle: "h23",
@@ -339,19 +368,25 @@ function weeklyDue(now: Date) {
   return weekday === WEEKDAY && hour >= HOUR;
 }
 
-/** With the reminder clock: the weekly run, once each Saturday, for companies that turned it on. */
+/**
+ * With the reminder clock: the weekly run, once each Saturday from 09:00 in
+ * each company's own time, for companies that turned it on. The report goes
+ * to the platform owner's ERP inbox and, as a system alarm, to the bot.
+ */
 export async function runWeeklyHealth(
   now: Date = new Date(),
   options: { probes?: Probes; ask?: Ask | null } = {},
 ) {
-  if (!weeklyDue(now)) return 0;
-  const day = localDay(now, TIMEZONE);
-  const due = await prisma.aiSettings.findMany({
-    where: { healthWeekly: true, OR: [{ healthRanOn: null }, { healthRanOn: { not: day } }] },
-    select: { companyId: true },
+  const on = await prisma.aiSettings.findMany({
+    where: { healthWeekly: true },
+    select: { companyId: true, healthRanOn: true, company: { select: { timezone: true } } },
   });
   let ran = 0;
-  for (const { companyId } of due) {
+  for (const { companyId, healthRanOn, company } of on) {
+    const timeZone = company.timezone || TIMEZONE;
+    if (!weeklyDue(now, timeZone)) continue;
+    const day = localDay(now, timeZone);
+    if (healthRanOn === day) continue;
     const claimed = await prisma.aiSettings.updateMany({
       where: { companyId, OR: [{ healthRanOn: null }, { healthRanOn: { not: day } }] },
       data: { healthRanOn: day },

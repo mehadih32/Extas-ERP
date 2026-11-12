@@ -21,13 +21,14 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import { eveningReport, morningBrief, runBriefs } from "@/modules/ai/briefs";
 import { AiAskFirst, standInForClaude } from "@/modules/ai/claude";
-import type { Probes } from "@/modules/ai/health/checks";
+import type { HealthCheck, Probes } from "@/modules/ai/health/checks";
 import {
   applyFix,
   checkNow,
   getServerHealth,
   runWeeklyHealth,
   setWeekly,
+  weeklyBotText,
 } from "@/modules/ai/health/health.service";
 import {
   attachFile,
@@ -564,5 +565,71 @@ run("Order automation and Server Health", () => {
       where: { entityType: "ServerHealthRun" },
     });
     expect(told.map((n) => n.userId)).toEqual([env.owner.user.id]);
+  });
+
+  it("sends the weekly report to the inbox and the bot, AI off too, at 09:00 in the company's own time", async () => {
+    // The owner's bot is linked; the AI stays off (the default).
+    await prisma.aiBotLink.create({
+      data: {
+        companyId: env.company.id,
+        channel: "TELEGRAM",
+        botKey: "123456",
+        tokenSealed: "sealed",
+        webhookKey: "hash",
+        ownerId: env.owner.user.id,
+        chatId: "5550001",
+        linkedAt: new Date(),
+      },
+    });
+    await prisma.company.update({
+      where: { id: env.company.id },
+      data: { timezone: "Asia/Dubai" },
+    });
+    await setWeekly(env.owner, { on: true });
+    expect(
+      await prisma.auditLog.count({
+        where: { entityType: "AiSettings", summary: "Weekly Server Health turned on" },
+      }),
+    ).toBe(1);
+    const ownerNow = await contextFor(env.owner.user.id, env.company.id);
+    expect((await getServerHealth(ownerNow)).weeklyText).toMatch(
+      /^Every Saturday at 09:00 \(Asia\/Dubai time\)/,
+    );
+    const probes = fakeProbes();
+    // Saturday 2026-10-17: 09:30 in Dhaka is 07:30 in Dubai, too early there.
+    expect(await runWeeklyHealth(new Date("2026-10-17T03:30:00Z"), { probes, ask: null })).toBe(0);
+    // 09:30 in Dubai.
+    expect(await runWeeklyHealth(new Date("2026-10-17T05:30:00Z"), { probes, ask: null })).toBe(1);
+    expect(await runWeeklyHealth(new Date("2026-10-17T06:30:00Z"), { probes, ask: null })).toBe(0);
+    const pushes = await prisma.backgroundJob.findMany({ where: { kind: "ai.bot.push" } });
+    expect(pushes).toHaveLength(1);
+    const push = pushes[0]!.payload as { kind: string; text: string; alarm?: boolean };
+    expect(push.kind).toBe("text");
+    expect(push.alarm).toBe(true);
+    // No backup has run on a new server: a problem, named with what to read.
+    expect(push.text).toMatch(/^Weekly Server Health: a problem to fix today\. Backups: /);
+    expect(push.text).toMatch(/Read the report in AI Center > Server Health\.$/);
+    const inbox = await prisma.notificationLog.findMany({
+      where: { entityType: "ServerHealthRun", userId: env.owner.user.id },
+    });
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]!.subject).toBe("Weekly Server Health: a problem to fix today");
+
+    // Turned off: nothing more runs.
+    await setWeekly(env.owner, { on: false });
+    expect(await runWeeklyHealth(new Date("2026-10-24T05:30:00Z"), { probes, ask: null })).toBe(0);
+  });
+
+  it("words the weekly bot line by how the week went", () => {
+    const check = (key: string, label: string, level: "OK" | "WARN" | "ERROR") =>
+      ({ key, label, level, detail: `${label} detail`, bn: "" }) as unknown as HealthCheck;
+    expect(weeklyBotText([check("memory", "Memory", "OK")])).toBe(
+      "Weekly Server Health: all is well. Read the report in AI Center > Server Health.",
+    );
+    expect(
+      weeklyBotText([check("memory", "Memory", "OK"), check("disk", "Disk space", "WARN")]),
+    ).toBe(
+      "Weekly Server Health: something to look at. Disk space. Read the report in AI Center > Server Health.",
+    );
   });
 });

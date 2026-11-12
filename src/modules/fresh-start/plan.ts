@@ -58,6 +58,8 @@ export const FRESH_START_RULES: Readonly<Record<string, FreshStartRule>> = {
   SizeRatioPreset: "KEEP",
   SizeRatioEntry: "KEEP",
   Warehouse: "KEEP",
+  // How each factory's packing lists are laid out (a setting, 2026-11-12).
+  PackingListSource: "KEEP",
   SalesChannelIntegration: "KEEP",
   CourierAccount: "KEEP",
   LedgerAccount: "KEEP",
@@ -226,6 +228,11 @@ export const FRESH_START_RULES: Readonly<Record<string, FreshStartRule>> = {
   AiChatMessage: "ERASE",
   AiDraft: "ERASE",
   AiFollowUp: "ERASE",
+  // Release 2 (2026-11-12): sent documents, their links, follow-ups, order-status links.
+  DocumentSend: "ERASE",
+  DocumentLink: "ERASE",
+  FollowUp: "ERASE",
+  OrderStatusLink: "ERASE",
   AiBotMessage: "ERASE",
   AiOrderRun: "ERASE",
   AiStaffUpdate: "ERASE",

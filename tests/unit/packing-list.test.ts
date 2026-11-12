@@ -30,7 +30,10 @@ import {
   renderPaperText,
   sizeFor,
 } from "@/modules/inventory/packing-list/paper";
+import { zipSync } from "fflate";
+
 import {
+  imagePixels,
   packingFileType,
   readCsv,
   readPackingFile,
@@ -112,6 +115,17 @@ describe("Excel packing lists", () => {
     const xls = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0, 0, 0, 0]);
     expect(() => packingFileType(xls, "list.xls")).toThrow(/save it as \.xlsx or CSV/);
   });
+
+  it("refuses a zip bomb before unpacking it, and keeps a CSV to 200 columns", () => {
+    const bomb = zipSync({
+      "xl/workbook.xml": new TextEncoder().encode("<workbook/>"),
+      "xl/worksheets/sheet1.xml": new Uint8Array(31 * 1024 * 1024),
+    });
+    expect(bomb.length).toBeLessThan(1024 * 1024);
+    expect(() => readXlsx(bomb)).toThrow(/too large/);
+    const wide = readCsv(new TextEncoder().encode(`${"1,".repeat(500)}1\n2,3`));
+    expect(wide.rows[0]!.length).toBe(200);
+  });
 });
 
 describe("CSV and PDF packing lists", () => {
@@ -140,12 +154,46 @@ describe("CSV and PDF packing lists", () => {
   });
 });
 
-describe("photos and scans", () => {
-  it("shows a photo beside an empty paper box to type into", async () => {
+describe("photos and scans, read on our own server", () => {
+  it("reads a clean printed photo into the paper's lines", { timeout: 120_000 }, async () => {
     const read = await readPackingFile({
       bytes: fixture("printed-photo.png"),
       fileName: "list.png",
     });
+    expect(read.photoText).toBeTruthy();
+    const { blocks } = parsePaperText(read.photoText!);
+    const [block] = blocks;
+    expect(block!.title).toBe("TST-HOODY");
+    expect(block!.sizes).toEqual(["S", "M", "L", "XL", "XXL"]);
+    expect(block!.rows.map((r) => r.colour)).toEqual(["Black", "Navy", "Grey"]);
+    expect(cells(block!.rows[0]!)).toEqual([20, 58, 58, 40, 20]);
+    // The Navy row's numbers add up to 187: the paper's total agrees.
+    expect(blockProblems(block!)).toEqual([]);
+  });
+
+  it("reads a scanned PDF (no text) like a photo", { timeout: 120_000 }, async () => {
+    const read = await readPackingFile({ bytes: fixture("scan.pdf"), fileName: "scan.pdf" });
+    expect(read.sheets[0]!.notes[0]).toMatch(/scan/);
+    const { blocks } = parsePaperText(read.photoText!);
+    expect(blocks[0]!.rows.length).toBe(3);
+    expect(blockPieces(blocks[0]!)).toBe(196 + 187 + 138);
+  });
+
+  it("leaves a photo too big to read for typing, by its size alone", async () => {
+    expect(imagePixels(fixture("printed-photo.png"))).toBeGreaterThan(10_000);
+    // A PNG header that says 6000 x 6000 pixels (36 Mpx): not decoded at all.
+    const head = new Uint8Array(33);
+    head.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    head.set([0, 0, 0x17, 0x70, 0, 0, 0x17, 0x70], 16);
+    expect(imagePixels(head)).toBe(36_000_000);
+    const read = await readPackingFile({ bytes: head, fileName: "huge.png" });
+    expect(read.photoText).toBe("");
+    expect(read.sheets[0]!.notes[0]).toMatch(/too big/);
+  });
+
+  it("never stops the upload when a photo cannot be read", { timeout: 60_000 }, async () => {
+    const broken = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+    const read = await readPackingFile({ bytes: broken, fileName: "broken.png" });
     expect(read.photoText).toBe("");
     expect(read.sheets[0]!.notes[0]).toMatch(/Type the lines/);
   });

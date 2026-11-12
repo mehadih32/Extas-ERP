@@ -37,6 +37,7 @@ import {
   renderApproval,
 } from "./approvals";
 import { logBot, senderFor } from "./bot.service";
+import { fileArrived, FILES_NEED_AI, readFileAs } from "./bot-files";
 import { botOwner } from "./owner";
 import type { Incoming } from "./channel";
 import { type BotOut, type ButtonPress, draftVersion, readButton, renderAnswer } from "./render";
@@ -44,6 +45,8 @@ import { readTelegramUpdate } from "./telegram";
 import { PIN_TEXT } from "./pin-scrub";
 import { readWhatsAppPayload, whatsappSignatureOk } from "./whatsapp";
 import { NUMBER_HIDDEN_TEXT, pinCandidates } from "../pin-tries";
+import { aiReady } from "../claude";
+import { transcribeVoice } from "../voice";
 
 /*
  * What reaches the bot. The webhook only checks who is calling (Telegram's
@@ -140,7 +143,8 @@ const LATE_PIN_MINUTES = 60;
  * are sent.
  */
 function hiddenPin(mine: AiBotLink[], m: Incoming, now: Date): "late" | "stray" | null {
-  const text = westernDigits(m.text ?? "");
+  // The words sent with a photo or file count the same as a message.
+  const text = westernDigits(m.text ?? m.caption ?? "");
   if (m.callback) return null;
   const since = now.getTime() - LATE_PIN_MINUTES * 60_000;
   if (
@@ -212,7 +216,7 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
     const store = hidden
       ? (mine.find((l) => l.pending) ?? mine[0]!)
       : (linking ?? (known ? await storeOfMessage(mine, m) : null) ?? mine[0] ?? first);
-    const incoming: Incoming = pin || hidden ? { ...m, text: PIN_TEXT } : m;
+    const incoming: Incoming = pin || hidden ? { ...m, text: PIN_TEXT, caption: null } : m;
     await prisma.$transaction(async (tx) => {
       const row = await tx.aiBotMessage.update({
         where: { id: claim.id },
@@ -733,24 +737,71 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
     return act(link, ctx, m.chatId, waiting.press, waiting.sourceId, PIN_CHECKED);
   }
 
-  if (m.media) {
-    return say(
-      link,
-      m.chatId,
-      words(
-        'I read typed words for now: voice notes and files come later. Type what you need, or "help".',
-      ),
-    );
-  }
+  if (m.media) return gotMedia(link, ctx, m);
   if (!text) return;
+  return answerText(link, ctx, m.chatId, text);
+}
+
+/** Said when a voice note or file came on a plug the bot cannot fetch it from yet. */
+export const MEDIA_NOT_HERE_TEXT =
+  'I can read voice notes and files only on Telegram for now. Type what you need, or "help".';
+
+/**
+ * A voice note or a file (Release 5). Both need the AI (no AI call is made
+ * while it is off or paused). A voice note is written down and then handled
+ * exactly like typed words; a file becomes a draft that waits in the ERP.
+ */
+async function gotMedia(link: AiBotLink, ctx: CompanyContext, m: Incoming) {
+  const ready = await aiReady(link.companyId);
+  if (!ready.on) return say(link, m.chatId, words(FILES_NEED_AI));
+  const sender = senderFor(link);
+  const download = sender.download?.bind(sender);
+  if (!m.file || !download) return say(link, m.chatId, words(MEDIA_NOT_HERE_TEXT));
+  await sender.typing(m.chatId);
+  if (m.media === "voice") {
+    let heard: string;
+    try {
+      heard = await transcribeVoice(link.companyId, ctx.user.id, {
+        bytes: await download(m.file.id),
+        mime: m.file.mime ?? "audio/ogg",
+      });
+    } catch (error) {
+      if (error instanceof AppError) return say(link, m.chatId, words(error.message));
+      throw error;
+    }
+    if (!heard) {
+      return say(
+        link,
+        m.chatId,
+        words("I could not hear any words in that voice note. Try again, or type it."),
+      );
+    }
+    // A number that could be the PIN, spoken: never passed on, the same as typed (v6.4.2).
+    if (pinCandidates(westernDigits(heard)).length > 0) {
+      await removePin(link, m.chatId, m.messageId);
+      return say(link, m.chatId, words(NUMBER_HIDDEN_TEXT));
+    }
+    await say(link, m.chatId, words(`I heard: "${heard.slice(0, 500)}"`));
+    return answerText(link, ctx, m.chatId, heard.slice(0, 2000));
+  }
+  return say(
+    link,
+    m.chatId,
+    await fileArrived(link, ctx, m.file, m.caption ?? null, download, meta(link)),
+  );
+}
+
+/** Words for Mehedi 2.0 (typed, or a voice note written down): the chat's commands and answers. */
+async function answerText(link: AiBotLink, ctx: CompanyContext, chatId: string, text: string) {
+  const sender = senderFor(link);
   if (UNLOCK_WORDS.test(storePrefix(text).rest)) {
-    return act(link, ctx, m.chatId, { kind: "unlock", companyId: link.companyId }, null, null);
+    return act(link, ctx, chatId, { kind: "unlock", companyId: link.companyId }, null, null);
   }
   if (GUARD_WORDS.test(storePrefix(text).rest)) {
     const { guardPress } = await import("@/modules/bug-guard/bot-actions");
     return say(
       link,
-      m.chatId,
+      chatId,
       await guardPress(
         ctx,
         { kind: "guard-run", companyId: link.companyId },
@@ -760,14 +811,14 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
       ),
     );
   }
-  await sender.typing(m.chatId);
+  await sender.typing(chatId);
   let rows: Awaited<ReturnType<typeof sendChat>>;
   try {
     rows = await sendChat(ctx, { text }, meta(link), "BOT");
   } catch (error) {
-    if (error instanceof AppError) return say(link, m.chatId, words(error.message));
+    if (error instanceof AppError) return say(link, chatId, words(error.message));
     if (error instanceof ZodError)
-      return say(link, m.chatId, words("Write at most 2000 characters at a time."));
+      return say(link, chatId, words("Write at most 2000 characters at a time."));
     throw error;
   }
   for (const row of rows) {
@@ -780,8 +831,8 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
       },
       appUrl(),
     );
-    await say(link, m.chatId, out);
-    if (out.exportId) await sendReport(link, m.chatId, out.exportId);
+    await say(link, chatId, out);
+    if (out.exportId) await sendReport(link, chatId, out.exportId);
   }
 }
 
@@ -828,6 +879,9 @@ async function storeOfPress(mine: AiBotLink[], press: ButtonPress) {
         where: { id: press.correctionId, ...where },
         select,
       });
+      break;
+    case "file":
+      row = await prisma.fileAsset.findFirst({ where: { id: press.fileId, ...where }, select });
       break;
     case "approval": {
       const companyId = await companyOfApproval(
@@ -993,6 +1047,11 @@ async function act(
   }
   if (press.kind === "approval")
     return decideApproval(link, ctx, chatId, press, sourceId, null, pin);
+  if (press.kind === "file") {
+    await sender.clearButtons(chatId, sourceId);
+    await sender.typing(chatId);
+    return say(link, chatId, await readFileAs(link, ctx, press.fileId, press.as, null, meta(link)));
+  }
   const m = meta(link);
   let result: string;
   try {

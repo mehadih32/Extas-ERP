@@ -18,7 +18,7 @@ import { AI_MAX_IMAGE_BYTES } from "@/modules/production/ai-intake";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
-import { auditAsAi } from "../account";
+import { aiAccountOf, auditAsAi } from "../account";
 import { pushToBot } from "../bot/push";
 import { type Ask, askerFor, toolInputOf } from "../claude";
 import type { TokenUse } from "../models";
@@ -196,6 +196,48 @@ export async function createRun(
         entityType: "AiOrderRun",
         entityId: run.id,
         summary: `New order for Mehedi 2.0: ${run.number} (${input.title})`,
+      },
+      tx,
+    );
+    return run;
+  });
+}
+
+/**
+ * A buyer's PO, order sheet or photo sent to the bot (Release 5): a new order
+ * draft made in the AI's name with the file attached, waiting for the owner
+ * on AI Center > Orders like any other (nothing is booked or sent from it
+ * until the owner approves its plan). The person who sent it must be one who
+ * gives Mehedi 2.0 new orders.
+ */
+export async function createRunFromBot(
+  ctx: CompanyContext,
+  file: { id: string; fileName: string },
+) {
+  assertManage(ctx);
+  const ai = await aiAccountOf(ctx.company.id);
+  return runTransaction(async (tx) => {
+    const number = await nextDocumentNumber(tx, ctx.company.id, "AI_ORDER_RUN");
+    const run = await tx.aiOrderRun.create({
+      data: {
+        companyId: ctx.company.id,
+        number,
+        title: `Order from the bot (${file.fileName})`.slice(0, 160),
+        fields: asJson(EMPTY_FIELDS),
+        missing: missingFields(EMPTY_FIELDS),
+        fileIds: [file.id],
+        startedVia: "BOT",
+        createdById: ai.id,
+      },
+      select: { id: true, number: true },
+    });
+    await auditAsAi(
+      ctx.company.id,
+      {
+        action: "CREATE",
+        entityType: "AiOrderRun",
+        entityId: run.id,
+        summary: `New order draft ${run.number} from a file sent to the bot, waiting for the owner`,
       },
       tx,
     );

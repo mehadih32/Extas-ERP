@@ -9,6 +9,7 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { setProfitPercent } from "@/modules/costing/costing.service";
+import { createParty } from "@/modules/parties/party.service";
 import { createTask } from "@/modules/reminders/task.service";
 
 import { PIN_TEXT } from "../bot/pin-scrub";
@@ -617,6 +618,24 @@ export async function applyCard(
             partyId: p(card.params, "partyId"),
             dueOn: p(card.params, "dueOn"),
             recordLabel: p(card.params, "recordLabel"),
+          },
+          meta,
+        );
+        break;
+      case "buyer.create":
+        // A visiting card read on the bot: the buyer is added only now, in the owner's name.
+        if (!ctx.can("parties.manage"))
+          throw new AppError("FORBIDDEN", "Adding buyers is not part of your role.");
+        await createParty(
+          ctx,
+          {
+            kind: "BUYER",
+            name: p(card.params, "name"),
+            contactPerson: p(card.params, "contactPerson"),
+            email: p(card.params, "email"),
+            phone: p(card.params, "phone"),
+            country: p(card.params, "country"),
+            address: p(card.params, "address"),
           },
           meta,
         );

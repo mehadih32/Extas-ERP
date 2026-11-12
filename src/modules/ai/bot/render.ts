@@ -18,6 +18,7 @@ import { profitBothWays } from "@/modules/costing/costing-labels";
  *   bc:<correction>:a|x|u  Bug Guard: Apply, Cancel or Undo a correction
  *   ok|no:<b|p|l|e>:<id>:<version>  Approve or Reject a booking, payroll,
  *                        leave request or expense claim as its message showed it
+ *   fk:<file>:o|c|p      A file sent to the bot: a buyer PO, a visiting card or a packing list
  * Pure: no database and no network. A Send button carries the draft's
  * version (draftVersion), so a draft changed after the message showed it is
  * never sent from that message (v6.4.1).
@@ -188,9 +189,12 @@ export type ButtonPress =
   | { kind: "guard-correction"; correctionId: string; choice: "apply" | "cancel" | "undo" }
   /** Approve or Reject an item waiting for approval (approvals.ts), as its message showed it. */
   | { kind: "approval"; what: ApprovalKind; id: string; approve: boolean; version: string }
+  /** What a file sent to the bot is (bot-files.ts): a buyer PO, a visiting card or a packing list. */
+  | { kind: "file"; fileId: string; as: "order" | "card" | "packing" }
   /** The owner wrote "unlock" (v6.4.1 B5): never a button, so readButton never makes it. */
   | { kind: "unlock"; companyId: string };
 
+const FILE_AS = { o: "order", c: "card", p: "packing" } as const;
 const GUARD_CHOICE = { f: "fix", i: "ignore", l: "later" } as const;
 const CORRECTION_CHOICE = { a: "apply", x: "cancel", u: "undo" } as const;
 
@@ -226,6 +230,8 @@ export function readButton(data: string): ButtonPress | null {
       version: m[4]!,
     };
   }
+  m = new RegExp(`^fk:(${ID}):(o|c|p)$`).exec(data);
+  if (m) return { kind: "file", fileId: m[1]!, as: FILE_AS[m[2] as "o" | "c" | "p"] };
   m = new RegExp(`^bg:run:(${ID})$`).exec(data);
   if (m) return { kind: "guard-run", companyId: m[1]! };
   m = new RegExp(`^bg:(${ID}):(f|i|l)$`).exec(data);

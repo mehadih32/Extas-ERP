@@ -20,6 +20,7 @@ export const TASK_SCREENS: Partial<Record<AiTaskKey, string>> = {
   "server.health": "/ai/health",
   "knowledge.test": "/ai/knowledge",
   "bot.command": "bot",
+  "voice.text": "bot",
   "help.answer": "/help",
   "booking.check": "/production/bookings",
   "techpack.draft": "/tech-packs",

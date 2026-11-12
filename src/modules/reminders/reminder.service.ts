@@ -551,6 +551,8 @@ export async function listReminders(ctx: CompanyContext, raw: unknown = {}) {
   const where: Prisma.ReminderWhereInput = {
     AND: [
       input.all ? {} : visibleWhere(ctx),
+      // Old follow-up dates marked as reminded when those reminders began (never sent).
+      { NOT: { status: "CANCELLED", sourceKey: { not: null } } },
       input.status ? { status: input.status } : {},
       input.type ? { type: input.type } : {},
       input.automatic === undefined

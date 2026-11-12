@@ -305,6 +305,32 @@ run("sending documents to buyers", () => {
     );
     expect(short.expiresAt.getTime() - now.getTime()).toBe(2 * 24 * 60 * 60 * 1000);
     expect(short.phone).toBe("");
+
+    // The nightly clock deletes a link's PDF copy 3 days after it ended; the link and
+    // its "Sent" row stay. A live link keeps its file.
+    const day = 24 * 60 * 60 * 1000;
+    const fileOf = async (linkId: string) =>
+      (await prisma.documentLink.findUniqueOrThrow({ where: { id: linkId } })).fileId;
+    const stoppedFile = (await fileOf(made.linkId))!;
+    expect(await sending.purgeEndedLinkFiles(new Date(now.getTime() + 2 * day))).toBe(0);
+    expect(await sending.purgeEndedLinkFiles(new Date(now.getTime() + 4 * day))).toBe(1);
+    expect(await fileOf(made.linkId)).toBeNull();
+    expect(await prisma.fileAsset.findUnique({ where: { id: stoppedFile } })).toBeNull();
+    expect(await fileOf(short.linkId)).not.toBeNull();
+    expect(await sending.purgeEndedLinkFiles(new Date(now.getTime() + 6 * day))).toBe(1);
+    expect(await fileOf(short.linkId)).toBeNull();
+    expect(await prisma.documentSend.count({ where: { channel: "WHATSAPP" } })).toBe(2);
+    const after = await sending.listDocumentSends(seller, { referenceIds: [env.quotation.id] });
+    expect(after.items).toHaveLength(2);
+    expect(after.items.map((i) => i.link?.state)).toContain("STOPPED");
+  });
+
+  it("counts link opens by the address our own proxy added, not one the visitor wrote", () => {
+    const headers = (forwarded: string) => new Headers({ "x-forwarded-for": forwarded });
+    expect(sending.linkVisitor(headers("203.0.113.9"))).toBe("203.0.113.9");
+    expect(sending.linkVisitor(headers("1.2.3.4, 203.0.113.9"))).toBe("203.0.113.9");
+    expect(sending.linkVisitor(headers("1.2.3.4, not-an-address"))).toBeUndefined();
+    expect(sending.linkVisitor(new Headers())).toBeUndefined();
   });
 
   it("logs a share from the phone with the kept PDF to share", async () => {

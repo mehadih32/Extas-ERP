@@ -50,7 +50,12 @@ function botApi() {
     const file = /^https:\/\/api\.telegram\.org\/file\/bot[^/]+\/(.+)$/.exec(call.url);
     if (file) {
       calls.push({ method: "download", url: call.url, json: {} });
-      return { status: 200, body: file[1]!.startsWith("voice") ? VOICE : JPEG };
+      const body = file[1]!.includes("big")
+        ? Buffer.alloc(11 * 1024 * 1024, 7)
+        : file[1]!.startsWith("voice")
+          ? VOICE
+          : JPEG;
+      return { status: 200, body };
     }
     const tg = /^https:\/\/api\.telegram\.org\/bot([^/]+)\/(\w+)$/.exec(call.url);
     if (!tg) throw new Error(`Unexpected call to ${call.url}`);
@@ -241,6 +246,30 @@ run("Voice notes and files on the bot", () => {
     expect(said.at(-1)).toMatch(/^You can say:|status/);
     const usage = await prisma.aiUsage.findFirstOrThrow({ where: { task: "voice.text" } });
     expect(usage).toMatchObject({ screen: "bot", why: "A voice note on the bot" });
+  });
+
+  it("never fetches or reads a file or voice note that is too large, whatever size Telegram said", async () => {
+    const api = botApi();
+    await aiOn(env, true);
+    const asked = fakeAi([]);
+    // Too large by what Telegram says: not even fetched.
+    await telegram(
+      message({
+        voice: { file_id: `voice${updateId}`, mime_type: "audio/ogg", file_size: 9 * 1024 * 1024 },
+      }),
+    );
+    expect(api.said().at(-1)).toBe(
+      "That voice note is too long. Send a shorter one (a minute or two).",
+    );
+    expect(api.calls.filter((c) => c.method === "download")).toHaveLength(0);
+    // No size given, and what came is too large: nothing kept, nothing read.
+    await telegram(message({ document: { file_id: `big${updateId}`, mime_type: "image/jpeg" } }));
+    expect(api.said().at(-1)).toBe(
+      "That file is too large (10 MB at most). Send a smaller photo or PDF.",
+    );
+    expect(api.calls.filter((c) => c.method === "download")).toHaveLength(1);
+    expect(await prisma.fileAsset.count()).toBe(0);
+    expect(asked).toHaveLength(0);
   });
 
   it("hides a spoken number that could be the PIN, the same as a typed one", async () => {

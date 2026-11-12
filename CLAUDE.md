@@ -209,6 +209,19 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-11-12 (Release 5: bot approvals, voice notes and files, campaigns): what waits for approval (bookings and
+  their revisions, payrolls, leave requests, expense claims) comes to the person linked to the bot who may approve
+  it, unless they turn off "Send me approvals on Telegram" (on at first); the AI switch does not stop these. A press
+  runs the same service as the ERP's own button, in that person's name, with their permission checked first at the
+  press (without it the bot says nothing more about the item). Bookings and payrolls ask for the PIN; a stale or
+  changed item (a booking's total quantity and value count) is never approved from an old button. Expense claims are
+  approved only in the ERP, where the person picks the "Paid from" account: the bot offers Reject and the ERP's
+  link, never a payment from an account it chose. Never for deletions, permissions or roles. Voice notes and files
+  on the bot need the AI on (and a Gemini model for "Voice notes to text"); too large ones are never fetched or read;
+  they only make drafts in the AI's own account (an order draft, a buyer draft added only on Apply, a delivery draft
+  confirmed by a person), and nothing posts by itself. Buyers & suppliers > Campaigns (`sales.campaigns.manage`)
+  fills each buyer's name into one message and opens it in WhatsApp or email on the person's own device: the
+  person sends it, the ERP never does.
 - 2026-11-11 (B-grade lines for the shops): a shop order line may be A-grade or B-grade. A B line takes the
   factory's own B-grade stock at the B-grade cost; an approved returned B piece goes back to B-grade stock. A
   B-grade piece costs the shop the style's own "B-grade price" (set on the product, with the PIN), or, without one,

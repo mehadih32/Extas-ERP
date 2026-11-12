@@ -20,8 +20,10 @@ import type { BotOut } from "./render";
  * with its key facts and Approve / Reject buttons, unless they turned off
  * "Send me approvals on Telegram". A press calls the same service the ERP's
  * own button calls, as that person, with their permissions read again at the
- * press. Approving anything about money or prices asks for the PIN first (the
- * bot's PIN flow). A button whose item was decided elsewhere answers who
+ * press. Approving a booking or a payroll asks for the PIN first (the bot's PIN
+ * flow). An expense claim is approved only in the ERP, where the person picks
+ * the account it is paid from: the bot offers Reject and the ERP's link, never
+ * a payment from an account it chose itself. A button whose item was decided elsewhere answers who
  * decided it; one whose facts changed after its message is refused and the
  * item is shown again as it is now. Never for deletions, permissions or roles.
  * These are the system's own messages: the AI switch does not stop them.
@@ -53,7 +55,10 @@ type Flow = {
   /** The ERP lets it be turned down (with a reason). */
   canReject: boolean;
   facts(companyId: string, id: string): Promise<ApprovalFacts | null>;
-  approve(ctx: CompanyContext, id: string, meta: RequestMeta): Promise<string>;
+  /** Approving on the bot; without it the item is approved only in the ERP. */
+  approve?(ctx: CompanyContext, id: string, meta: RequestMeta): Promise<string>;
+  /** Why it is approved only in the ERP ("where you pick the …"). */
+  approveInErp?: string;
   reject?(ctx: CompanyContext, id: string, reason: string, meta: RequestMeta): Promise<string>;
 };
 
@@ -73,6 +78,29 @@ async function lastDecider(companyId: string, entityType: string, entityId: stri
 }
 
 const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : "not set");
+
+const UNIT_WORD: Record<string, string> = {
+  PCS: "pcs",
+  METER: "m",
+  YARD: "yd",
+  KG: "kg",
+  GRAM: "g",
+  ROLL: "rolls",
+};
+
+/** "1,200 kg + 500 pcs": a booking's quantities, added up per unit. */
+function quantitiesByUnit(lines: Array<{ quantity: Prisma.Decimal; unit: string }>) {
+  const byUnit = new Map<string, number>();
+  for (const l of lines) byUnit.set(l.unit, (byUnit.get(l.unit) ?? 0) + Number(l.quantity));
+  return (
+    [...byUnit]
+      .map(
+        ([unit, n]) =>
+          `${n.toLocaleString("en-US", { maximumFractionDigits: 3 })} ${UNIT_WORD[unit] ?? unit.toLowerCase()}`,
+      )
+      .join(" + ") || "none"
+  );
+}
 
 const FLOWS: Record<ApprovalKind, Flow> = {
   booking: {
@@ -97,12 +125,23 @@ const FLOWS: Record<ApprovalKind, Flow> = {
               status: true,
               expectedDate: true,
               supplier: { select: { name: true } },
-              lines: { select: { quantity: true } },
+              lines: {
+                select: {
+                  quantity: true,
+                  amount: true,
+                  priceLater: true,
+                  rawMaterial: { select: { unit: true } },
+                },
+              },
             },
           },
+          company: { select: { currency: true } },
         },
       });
       if (!b) return null;
+      const lines = b.order.lines;
+      const value = lines.reduce((sum, l) => sum + Number(l.amount), 0);
+      const currency = b.company.currency;
       const { bookingDocNo } = await import("@/modules/production/booking-revisions");
       const open = !["CANCELLED", "CLOSED"].includes(b.order.status);
       return {
@@ -117,7 +156,9 @@ const FLOWS: Record<ApprovalKind, Flow> = {
         lines: [
           `Supplier: ${b.order.supplier.name}`,
           ...(b.title ? [`For: ${b.title}`] : []),
-          `Items: ${b.order.lines.length}`,
+          `Items: ${lines.length}`,
+          `Total quantity: ${quantitiesByUnit(lines.map((l) => ({ quantity: l.quantity, unit: l.rawMaterial.unit })))}`,
+          `Total value: ${currency} ${groupAmount(value.toFixed(2), currency)}${lines.some((l) => l.priceLater) ? " (some prices are agreed when the goods arrive)" : ""}`,
           `In-house date: ${day(b.order.expectedDate)}`,
           ...(b.deliveryPlace ? [`Delivery place: ${b.deliveryPlace}`] : []),
           ...(b.paymentTerms ? [`Payment terms: ${b.paymentTerms}`] : []),
@@ -229,8 +270,10 @@ const FLOWS: Record<ApprovalKind, Flow> = {
   expense: {
     noun: "expense claim",
     permission: "accounts.payments.record",
-    pinToApprove: "approve the expense claim (money)",
+    // Paying it back needs the account it is paid from: chosen in the ERP, never by the bot.
+    pinToApprove: null,
     canReject: true,
+    approveInErp: "where you pick the “Paid from” account",
     async facts(companyId, id) {
       const e = await prisma.expense.findFirst({
         where: { id, companyId },
@@ -268,16 +311,11 @@ const FLOWS: Record<ApprovalKind, Flow> = {
           ...(e.createdBy ? [`Claimed by: ${e.createdBy.name}`] : []),
           ...(e.purpose || e.description ? [`For: ${e.purpose ?? e.description}`] : []),
           e.paymentType === "DUE"
-            ? `Approving puts it on ${e.supplier?.name ?? "the supplier"}'s account.`
-            : "Approving pays it back in cash from the Cash account. To pay from a bank or wallet, approve it in the ERP.",
+            ? `Approving puts it on ${e.supplier?.name ?? "the supplier"}'s account. Approve it in the ERP.`
+            : "Approve it in the ERP, where you pick the “Paid from” account. Reject works here.",
         ],
         href: `/accounts/expenses`,
       };
-    },
-    async approve(ctx, id, meta) {
-      const { approveExpense } = await import("@/modules/expenses/expense.service");
-      const e = await approveExpense(ctx, id, { method: "CASH" }, meta);
-      return `Approved: claim ${e.number} is in the books.`;
     },
     async reject(ctx, id, reason, meta) {
       const { rejectExpense } = await import("@/modules/expenses/expense.service");
@@ -303,19 +341,18 @@ export function renderApproval(kind: ApprovalKind, id: string, facts: ApprovalFa
   const flow = FLOWS[kind];
   const version = factsVersion(facts);
   const code = KIND_CODE[kind];
+  const row = [
+    ...(flow.approve ? [{ label: "Approve", data: `ok:${code}:${id}:${version}` }] : []),
+    ...(flow.canReject ? [{ label: "Reject", data: `no:${code}:${id}:${version}` }] : []),
+  ];
   return {
     text: [
       `Waiting for your approval: ${facts.title}`,
       ...facts.lines.map((l) => `• ${l}`),
-      ...(flow.pinToApprove ? ["Approving asks for your PIN."] : []),
-      `${appUrl()}${facts.href}`,
+      ...(flow.approve && flow.pinToApprove ? ["Approving asks for your PIN."] : []),
+      flow.approve ? `${appUrl()}${facts.href}` : `Approve in the ERP: ${appUrl()}${facts.href}`,
     ].join("\n"),
-    buttons: [
-      [
-        { label: "Approve", data: `ok:${code}:${id}:${version}` },
-        ...(flow.canReject ? [{ label: "Reject", data: `no:${code}:${id}:${version}` }] : []),
-      ],
-    ],
+    buttons: row.length ? [row] : [],
   };
 }
 

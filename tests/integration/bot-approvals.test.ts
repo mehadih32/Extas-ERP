@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 /*
  * Approvals on the bot (Release 5): what waits for a person's approval comes
  * to the linked approver with Approve and Reject; a press calls the ERP's own
- * service as that person, with their permission read at the press; money asks
- * for the PIN; a stale button says who decided; another store's item is never
+ * service as that person, with their permission read at the press (before
+ * anything else is said); bookings and payrolls ask for the PIN; an expense
+ * claim is approved only in the ERP (Reject works on the bot); a stale button
+ * says who decided, and a booking's quantities and value are part of what
+ * makes a button stale; another store's item is never
  * touched; the person can turn it off; the AI switch does not matter.
  */
 
@@ -14,7 +17,7 @@ vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 import { POST as telegramWebhook } from "@/app/api/bot/telegram/webhook/route";
 import { addDays, localDay } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
-import { setApprovalSetting } from "@/modules/ai/bot/approvals";
+import { notifyApprovers, setApprovalSetting } from "@/modules/ai/bot/approvals";
 import { saveTelegram, startLink, telegramSecret } from "@/modules/ai/bot/bot.service";
 import { type BotCall, standInForBotApi } from "@/modules/ai/bot/channel";
 import { setAiSwitch, setPin } from "@/modules/ai/settings.service";
@@ -23,6 +26,8 @@ import * as expenses from "@/modules/expenses/expense.service";
 import { createEmployee } from "@/modules/hr/employee.service";
 import * as leave from "@/modules/hr/leave.service";
 import { listLeaveTypes } from "@/modules/hr/settings.service";
+import * as materials from "@/modules/materials/material.service";
+import * as parties from "@/modules/parties/party.service";
 import { runDueJobs } from "@/modules/jobs/worker";
 import { createRole } from "@/modules/rbac/role.service";
 
@@ -240,10 +245,11 @@ run("Approvals on the bot", () => {
     expect(await prisma.aiPinTry.count()).toBe(0);
   });
 
-  it("asks the PIN before approving an expense claim, refuses a wrong one, and pays it with the right one", async () => {
+  it("offers only Reject for an expense claim: it is approved in the ERP, where the account is picked", async () => {
     const api = botApi();
     await saveTelegram(env.owner, { token: TOKEN });
     await linkTo(env.owner, OWNER_CHAT);
+    await setPin(env.owner, { pin: "2468" });
     const claim = await expenses.createExpense(env.staff, {
       headId: env.head.id,
       amount: 300,
@@ -251,39 +257,87 @@ run("Approvals on the bot", () => {
       description: "Printer paper",
     });
     await runDueJobs();
-    expect(api.said(OWNER_CHAT).at(-1)).toMatch(
-      new RegExp(`^Waiting for your approval: Expense claim ${claim.number}`),
-    );
-    const [approve] = api.buttons(OWNER_CHAT);
-    expect(approve!.callback_data).toMatch(/^ok:e:/);
+    const text = api.said(OWNER_CHAT).at(-1)!;
+    expect(text).toMatch(new RegExp(`^Waiting for your approval: Expense claim ${claim.number}`));
+    expect(text).toContain("Approve in the ERP: https://erp.test/accounts/expenses");
+    expect(text).not.toContain("PIN");
+    const buttons = api.buttons(OWNER_CHAT);
+    expect(buttons.map((b) => b.text)).toEqual(["Reject"]);
 
-    // No PIN set yet: nothing moves.
-    await telegram(press(OWNER_CHAT, approve!.callback_data));
-    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Set your PIN first/);
-
-    await setPin(env.owner, { pin: "2468" });
-    await telegram(press(OWNER_CHAT, approve!.callback_data));
+    // An Approve button made by hand does nothing and asks for no PIN.
+    await telegram(press(OWNER_CHAT, buttons[0]!.callback_data.replace(/^no:/, "ok:")));
     expect(api.said(OWNER_CHAT).at(-1)).toBe(
-      'Send your PIN to approve the expense claim (money). (Write "বাতিল" to stop.)',
-    );
-    await telegram(typed(OWNER_CHAT, "1111"));
-    expect(api.said(OWNER_CHAT).at(-1)).toBe(
-      "The PIN is not right. Press the button again to try again.",
+      `Approve Expense claim ${claim.number} in the ERP, where you pick the “Paid from” account: https://erp.test/accounts/expenses. Nothing was done here.`,
     );
     expect(
       (await prisma.expense.findUniqueOrThrow({ where: { id: claim.id } })).journalEntryId,
     ).toBeNull();
+    expect(await prisma.journalEntry.count()).toBe(0);
 
-    await telegram(press(OWNER_CHAT, approve!.callback_data));
-    await telegram(typed(OWNER_CHAT, "2468"));
-    expect(api.said(OWNER_CHAT).at(-1)).toBe(`Approved: claim ${claim.number} is in the books.`);
-    const paid = await prisma.expense.findUniqueOrThrow({
-      where: { id: claim.id },
-      include: { journalEntry: true },
+    // Reject works here, with the reason written next.
+    await telegram(press(OWNER_CHAT, buttons[0]!.callback_data));
+    await telegram(typed(OWNER_CHAT, "Paper was bought last week"));
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(
+      `Rejected: claim ${claim.number} is turned down with your reason.`,
+    );
+    expect(await prisma.journalEntry.count()).toBe(0);
+  });
+
+  it("shows a booking's total quantity and value, and a changed quantity makes the old button stale", async () => {
+    const api = botApi();
+    await saveTelegram(env.owner, { token: TOKEN });
+    await linkTo(env.owner, OWNER_CHAT);
+    const mill = (
+      await parties.createParty(env.owner, { kind: "SUPPLIER", name: "Narayanganj Fabrics" })
+    ).party;
+    const jersey = await materials.createMaterial(env.owner, {
+      name: "Single Jersey 180 GSM",
+      kind: "FABRIC",
+      unit: "KG",
+      supplierId: mill.id,
     });
-    expect(paid.journalEntry?.postedById).toBe(env.owner.user.id);
-    // The PIN never reached the log.
-    expect(await prisma.aiBotMessage.count({ where: { text: { contains: "2468" } } })).toBe(0);
+    const order = await prisma.purchaseOrder.create({
+      data: {
+        companyId: env.company.id,
+        number: "PO-BOT-1",
+        supplierId: mill.id,
+        orderDate: new Date(),
+        lines: {
+          create: [{ rawMaterialId: jersey.id, quantity: 1200, unitPrice: 4.5, amount: 5400 }],
+        },
+      },
+      include: { lines: true },
+    });
+    const booking = await prisma.booking.create({
+      data: {
+        companyId: env.company.id,
+        orderId: order.id,
+        source: "SUPPLIER_PO",
+        category: "KNITWEAR",
+        terms: "Delivery within 30 days",
+      },
+    });
+    await notifyApprovers(env.company.id, "booking", booking.id);
+    await runDueJobs();
+    const text = api.said(OWNER_CHAT).at(-1)!;
+    expect(text).toMatch(/^Waiting for your approval: Booking/);
+    expect(text).toContain("Total quantity: 1,200 kg");
+    expect(text).toMatch(/Total value: [A-Z]{3} 5,400\.00/);
+    const [approve] = api.buttons(OWNER_CHAT);
+    expect(approve!.callback_data).toMatch(/^ok:b:/);
+
+    // The quantity and price change after the message: its button no longer approves.
+    await prisma.purchaseOrderLine.update({
+      where: { id: order.lines[0]!.id },
+      data: { quantity: 1500, amount: 6750 },
+    });
+    await telegram(press(OWNER_CHAT, approve!.callback_data));
+    const said = api.said(OWNER_CHAT);
+    expect(said.at(-2)).toMatch(/changed after that message showed it, so nothing was done/);
+    expect(said.at(-1)).toContain("Total quantity: 1,500 kg");
+    expect((await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).stage).toBe(
+      "DRAFT",
+    );
   });
 
   it("re-checks the person's permission at the press, and sends nothing to someone who cannot approve", async () => {
@@ -322,6 +376,14 @@ run("Approvals on the bot", () => {
     expect(
       (await prisma.leaveRequest.findUniqueOrThrow({ where: { id: request.id } })).status,
     ).toBe("PENDING");
+
+    // Decided in the ERP afterwards: someone without the permission still learns nothing more.
+    await leave.approveLeave(env.owner, request.id, {});
+    await telegram(press(HR_CHAT, approve!.callback_data));
+    expect(api.said(HR_CHAT).at(-1)).toBe(
+      "Not done: you may no longer approve a leave request. Ask the owner in the ERP.",
+    );
+    expect(api.said(HR_CHAT).some((t) => t.startsWith("Already decided"))).toBe(false);
   });
 
   it("shows a changed item again instead of approving what the message showed", async () => {

@@ -37,7 +37,13 @@ import {
   renderApproval,
 } from "./approvals";
 import { logBot, senderFor } from "./bot.service";
-import { fileArrived, FILES_NEED_AI, readFileAs } from "./bot-files";
+import {
+  FILE_TOO_LARGE,
+  fileArrived,
+  FILES_NEED_AI,
+  MAX_FILE_BYTES,
+  readFileAs,
+} from "./bot-files";
 import { botOwner } from "./owner";
 import type { Incoming } from "./channel";
 import { type BotOut, type ButtonPress, draftVersion, readButton, renderAnswer } from "./render";
@@ -46,7 +52,7 @@ import { PIN_TEXT } from "./pin-scrub";
 import { readWhatsAppPayload, whatsappSignatureOk } from "./whatsapp";
 import { NUMBER_HIDDEN_TEXT, pinCandidates } from "../pin-tries";
 import { aiReady } from "../claude";
-import { transcribeVoice } from "../voice";
+import { MAX_VOICE_BYTES, transcribeVoice, VOICE_TOO_LONG } from "../voice";
 
 /*
  * What reaches the bot. The webhook only checks who is calling (Telegram's
@@ -757,12 +763,20 @@ async function gotMedia(link: AiBotLink, ctx: CompanyContext, m: Incoming) {
   const sender = senderFor(link);
   const download = sender.download?.bind(sender);
   if (!m.file || !download) return say(link, m.chatId, words(MEDIA_NOT_HERE_TEXT));
+  const voice = m.media === "voice";
+  const limit = voice ? MAX_VOICE_BYTES : MAX_FILE_BYTES;
+  const tooLarge = words(voice ? VOICE_TOO_LONG : FILE_TOO_LARGE);
+  // Too large by what Telegram says: not even fetched.
+  if (m.file.size !== null && m.file.size > limit) return say(link, m.chatId, tooLarge);
   await sender.typing(m.chatId);
-  if (m.media === "voice") {
+  // And by what really came (the size may be missing or wrong): nothing is kept or read.
+  const bytes = await download(m.file.id);
+  if (bytes.length > limit) return say(link, m.chatId, tooLarge);
+  if (voice) {
     let heard: string;
     try {
       heard = await transcribeVoice(link.companyId, ctx.user.id, {
-        bytes: await download(m.file.id),
+        bytes,
         mime: m.file.mime ?? "audio/ogg",
       });
     } catch (error) {
@@ -787,7 +801,7 @@ async function gotMedia(link: AiBotLink, ctx: CompanyContext, m: Incoming) {
   return say(
     link,
     m.chatId,
-    await fileArrived(link, ctx, m.file, m.caption ?? null, download, meta(link)),
+    await fileArrived(link, ctx, m.file, m.caption ?? null, bytes, meta(link)),
   );
 }
 
@@ -1132,6 +1146,16 @@ async function approvalStopped(
 ): Promise<boolean> {
   const sender = senderFor(link);
   const flow = flowOf(press.what);
+  // The permission first: someone who may no longer approve it learns nothing more about it.
+  if (!ctx.can(flow.permission)) {
+    await sender.clearButtons(chatId, sourceId);
+    await say(
+      link,
+      chatId,
+      words(`Not done: you may no longer approve a ${flow.noun}. Ask the owner in the ERP.`),
+    );
+    return true;
+  }
   const facts = await flow.facts(link.companyId, press.id);
   if (!facts) {
     await sender.clearButtons(chatId, sourceId);
@@ -1161,11 +1185,14 @@ async function approvalStopped(
     await say(link, chatId, renderApproval(press.what, press.id, facts));
     return true;
   }
-  if (!ctx.can(flow.permission)) {
+  // Approved only in the ERP (an expense claim: the account it is paid from is picked there).
+  if (press.approve && !flow.approve) {
     await say(
       link,
       chatId,
-      words(`Not done: you may no longer approve a ${flow.noun}. Ask the owner in the ERP.`),
+      words(
+        `Approve ${facts.title} in the ERP, ${flow.approveInErp ?? "on its page"}: ${appUrl()}${facts.href}. Nothing was done here.`,
+      ),
     );
     return true;
   }
@@ -1225,7 +1252,7 @@ async function decideApproval(
   let result: string;
   try {
     result = press.approve
-      ? await flow.approve(ctx, press.id, m)
+      ? await flow.approve!(ctx, press.id, m)
       : await flow.reject!(ctx, press.id, reason!, m);
   } catch (error) {
     if (error instanceof AppError) return say(link, chatId, words(`Not done: ${error.message}`));

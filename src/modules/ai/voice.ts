@@ -19,6 +19,8 @@ import { aiSettingsOf, keyFor, modelForWork } from "./settings.service";
 /** Voice notes longer than this are not sent to the AI (Telegram's are a few hundred KB a minute). */
 export const MAX_VOICE_BYTES = 8 * 1024 * 1024;
 
+export const VOICE_TOO_LONG = "That voice note is too long. Send a shorter one (a minute or two).";
+
 export const VOICE_NEEDS_MODEL =
   "Voice notes need a model that can hear sound. In AI Center > Models, pick a Gemini model for “Voice notes to text” (and add the Gemini key in AI Center > Settings). Until then, type what you need.";
 
@@ -31,10 +33,7 @@ export async function transcribeVoice(
   audio: { bytes: Buffer; mime: string },
 ): Promise<string> {
   if (audio.bytes.length > MAX_VOICE_BYTES) {
-    throw new AppError(
-      "VALIDATION",
-      "That voice note is too long. Send a shorter one (a minute or two).",
-    );
+    throw new AppError("VALIDATION", VOICE_TOO_LONG);
   }
   const settings = await aiSettingsOf(companyId);
   const model = modelForWork(settings, "voice.text");

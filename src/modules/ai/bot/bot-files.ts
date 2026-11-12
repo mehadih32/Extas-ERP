@@ -37,7 +37,11 @@ export const FILES_NEED_AI =
 export const FILE_KINDS = ["order", "card", "packing"] as const;
 export type FileKind = (typeof FILE_KINDS)[number];
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
+/** A file larger than this is neither kept nor read (the bot checks before and after fetching it). */
+export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+export const FILE_TOO_LARGE =
+  "That file is too large (10 MB at most). Send a smaller photo or PDF.";
 
 /** What the words sent with a file say it is, if they say. */
 export function kindFromCaption(caption: string | null | undefined): FileKind | null {
@@ -61,13 +65,10 @@ export async function fileArrived(
   ctx: CompanyContext,
   file: IncomingFile,
   caption: string | null,
-  download: (id: string) => Promise<Buffer>,
+  bytes: Buffer,
   meta: RequestMeta,
 ): Promise<BotOut> {
-  if (file.size !== null && file.size > MAX_FILE_BYTES) {
-    return words("That file is too large (10 MB at most). Send a smaller photo or PDF.");
-  }
-  const bytes = await download(file.id);
+  if (bytes.length > MAX_FILE_BYTES) return words(FILE_TOO_LARGE);
   const ai = await asAi(ctx);
   let stored: { id: string; fileName: string };
   try {

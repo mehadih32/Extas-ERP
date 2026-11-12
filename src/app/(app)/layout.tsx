@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 
 import { DutyTracker } from "@/components/hr/duty-tracker";
 import { BottomNav } from "@/components/shell/bottom-nav";
+import { GlobalSearch } from "@/components/shell/global-search";
 import { InstallApp } from "@/components/shell/install-app";
 import { initialsOf, roleLabel } from "@/components/shell/labels";
 import { visibleNavItems } from "@/components/shell/nav-items";
@@ -66,6 +67,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const bottomNav = (
     <>
       <BottomNav permissions={me.permissions} user={user} companyName={activeCompany.name} />
+      {/* The one search window ("/" or Ctrl+K, or a Search button in the bar or side menu). */}
+      <GlobalSearch />
       {dutyTracker}
       <InstallApp />
       {/* How the ERP is used, for Bug Guard; the Full check's own visits are not counted. */}

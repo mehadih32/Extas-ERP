@@ -94,6 +94,15 @@ describe("the proxy in front of the screens", () => {
     }
   });
 
+  it("opens an order's status page to its buyer without a session (the link is the key)", () => {
+    expect(passedOn(proxy(request("/order-status/abcDEF123_-xyz")))).toBe(true);
+    for (const path of ["/order-status", "/order-statuses/abc", "/sales/orders/abc"]) {
+      const response = proxy(request(path));
+      expect(response.status, path).toBe(307);
+      expect(new URL(response.headers.get("location")!).pathname, path).toBe("/sign-in");
+    }
+  });
+
   it("renews the session cookie on each visit and tells the screen which page was asked for", () => {
     const response = proxy(request("/?period=this-month", { cookie: "token-1" }));
     expect(passedOn(response)).toBe(true);

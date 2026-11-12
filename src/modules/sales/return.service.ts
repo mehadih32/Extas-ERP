@@ -128,10 +128,12 @@ export function destinationText(pieces: Record<ReturnQc, number>) {
  * Where an order's invoice lines stand for returns: per line what was billed,
  * delivered and already returned (by returns not void), with the cost each
  * piece left at (from its deliveries), plus the discount and VAT earlier
- * returns took back.
+ * returns took back. `held` counts pieces back on a wholesale return
+ * (wholesale-return.service.ts) that no credit note holds yet: waiting for
+ * approval, or not refunded. They cannot come back again.
  */
 export async function returnPosition(db: Db | Tx, orderId: string) {
-  const [items, delivered, earlier, sales] = await Promise.all([
+  const [items, delivered, earlier, sales, wholesale] = await Promise.all([
     db.salesOrderItem.findMany({
       where: { orderId },
       select: {
@@ -159,7 +161,22 @@ export async function returnPosition(db: Db | Tx, orderId: string) {
       where: { referenceType: "SalesOrder", referenceId: orderId, type: "SALE_OUT" },
       select: { variantId: true, quantity: true, unitCost: true },
     }),
+    db.wholesaleReturnLine.findMany({
+      where: { wholesaleReturn: { orderId } },
+      select: {
+        orderItemId: true,
+        quantity: true,
+        refunded: true,
+        wholesaleReturn: { select: { salesReturnId: true } },
+      },
+    }),
   ]);
+  // Pieces on wholesale returns that no credit note holds (its refunded ones are on it).
+  const heldOf = new Map<string, number>();
+  for (const w of wholesale) {
+    const held = w.quantity - (w.wholesaleReturn.salesReturnId ? w.refunded : 0);
+    heldOf.set(w.orderItemId, (heldOf.get(w.orderItemId) ?? 0) + held);
+  }
   // What each SKU's pieces cost when they left (weighted over its deliveries).
   const out = new Map<string, { pieces: number; value: Prisma.Decimal }>();
   for (const m of sales) {
@@ -173,13 +190,15 @@ export async function returnPosition(db: Db | Tx, orderId: string) {
     const returnedAmount = item.returnItems.reduce((s, r) => s.plus(r.amount), ZERO);
     const sent = Math.min(delivered.get(item.variantId) ?? 0, item.quantity);
     const cost = out.get(item.variantId);
+    const held = heldOf.get(item.id) ?? 0;
     return {
       ...item,
       delivered: sent,
       returned,
       returnedAmount,
+      held,
       /** Delivered pieces that have not come back. */
-      returnable: Math.max(sent - returned, 0),
+      returnable: Math.max(sent - returned - held, 0),
       /** The price billed per piece: the line's total (after its own discount) over its pieces. */
       priceBilled: item.quantity > 0 ? money(item.lineTotal.dividedBy(item.quantity)) : ZERO,
       unitCost:
@@ -193,6 +212,7 @@ export async function returnPosition(db: Db | Tx, orderId: string) {
     ordered: lines.reduce((s, l) => s + l.quantity, 0),
     delivered: lines.reduce((s, l) => s + l.delivered, 0),
     returned: lines.reduce((s, l) => s + l.returned, 0),
+    held: lines.reduce((s, l) => s + l.held, 0),
     earlier: {
       discount: money(earlier._sum.discount ?? 0),
       tax: money(earlier._sum.tax ?? 0),
@@ -298,7 +318,14 @@ export async function createSalesReturn(
       },
     });
     const position = await returnPosition(tx, order.id);
-    assertAllowed(canReturnOnInvoice(invoice, order, position, options));
+    assertAllowed(
+      canReturnOnInvoice(
+        invoice,
+        order,
+        { delivered: position.delivered, returned: position.returned + position.held },
+        options,
+      ),
+    );
     if (!order.warehouseId) throw new AppError("CONFLICT", "The order has no warehouse.");
     if (input.returnDate && input.returnDate < localDay(invoice.issueDate, tz)) {
       throw new AppError(
@@ -601,7 +628,7 @@ export async function createSalesReturn(
         status: statusAfterReturns({
           ordered: position.ordered,
           delivered: position.delivered,
-          returned: position.returned + pieces,
+          returned: position.returned + position.held + pieces,
         }),
       },
     });
@@ -645,7 +672,7 @@ export async function createSalesReturn(
 export async function returnCredit(
   db: Db,
   companyId: string,
-  ret: { partyId: string; amount: Prisma.Decimal; createdAt: Date },
+  ret: { id?: string; partyId: string; amount: Prisma.Decimal; createdAt: Date },
 ) {
   const since = { gte: ret.createdAt };
   const [position, used, paidBack] = await Promise.all([
@@ -657,6 +684,8 @@ export async function returnCredit(
         paymentId: null,
         releasedAt: null,
         createdAt: since,
+        // What the return itself put on its exchange's invoice is undone with it.
+        ...(ret.id ? { OR: [{ salesReturnId: null }, { salesReturnId: { not: ret.id } }] } : {}),
       },
       _sum: { amount: true },
     }),
@@ -949,6 +978,11 @@ export async function voidSalesReturn(
       data: { voidedAt: now, voidReason: reason },
     });
     // The credit it put against its own invoice comes off again: that much is due once more.
+    // (A wholesale return's credit is on its exchange's invoice: that order is refreshed too.)
+    const allocated = await tx.creditAllocation.findMany({
+      where: { salesReturnId: ret.id, releasedAt: null },
+      select: { orderId: true },
+    });
     const released = await tx.creditAllocation.updateMany({
       where: { salesReturnId: ret.id, releasedAt: null },
       data: {
@@ -956,7 +990,27 @@ export async function voidSalesReturn(
         releaseReason: `Sales return ${ret.number} voided: ${reason}`.slice(0, 500),
       },
     });
-    if (released.count > 0) await refreshOrderPayments(tx, ret.orderId);
+    if (released.count > 0) {
+      for (const orderId of new Set([ret.orderId, ...allocated.map((a) => a.orderId)])) {
+        await refreshOrderPayments(tx, orderId);
+      }
+    }
+    // A wholesale return's credit note voided: its approval is undone (the return waits for
+    // approval again; its QC, if done, stands).
+    const wholesale = await tx.wholesaleReturn.findFirst({
+      where: { salesReturnId: ret.id, companyId },
+      select: { id: true },
+    });
+    if (wholesale) {
+      await tx.wholesaleReturn.update({
+        where: { id: wholesale.id },
+        data: { salesReturnId: null, approvedAt: null, approvedById: null, approveNote: null },
+      });
+      await tx.wholesaleReturnLine.updateMany({
+        where: { returnId: wholesale.id, companyId },
+        data: { refunded: 0 },
+      });
+    }
     const position = await returnPosition(tx, ret.orderId);
     const order = await tx.salesOrder.findUniqueOrThrow({
       where: { id: ret.orderId },
@@ -965,7 +1019,12 @@ export async function voidSalesReturn(
     if (order.status !== "CANCELLED") {
       await tx.salesOrder.update({
         where: { id: ret.orderId },
-        data: { status: statusAfterReturns(position) },
+        data: {
+          status: statusAfterReturns({
+            ...position,
+            returned: position.returned + position.held,
+          }),
+        },
       });
     }
     await auditInCompany(

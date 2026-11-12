@@ -48,40 +48,42 @@ datasource db {
 
 /// A distinct business entity. All data is isolated per company.
 model Company {
-  id                    String          @id @default(cuid())
-  name                  String
-  slug                  String          @unique
-  legalName             String?
+  id                      String          @id @default(cuid())
+  name                    String
+  slug                    String          @unique
+  legalName               String?
   // Letterhead / branding info used on every PDF & the blank letterhead pad
-  logoUrl               String?
+  logoUrl                 String?
   /// Uploaded logo (PNG or JPG) printed on the letterhead of every PDF.
-  logoFileId            String?         @unique
-  address               String?
-  phone                 String?
-  email                 String?
-  website               String?
-  letterheadFooter      String?
+  logoFileId              String?         @unique
+  address                 String?
+  phone                   String?
+  email                   String?
+  website                 String?
+  letterheadFooter        String?
   /// Printed under the name in the header of booking books and bookings; null prints
   /// "Manufacturing | Sourcing | Export".
-  tagline               String?
+  tagline                 String?
   /// Which way round booking books and bookings print until a person picks one (each
   /// person's last pick is kept in UserPreference.pdfOrientation).
-  bookOrientation       PageOrientation @default(LANDSCAPE)
-  primaryColor          String          @default("#0B3D2E")
-  accentColor           String          @default("#BE1434")
-  currency              String          @default("BDT")
-  timezone              String          @default("Asia/Dhaka")
+  bookOrientation         PageOrientation @default(LANDSCAPE)
+  primaryColor            String          @default("#0B3D2E")
+  accentColor             String          @default("#BE1434")
+  currency                String          @default("BDT")
+  /// A wholesale return's refund above this (company currency) needs the owner's PIN to approve.
+  wholesaleReturnPinAbove Decimal         @default(10000) @db.Decimal(14, 2)
+  timezone                String          @default("Asia/Dhaka")
   /// When the terms of employment staff must have agreed to were published (null: no terms yet).
   /// Staff linked to a login agree before they work in the app (hr/terms.service.ts).
-  termsRequiredSince    DateTime?
+  termsRequiredSince      DateTime?
   // Business rules
-  lowStockThreshold     Int             @default(5)
-  defaultAdvancePercent Decimal         @default(30) @db.Decimal(5, 2)
-  dormantAfterMonths    Int             @default(6)
-  fiscalYearStartMonth  Int             @default(7) // 7 = July (Bangladesh income year July-June)
-  isActive              Boolean         @default(true)
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  lowStockThreshold       Int             @default(5)
+  defaultAdvancePercent   Decimal         @default(30) @db.Decimal(5, 2)
+  dormantAfterMonths      Int             @default(6)
+  fiscalYearStartMonth    Int             @default(7) // 7 = July (Bangladesh income year July-June)
+  isActive                Boolean         @default(true)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
 
   memberships            CompanyMembership[]
   sessions               Session[]
@@ -156,6 +158,7 @@ model Company {
   retailFixedCosts       RetailFixedCost[]
   retailBudgets          RetailBudget[]
   b2bBudgets             B2bAcquisitionBudget[]
+  wholesaleReturns       WholesaleReturn[]
   retailTargets          RetailTarget[]
   retailYearReports      RetailYearReport[]
   retailAlerts           RetailAlert[]
@@ -765,23 +768,25 @@ model ProductVariant {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  company           Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  style             Style                  @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  color             Color                  @relation(fields: [colorId], references: [id])
-  size              Size                   @relation(fields: [sizeId], references: [id])
-  stockBalances     StockBalance[]
-  stockMovements    StockMovement[]
-  badStockEntries   BadStockEntry[]
-  orderItems        SalesOrderItem[]
-  returnItems       SalesReturnItem[]
-  intakeLines       StockIntakeLine[]
-  packingListItems  PackingListItem[]
-  challanItems      DeliveryChallanItem[]
-  productionTargets ProductionTargetLine[]
-  retailPrices      RetailPrice[]
-  retailOrderLines  RetailOrderLine[]
-  retailReturns     RetailReturnPiece[]
-  readyStockLines   ReadyStockLine[]
+  company                Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  style                  Style                  @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  color                  Color                  @relation(fields: [colorId], references: [id])
+  size                   Size                   @relation(fields: [sizeId], references: [id])
+  stockBalances          StockBalance[]
+  stockMovements         StockMovement[]
+  badStockEntries        BadStockEntry[]
+  orderItems             SalesOrderItem[]
+  returnItems            SalesReturnItem[]
+  wholesaleReturnLines   WholesaleReturnLine[]  @relation("WholesaleReturnLineVariant")
+  wholesaleExchangeLines WholesaleReturnLine[]  @relation("WholesaleReturnLineNewVariant")
+  intakeLines            StockIntakeLine[]
+  packingListItems       PackingListItem[]
+  challanItems           DeliveryChallanItem[]
+  productionTargets      ProductionTargetLine[]
+  retailPrices           RetailPrice[]
+  retailOrderLines       RetailOrderLine[]
+  retailReturns          RetailReturnPiece[]
+  readyStockLines        ReadyStockLine[]
 
   @@unique([companyId, sku])
   @@unique([styleId, colorId, sizeId])
@@ -1440,6 +1445,7 @@ model Party {
   payments             Payment[]
   refunds              Refund[]
   salesReturns         SalesReturn[]
+  wholesaleReturns     WholesaleReturn[]
   creditAllocations    CreditAllocation[]
   cheques              Cheque[]
   journalLines         JournalLine[]
@@ -1663,6 +1669,8 @@ model SalesOrder {
   deliveryChallans   DeliveryChallan[]
   shipments          Shipment[]
   returns            SalesReturn[]
+  wholesaleReturns   WholesaleReturn[]        @relation("WholesaleReturnOrder")
+  exchangeFor        WholesaleReturn?         @relation("WholesaleReturnExchange")
   payments           Payment[]
   refunds            Refund[]
   creditAllocations  CreditAllocation[]
@@ -2227,6 +2235,8 @@ model SalesReturn {
   items        SalesReturnItem[]
   allocations  CreditAllocation[]
   refunds      Refund[]
+  /// The wholesale return whose approval made this credit note (2026-11-12).
+  wholesale    WholesaleReturn?
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalReturnId])
@@ -2235,6 +2245,82 @@ model SalesReturn {
   @@index([invoiceId])
   @@index([orderId])
   @@index([partyId])
+}
+
+/// A wholesale buyer's return in three steps (2026-11-12): "Receive return" (the pieces
+/// come back into "Returns to check", counted but not sellable; an exchange's new pieces
+/// leave at once on their own order, invoice and challan), "Approve" (how many pieces are
+/// refunded: the credit note, `salesReturnId`) and "QC" (each line's pieces split into
+/// A-grade, B-grade and Reject stock). Approval and QC come in either order. Its status
+/// follows from approvedAt and checkedAt (Received, Approved, Checked, Done).
+model WholesaleReturn {
+  id              String    @id @default(cuid())
+  companyId       String
+  number          String
+  orderId         String
+  invoiceId       String
+  partyId         String
+  warehouseId     String
+  reason          String
+  notes           String?
+  receivedAt      DateTime  @default(now())
+  receivedById    String?
+  /// The sale of the exchange's new pieces (its own order, invoice and challan).
+  exchangeOrderId String?   @unique
+  approvedAt      DateTime?
+  approvedById    String?
+  /// Why fewer pieces than came back are refunded.
+  approveNote     String?
+  salesReturnId   String?   @unique
+  checkedAt       DateTime?
+  checkedById     String?
+  /// The QC entry: the pieces' cost back to Inventory (A and B) or to Inventory Loss (Reject).
+  qcJournalId     String?   @unique
+  createdAt       DateTime  @default(now())
+
+  company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order         SalesOrder            @relation("WholesaleReturnOrder", fields: [orderId], references: [id], onDelete: Cascade)
+  party         Party                 @relation(fields: [partyId], references: [id])
+  exchangeOrder SalesOrder?           @relation("WholesaleReturnExchange", fields: [exchangeOrderId], references: [id], onDelete: SetNull)
+  salesReturn   SalesReturn?          @relation(fields: [salesReturnId], references: [id], onDelete: SetNull)
+  lines         WholesaleReturnLine[]
+
+  @@unique([companyId, number])
+  @@index([companyId, receivedAt])
+  @@index([partyId])
+  @@index([orderId])
+}
+
+/// One SKU line of a wholesale return: its pieces, Refund or Exchange, what was refunded and
+/// the QC split (A + B + Reject = quantity once checked).
+model WholesaleReturnLine {
+  id              String                 @id @default(cuid())
+  companyId       String
+  returnId        String
+  orderItemId     String
+  variantId       String
+  quantity        Int
+  /// The price billed per piece and the cost each piece left at.
+  unitPrice       Decimal                @default(0) @db.Decimal(14, 2)
+  unitCost        Decimal                @default(0) @db.Decimal(14, 4)
+  mode            WholesaleReturnMode
+  exchangeKind    WholesaleExchangeKind?
+  newVariantId    String?
+  newQuantity     Int?
+  newUnitPrice    Decimal?               @db.Decimal(14, 2)
+  /// The new pieces' price less the returned pieces' credit: + added to the buyer's due, - credit.
+  priceDifference Decimal                @default(0) @db.Decimal(14, 2)
+  refunded        Int                    @default(0)
+  qcA             Int                    @default(0)
+  qcB             Int                    @default(0)
+  qcReject        Int                    @default(0)
+
+  wholesaleReturn WholesaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  variant         ProductVariant  @relation("WholesaleReturnLineVariant", fields: [variantId], references: [id])
+  newVariant      ProductVariant? @relation("WholesaleReturnLineNewVariant", fields: [newVariantId], references: [id])
+
+  @@index([returnId])
+  @@index([orderItemId])
 }
 
 /// QC decision per returned SKU: Move to Main Stock or Move to Bad Stock.
@@ -5655,6 +5741,16 @@ enum ReturnStatus {
   COMPLETED
 }
 
+enum WholesaleReturnMode {
+  REFUND
+  EXCHANGE
+}
+
+enum WholesaleExchangeKind {
+  SIZE // the same style and colour, another size
+  OTHER // another product
+}
+
 enum ReturnItemQcStatus {
   PENDING
   MOVED_TO_MAIN_STOCK
@@ -6015,6 +6111,7 @@ enum DocumentType {
   REPORT
   REFUND_VOUCHER
   BUYER_360 // a buyer's whole history on one PDF (Customer 360°)
+  WHOLESALE_RETURN // a wholesale buyer's return (WR-), 2026-11-12
   SUPPLIER_360 // a supplier's projects, deliveries and dues on one PDF (Supplier 360°)
   STOCK_LOT // inward batches of finished goods (LOT-2026-00001)
   MATERIAL_CHALLAN // materials sent to a factory for a production project (MC-2026-00001)

@@ -105,6 +105,17 @@ type Env = Awaited<ReturnType<typeof setup>>;
 
 const today = () => localDay(new Date(), TZ);
 
+/**
+ * The pending approvals other than wholesale returns (which Accounts and the
+ * store see too, 2026-11-12); null when none of them is this person's.
+ */
+async function otherApprovals(ctx: Env["admin"]) {
+  const approvals = (await getActionZone(ctx)).approvals;
+  if (!approvals) return null;
+  const rest = { ...approvals, wholesaleReturns: null };
+  return Object.values(rest).some(Boolean) ? rest : null;
+}
+
 /** An invoiced order of `pieces` Navy M for the buyer at 1000 (or a walk-in at the counter, at 1450). */
 async function sell(
   env: Env,
@@ -352,7 +363,7 @@ run("the Action Zone's pending approvals", () => {
 
     // Accounts prepares payroll but does not approve it; the others decide neither.
     for (const ctx of [env.accounts, env.sales, env.store, env.production, env.employee]) {
-      expect((await getActionZone(ctx)).approvals).toBeNull();
+      expect(await otherApprovals(ctx)).toBeNull();
     }
   });
 
@@ -395,7 +406,7 @@ run("the Action Zone's pending approvals", () => {
       ],
     });
     for (const ctx of [env.accounts, env.sales, env.store]) {
-      expect((await getActionZone(ctx)).approvals).toBeNull();
+      expect(await otherApprovals(ctx)).toBeNull();
     }
   });
 
@@ -436,7 +447,44 @@ run("the Action Zone's pending approvals", () => {
       ],
     });
     // Only the owner (company settings) sees them.
-    expect((await getActionZone(env.accounts)).approvals).toBeNull();
+    expect(await otherApprovals(env.accounts)).toBeNull();
     expect((await getActionZone(env.sales)).approvals).toBeNull();
+  });
+
+  it("counts the wholesale returns waiting for approval or the QC for those who do them", async () => {
+    const env = await setup();
+    const invoice = await sell(env, env.rahim, 3);
+    const wr = (number: string, data: object = {}) =>
+      prisma.wholesaleReturn.create({
+        data: {
+          companyId: env.company.id,
+          number,
+          orderId: invoice.orderId,
+          invoiceId: invoice.id,
+          partyId: env.rahim.id,
+          warehouseId: "main",
+          reason: "Wrong size",
+          ...data,
+        },
+      });
+    await wr("WR-0001");
+    await wr("WR-0002", { approvedAt: new Date() });
+    await wr("WR-0003", { approvedAt: new Date(), checkedAt: new Date() });
+
+    expect((await getActionZone(env.admin)).approvals!.wholesaleReturns).toEqual({
+      toApprove: 1,
+      toCheck: 2,
+    });
+    // Accounts approves the refunds; the store does the QC; sales does neither.
+    expect((await getActionZone(env.accounts)).approvals!.wholesaleReturns).toEqual({
+      toApprove: 1,
+      toCheck: null,
+    });
+    expect((await getActionZone(env.store)).approvals!.wholesaleReturns).toEqual({
+      toApprove: null,
+      toCheck: 2,
+    });
+    expect((await getActionZone(env.sales)).approvals).toBeNull();
+    expect((await getActionZone(env.production)).approvals).toBeNull();
   });
 });

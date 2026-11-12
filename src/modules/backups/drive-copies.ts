@@ -101,6 +101,10 @@ export async function sendToDrive(runId: string): Promise<BackupRun> {
         ...(manifest.standby ? { standby: "yes" } : {}),
         // Another ERP restored at a new address (--domain) may share this Drive folder.
         ...(ownSite() ? { site: ownSite()! } : {}),
+        // Never removed by the keeping rules below (the backup before a fresh start).
+        ...(run.keepForever
+          ? { keep: "forever", note: (run.label ?? "Kept for ever").slice(0, 60) }
+          : {}),
         ...nextLabel(config, run.kind, manifest.createdAt),
       })
     ).id;
@@ -379,7 +383,9 @@ export async function ensureKeysFile(config: BackupConfig, token: string, rootId
  * copy never checked goes after a day. Another ERP's backups in the same folder
  * (one restored at a new address while this one still runs) keep their own newest
  * 3, never pushed out by this ERP's; once that ERP has made none for 30 days, and
- * this one has its 3, they go. A copy on standby after a restore shares the
+ * this one has its 3, they go. A backup kept for ever (the one made just before
+ * a fresh start, 2026-11-12) is never removed, here or on the server, and never
+ * counts towards the newest few. A copy on standby after a restore shares the
  * Drive folder with the ERP in use: it removes only its own standby backups
  * there, by the same rules, never the ERP in use's backups or safety copies.
  */
@@ -394,7 +400,9 @@ export async function pruneBackups(config: BackupConfig, now = new Date()) {
       .map((f) => ({ id: f.folderId, ...f }));
     const dayAgo = new Date(now.getTime() - 86_400_000).toISOString();
     const checked = folders.filter((f) => f.checked);
-    const backups = checked.filter((f) => f.kind === "BACKUP");
+    // A backup kept for ever (made before a fresh start) never counts towards the newest 3.
+    const forever = checked.filter((f) => f.keepForever);
+    const backups = checked.filter((f) => f.kind === "BACKUP" && !f.keepForever);
     // Counted apart: a copy on standby's backups never push out the ERP in use's, nor
     // another ERP's (by its address) this one's. Unlabelled ones count as this ERP's.
     const mine = ownSite();
@@ -412,6 +420,7 @@ export async function pruneBackups(config: BackupConfig, now = new Date()) {
       return gone ? [] : group.slice(0, DRIVE_BACKUPS_KEPT);
     });
     const keep = new Set([
+      ...forever.map((f) => f.id),
       ...kept.map((f) => f.id),
       ...checked
         .filter((f) => f.kind === "SAFETY_COPY")
@@ -425,9 +434,9 @@ export async function pruneBackups(config: BackupConfig, now = new Date()) {
     }
   }
 
-  // The server: the newest `serverKeep` backups.
+  // The server: the newest `serverKeep` backups, besides those kept for ever.
   const onServer = await prisma.backupRun.findMany({
-    where: { kind: "BACKUP", status: "SUCCEEDED", filesDeletedAt: null },
+    where: { kind: "BACKUP", status: "SUCCEEDED", filesDeletedAt: null, keepForever: false },
     orderBy: [{ startedAt: "desc" }, { id: "desc" }],
   });
   const safetyCutoff = new Date(now.getTime() - config.retentionDays * 86_400_000);

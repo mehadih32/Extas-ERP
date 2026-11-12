@@ -178,9 +178,14 @@ export async function createPurchase(
     await lockSupplierAccount(tx, companyId, supplier.id);
     if (order) {
       await lockRow(tx, "PurchaseOrder", order.id);
-      const { status, booking } = await tx.purchaseOrder.findUniqueOrThrow({
+      const { status, booking, supplierId, lines } = await tx.purchaseOrder.findUniqueOrThrow({
         where: { id: order.id },
-        select: { status: true, booking: { select: { stage: true } } },
+        select: {
+          status: true,
+          supplierId: true,
+          booking: { select: { stage: true } },
+          lines: { select: { id: true, rawMaterialId: true, unitPrice: true } },
+        },
       });
       assertAllowed(
         canReceiveOnOrder({
@@ -190,6 +195,28 @@ export async function createPurchase(
           awaitingApproval: booking?.stage === "DRAFT",
         }),
       );
+      // The order (or its booking) may have been saved after it was read above,
+      // its lines written again: then these goods are received on what it says now.
+      const now = new Map(lines.map((l) => [l.id, l]));
+      const changed =
+        supplierId !== order.supplierId ||
+        input.items.some((item) => {
+          if (!item.purchaseOrderLineId) return false;
+          const was = orderLines.get(item.purchaseOrderLineId)!;
+          const line = now.get(item.purchaseOrderLineId);
+          return (
+            !line ||
+            line.rawMaterialId !== was.rawMaterialId ||
+            // A line billed at the order's price: that price must still be the order's.
+            (item.unitPrice === undefined && !line.unitPrice.equals(was.unitPrice))
+          );
+        });
+      if (changed) {
+        throw new AppError(
+          "CONFLICT",
+          `${order.number} was changed while these goods were being received. Open it again and receive the goods on its lines as they are now.`,
+        );
+      }
     }
     const state = await lockMaterials(
       tx,

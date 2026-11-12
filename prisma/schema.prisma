@@ -79,6 +79,8 @@ model Company {
   defaultAdvancePercent Decimal         @default(30) @db.Decimal(5, 2)
   dormantAfterMonths    Int             @default(6)
   fiscalYearStartMonth  Int             @default(7) // 7 = July (Bangladesh income year July-June)
+  /// Days a WhatsApp PDF link to a buyer keeps working (Settings > Company, "Business rules").
+  documentLinkDays      Int             @default(7)
   isActive              Boolean         @default(true)
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
@@ -138,6 +140,7 @@ model Company {
   cheques                Cheque[]
   integrations           SalesChannelIntegration[]
   retailStores           RetailStore[]
+  freshStart             FreshStart?
   retailPrices           RetailPrice[]
   retailPriceChanges     RetailPriceChange[]
   retailOrders           RetailOrder[]
@@ -151,6 +154,7 @@ model Company {
   retailReserves         RetailReserve[]
   readyStockPurchases    ReadyStockPurchase[]
   styleSizeCharts        StyleSizeChart[]
+  packingListSources     PackingListSource[]
   readyStockLines        ReadyStockLine[]
   retailDailySummaries   RetailDailySummary[]
   retailFixedCosts       RetailFixedCost[]
@@ -242,10 +246,14 @@ model Company {
   aiFollowUps            AiFollowUp[]
   houseRules             HouseRule[]
   mailSettings           CompanyMailSettings?
+  documentSends          DocumentSend[]
+  documentLinks          DocumentLink[]
+  followUps              FollowUp[]
   aiBotLinks             AiBotLink[]
   aiPinTries             AiPinTry[]
   aiBotMessages          AiBotMessage[]
   aiOrderRuns            AiOrderRun[]
+  orderStatusLinks       OrderStatusLink[]
   aiStaffUpdates         AiStaffUpdate[]
   serverHealthRuns       ServerHealthRun[]
   bugGuardSettings       BugGuardSettings?
@@ -391,9 +399,12 @@ model User {
   aiBotLinksSet       AiBotLink[]            @relation("AiBotLinkUpdatedBy")
   aiOrderRunsMade     AiOrderRun[]           @relation("AiOrderRunCreatedBy")
   aiOrderRunsDecided  AiOrderRun[]           @relation("AiOrderRunDecidedBy")
+  orderLinksMade      OrderStatusLink[]      @relation("OrderStatusLinkMadeBy")
+  orderLinksStopped   OrderStatusLink[]      @relation("OrderStatusLinkStoppedBy")
   aiStaffUpdates      AiStaffUpdate[]        @relation("AiStaffUpdateBy")
   serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
   bugGuardEvents      BugGuardEvent[]        @relation("BugGuardEventBy")
+  freshStarts         FreshStart[]
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -578,6 +589,7 @@ model FileAsset {
   complianceDocuments ComplianceDocument[]
   templates           DocumentTemplate[]
   generatedDocuments  GeneratedDocument[]
+  documentLinks       DocumentLink[]
   reportExports       ReportExport[]
   supplierBills       SupplierBill[]
   expenses            Expense[]
@@ -1671,6 +1683,8 @@ model SalesOrder {
   productionProjects ProductionProject[]
   costings           OrderCosting[]
   aiOrderRuns        AiOrderRun[]
+  /// Read-only links to its progress for the buyer ("Share order status").
+  statusLinks        OrderStatusLink[]
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
@@ -1708,6 +1722,35 @@ model SalesOrderItem {
   @@index([variantId])
 }
 
+/// A read-only link to one order's progress for its buyer ("Share order status"): the
+/// buyer opens /order-status/<token> without signing in and sees only the styles, the
+/// pieces, the cutting, sewing, finishing and packing progress and the ship dates, never
+/// a price, a cost or a supplier. Only the token's SHA-256 hash is kept (the link is shown
+/// once); it may end on a day and can be stopped at any time. Nothing is sent by itself:
+/// the person who made it copies and shares it.
+model OrderStatusLink {
+  id           String    @id @default(cuid())
+  companyId    String
+  orderId      String
+  /// SHA-256 (hex) of the token in the link; the token itself is never stored.
+  tokenHash    String    @unique
+  /// The link stops working after this moment. Null: until it is stopped.
+  expiresAt    DateTime?
+  stoppedAt    DateTime?
+  stoppedById  String?
+  /// When the buyer last opened the page (kept to the minute; never on a Full check).
+  lastOpenedAt DateTime?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order     SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdBy User?      @relation("OrderStatusLinkMadeBy", fields: [createdById], references: [id], onDelete: SetNull)
+  stoppedBy User?      @relation("OrderStatusLinkStoppedBy", fields: [stoppedById], references: [id], onDelete: SetNull)
+
+  @@index([companyId, orderId])
+}
+
 /// Document 1: Commercial Invoice (prices, totals, paid/due). Saved permanently.
 model Invoice {
   id             String        @id @default(cuid())
@@ -1732,6 +1775,9 @@ model Invoice {
   /// number stays, the PDF says "(Revised)". Back to 0 when a void is re-issued.
   revision       Int           @default(0)
   revisedAt      DateTime?
+  /// The day the buyer promised to pay (a follow-up date for our own staff; never sent to the buyer).
+  promisedPayOn  DateTime?     @db.Date
+  promiseNote    String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -4914,10 +4960,53 @@ model BackupRun {
   /// restore which backup it put back.
   report           Json?
   sourceName       String?
+  /// Kept for ever: never removed by the server's "newest N" or Drive's "newest 3"
+  /// rules (the backup made just before a fresh start, 2026-11-12).
+  keepForever      Boolean       @default(false)
+  /// Why it is kept for ever, shown with it ("Before fresh start").
+  label            String?
 
   triggeredBy User? @relation(fields: [triggeredById], references: [id], onDelete: SetNull)
 
   @@index([startedAt])
+}
+
+/// The one fresh start a company may ever make (Settings > Company, the owner only,
+/// 2026-11-12): its business data erased after a backup kept for ever. One row per
+/// company, claimed first so two clicks never run it twice; once DONE it stays for
+/// good and the button is gone. A FAILED row (nothing erased) may be claimed again.
+model FreshStart {
+  id            String           @id @default(cuid())
+  companyId     String           @unique
+  status        FreshStartStatus @default(BACKING_UP)
+  /// The owner's ticks: what is kept besides the settings.
+  keepParties   Boolean          @default(false)
+  keepProducts  Boolean          @default(false)
+  keepEmployees Boolean          @default(false)
+  startedById   String?
+  startedByName String
+  startedAt     DateTime         @default(now())
+  /// A new random id each time the row is claimed: only the job holding it may move the row.
+  claimId       String?
+  /// The backup made just before (BackupRun, kept for ever), once it is checked in Drive.
+  backupRunId   String?
+  backupName    String?
+  finishedAt    DateTime?
+  /// Why it stopped, in plain words (nothing was erased).
+  error         String?
+  /// Rows erased per table, and files removed.
+  report        Json?
+  updatedAt     DateTime         @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy User?   @relation(fields: [startedById], references: [id], onDelete: SetNull)
+}
+
+enum FreshStartStatus {
+  BACKING_UP
+  ERASING
+  DONE
+  FAILED
 }
 
 // =============================================================================
@@ -6080,6 +6169,9 @@ enum ReminderType {
   PAYMENT_DUE
   INSTALLMENT_DUE
   CUSTOM
+  QUOTATION_EXPIRY
+  PROMISED_PAYMENT
+  FOLLOW_UP
 }
 
 enum ReminderStatus {
@@ -8056,5 +8148,149 @@ model StyleSizeChart {
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   style   Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
 
+  @@index([companyId, updatedAt])
+}
+
+enum DocumentSendChannel {
+  EMAIL
+  WHATSAPP
+  SHARE
+}
+
+enum DocumentSendStatus {
+  SENT
+  FAILED
+}
+
+/// One send of a document to a buyer (quotation, proforma, invoice, statement, stock sheet,
+/// packing list): who sent it, when, which document, to whom and how. Only ever made when a
+/// person presses the button (never by the AI or a clock). Never deleted.
+model DocumentSend {
+  id            String              @id @default(cuid())
+  companyId     String
+  channel       DocumentSendChannel
+  status        DocumentSendStatus  @default(SENT)
+  documentType  DocumentType
+  /// The printed document (GeneratedDocument) that went.
+  documentId    String?
+  /// What it was printed for ("Quotation", "Invoice", "Party"...), as on GeneratedDocument.
+  referenceType String?
+  referenceId   String?
+  partyId       String?
+  title         String
+  /// Email addresses (comma separated) or the phone number; empty for the phone's own Share.
+  recipients    String
+  subject       String?
+  message       String?
+  error         String?
+  /// The WhatsApp link made for it.
+  linkId        String?
+  sentById      String?
+  createdAt     DateTime            @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, referenceId])
+  @@index([companyId, partyId, createdAt])
+  @@index([companyId, createdAt])
+}
+
+/// A secure link to one PDF, sent on WhatsApp: a random token (only its SHA-256 kept), working
+/// until expiresAt unless stopped. It serves only its own copy of the PDF, without sign-in.
+model DocumentLink {
+  id            String       @id @default(cuid())
+  companyId     String
+  tokenHash     String       @unique
+  documentType  DocumentType
+  documentId    String?
+  referenceType String?
+  referenceId   String?
+  partyId       String?
+  title         String
+  /// Its own copy of the PDF (the kept sales PDFs are cleared after a day).
+  fileId        String?
+  fileName      String
+  expiresAt     DateTime
+  stoppedAt     DateTime?
+  stoppedById   String?
+  openCount     Int          @default(0)
+  lastOpenedAt  DateTime?
+  createdById   String?
+  createdAt     DateTime     @default(now())
+
+  company Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  file    FileAsset? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, referenceId])
+  @@index([companyId, partyId])
+}
+
+enum FollowUpKind {
+  MANUAL
+  QUOTATION_EXPIRY
+  PAYMENT_DUE
+  PROMISED_PAYMENT
+}
+
+enum FollowUpStatus {
+  OPEN
+  DONE
+}
+
+/// A follow-up for our own staff (never sent to a buyer). MANUAL: a "Follow up on" date set
+/// by hand on a buyer, a quotation or an order, with a short note. The other kinds are the
+/// marks put on a watched date from "Today's follow-ups" (Done, or Snooze to a later day),
+/// one per record and date (sourceKey).
+model FollowUp {
+  id           String         @id @default(cuid())
+  companyId    String
+  kind         FollowUpKind   @default(MANUAL)
+  status       FollowUpStatus @default(OPEN)
+  /// Marks on watched dates: "KIND:recordId:2026-11-12" (null for a manual follow-up).
+  sourceKey    String?
+  partyId      String?
+  quotationId  String?
+  orderId      String?
+  invoiceId    String?
+  dueOn        DateTime       @db.Date
+  /// Snoozed to this day (reminders and the Home card wait for it).
+  snoozedUntil DateTime?      @db.Date
+  note         String?
+  createdById  String?
+  doneAt       DateTime?
+  doneById     String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, sourceKey])
+  @@index([companyId, status, dueOn])
+  @@index([companyId, partyId])
+  @@index([companyId, quotationId])
+  @@index([companyId, orderId])
+}
+
+/// A factory's or supplier's packing lists (2026-11-12, "Upload packing list" without AI):
+/// the column names its lists use and the colour names written on them matched to the
+/// catalog, remembered from the last upload so the next one maps by itself.
+model PackingListSource {
+  id          String   @id @default(cuid())
+  companyId   String
+  /// The name as typed, and the key it is found by (upper case letters and digits).
+  name        String
+  key         String
+  /// SavedLayout (modules/inventory/packing-list/layout.ts); null until a file had columns.
+  layout      Json?
+  /// { "ANTRA": colorId }: colour names as written on its lists, matched to the catalog.
+  colours     Json     @default("{}")
+  uses        Int      @default(0)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, key])
   @@index([companyId, updatedAt])
 }

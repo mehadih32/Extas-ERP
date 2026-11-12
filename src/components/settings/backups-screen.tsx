@@ -414,6 +414,11 @@ function RunLine({ run, when }: { run: Run; when: (d: Date | string) => string }
         <span>{when(run.startedAt)}</span>
         <StatusBadge tone={status.tone}>{status.text}</StatusBadge>
         {run.checkedAt && <StatusBadge tone="done">Checked in Drive</StatusBadge>}
+        {run.keepForever && (
+          <StatusBadge tone="plain">
+            {run.label ? `${run.label}: kept for ever` : "Kept for ever"}
+          </StatusBadge>
+        )}
         {run.sizeBytes ? (
           <span className="text-muted-foreground">{size(run.sizeBytes)}</span>
         ) : null}

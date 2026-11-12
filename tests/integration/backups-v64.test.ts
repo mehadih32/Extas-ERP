@@ -765,6 +765,54 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       expect((await listDriveBackups()).items).toHaveLength(3);
     });
 
+    it("keeps the backup made before a fresh start for ever, on the server and in Drive (2026-11-12)", async () => {
+      await connectDrive();
+      await setKey();
+      await backups.updateBackupConfig(owner, { serverKeep: 3 });
+      const fresh = await import("@/modules/fresh-start/fresh-start.service");
+      const { backupReadiness, driveBackup } = fresh;
+
+      // Without the code and the locked settings the backup is not complete: refused.
+      expect(await backupReadiness()).toMatch(/has not yet saved the code/);
+      const failed = await fresh.startFreshStart(
+        ctx,
+        { companyName: "Extas", pin: PIN },
+        undefined,
+        { readiness: async () => null, wait: true },
+      );
+      expect(failed).toMatchObject({ status: "FAILED" });
+      expect(failed!.error).toMatch(/the backup is not complete: The code at the running version/);
+      // Nothing was erased: the backup is an ordinary one again, in Drive too.
+      const ordinary = await prisma.backupRun.findFirstOrThrow({ orderBy: { startedAt: "desc" } });
+      expect(ordinary).toMatchObject({ keepForever: false, label: null });
+      expect(ordinary.driveFileId).not.toBeNull();
+      expect(google.files.get(ordinary.driveFileId!)!.appProperties).not.toHaveProperty("keep");
+      expect(google.files.get(ordinary.driveFileId!)!.appProperties).not.toHaveProperty("note");
+
+      await prepareHost(backupLock(await backups.getBackupConfig())!.key as PublicKey);
+      expect(await backupReadiness()).toBeNull();
+      const before = await driveBackup(owner);
+      expect(before).toMatchObject({ ok: true });
+      const kept = await prisma.backupRun.findUniqueOrThrow({
+        where: { id: (before as { runId: string }).runId },
+      });
+      expect(kept).toMatchObject({ keepForever: true, label: "Before fresh start" });
+      expect(kept.checkedAt).not.toBeNull();
+      const made = [];
+      for (let i = 0; i < 4; i += 1) made.push(await backUpNow());
+      const items = (await listDriveBackups()).items;
+      // The newest 3, and the one kept for ever besides them.
+      expect(items.map((x) => x.name).sort()).toEqual(
+        [kept.name, ...made.slice(1).map((r) => r.name)].sort(),
+      );
+      expect(items.find((x) => x.name === kept.name)).toMatchObject({
+        keepForever: true,
+        label: "Before fresh start",
+      });
+      expect((await backups.getBackupRun(kept.id)).files.database).toBe(true);
+      expect((await backups.getBackupRun(made[0]!.id)).filesDeletedAt).not.toBeNull();
+    });
+
     it("never lets another ERP at a new address push this one's backups out of Drive (review 2026-10-30)", async () => {
       await connectDrive();
       await setKey();

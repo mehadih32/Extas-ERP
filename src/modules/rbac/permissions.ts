@@ -73,9 +73,21 @@ export const PERMISSIONS = [
   },
   { key: "sales.invoice.edit", module: "SALES", description: "Edit or void issued invoices" },
   {
+    key: "documents.send",
+    module: "SALES",
+    description:
+      "Send quotations, invoices, statements, stock sheets and packing lists to buyers by email or WhatsApp (only when the person presses Send)",
+  },
+  {
     key: "sales.force_override",
     module: "SALES",
     description: "Sell more than available stock (Force Override)",
+  },
+  {
+    key: "sales.order.share",
+    module: "SALES",
+    description:
+      "Share an order's progress with its buyer through a read-only link, and stop such links",
   },
   {
     key: "sales.returns.qc",
@@ -388,6 +400,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "sales.view",
     "sales.quotation.manage",
     "sales.order.create",
+    "documents.send",
     "sales.campaigns.manage",
     "inventory.view",
     "parties.view",

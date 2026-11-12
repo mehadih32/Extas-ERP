@@ -720,9 +720,34 @@ async function applyNow(
 }
 
 /**
- * The option "open fixes and prepare corrections by itself" (off by default):
- * code fixes go to Claude Code (at most 3 a run) and data corrections are
- * prepared. Applying and merging always wait for the owner.
+ * Why Bug Guard cannot send code fixes to Claude Code by itself now, or null
+ * when it can. AI switched off or paused means no AI work by itself, so code
+ * fixes wait (data corrections are prepared without AI and are not affected).
+ * Every reason that applies is given, the AI first.
+ */
+export async function codeFixesBlocked(companyId: string): Promise<string | null> {
+  const s = await prisma.aiSettings.findUnique({
+    where: { companyId },
+    select: { enabled: true, pausedAt: true, githubRepo: true, githubTokenSealed: true },
+  });
+  const why: string[] = [];
+  if (!s?.enabled) why.push("AI is off. The owner turns it on in AI Center.");
+  else if (s.pausedAt) why.push("AI is off: it is paused. The owner resumes it in AI Center.");
+  if (!s?.githubRepo || !s.githubTokenSealed) {
+    why.push(
+      "GitHub is not connected. Connect it in AI Center > Full check (GitHub): the repository and a token.",
+    );
+  }
+  return why.length ? why.join(" ") : null;
+}
+
+/**
+ * The option "open fixes and prepare corrections by itself" (off by default,
+ * turned on with the PIN): code fixes go to Claude Code (at most 3 a run) and
+ * data corrections are prepared. Applying a correction and merging a fix always
+ * wait for the owner and the PIN; nothing is applied, merged or deleted here.
+ * What could not be prepared is written to Bug Guard's log with the reason, so
+ * the owner sees it on the screen and can press Fix later.
  */
 export async function prepareByItself(companyId: string, ids: string[]) {
   const ctx = await ownerStandIn(companyId);
@@ -731,12 +756,25 @@ export async function prepareByItself(companyId: string, ids: string[]) {
     where: { companyId, id: { in: ids }, status: "OPEN", fixKind: { in: ["CODE", "DATA"] } },
     orderBy: { severity: "asc" },
   });
+  const notSent = (f: BugGuardFinding, why: string) =>
+    logEvent(null, companyId, {
+      kind: "FAILED",
+      findingId: f.id,
+      summary: `Not sent to Claude Code by itself: ${why} The problem waits in the list: press Fix when it can go. (${short(f)})`,
+    });
+  const blocked = findings.some((f) => f.fixKind === "CODE")
+    ? await codeFixesBlocked(companyId)
+    : null;
   let asked = 0;
   for (const f of findings) {
     try {
-      if (f.fixKind === "CODE" && asked < 3) {
-        await askForCodeFix(ctx, f, undefined, true);
-        asked += 1;
+      if (f.fixKind === "CODE") {
+        if (blocked) {
+          await notSent(f, blocked);
+        } else if (asked < 3) {
+          await askForCodeFix(ctx, f, undefined, true);
+          asked += 1;
+        }
       } else if (f.fixKind === "DATA" && f.correction) {
         const c = await prepareCorrection(ctx, f, true);
         await pushToBot(
@@ -750,6 +788,16 @@ export async function prepareByItself(companyId: string, ids: string[]) {
         `[bug-guard] could not prepare a fix for ${f.key}`,
         error instanceof Error ? error.message : error,
       );
+      const why = error instanceof AppError ? error.message : "something went wrong on our side.";
+      if (f.fixKind === "CODE") {
+        await notSent(f, why.endsWith(".") ? why : `${why}.`);
+      } else {
+        await logEvent(null, companyId, {
+          kind: "FAILED",
+          findingId: f.id,
+          summary: `Correction not prepared by itself: ${why} (${short(f)})`,
+        });
+      }
     }
   }
 }

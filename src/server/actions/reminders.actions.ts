@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requireAnyPermission, requireCompany, requirePermission } from "@/modules/auth/context";
+import * as followUps from "@/modules/reminders/follow-up.service";
 import * as notifications from "@/modules/reminders/notification.service";
 import * as reminders from "@/modules/reminders/reminder.service";
 import * as rules from "@/modules/reminders/rules";
@@ -177,3 +178,34 @@ export const markNotificationReadAction = async (notificationId: string) =>
   });
 export const markAllNotificationsReadAction = async () =>
   change(async () => notifications.markAllNotificationsRead(await requireCompany()));
+
+// --- Follow-ups with buyers (follow-up.service.ts): for our own staff, never sent to a buyer ---
+
+/** Anyone who sees buyers or sales; each follow-up checks its own record. */
+const follower = () => requireAnyPermission("sales.view", "parties.view");
+
+export const todaysFollowUpsAction = async () =>
+  runAction(async () => followUps.todaysFollowUps(await follower()));
+export const listFollowUpsAction = async (query: unknown) =>
+  runAction(async () => followUps.listFollowUps(await follower(), query));
+export const createFollowUpAction = async (input: unknown) =>
+  change(async () => followUps.createFollowUp(await follower(), input, await getRequestMeta()));
+export const markFollowUpDoneAction = async (input: unknown) =>
+  change(async () => followUps.markFollowUpDone(await follower(), input, await getRequestMeta()));
+export const snoozeFollowUpAction = async (input: unknown) =>
+  change(async () => followUps.snoozeFollowUp(await follower(), input, await getRequestMeta()));
+export const setPromisedPaymentAction = async (invoiceId: string, input: unknown) =>
+  change(async () =>
+    followUps.setPromisedPayment(
+      await requireAnyPermission(
+        "sales.order.create",
+        "sales.invoice.edit",
+        "accounts.receipts.record",
+      ),
+      invoiceId,
+      input,
+      await getRequestMeta(),
+    ),
+  );
+export const invoicePromiseAction = async (invoiceId: string) =>
+  runAction(async () => followUps.getPromise(await requirePermission("sales.view"), invoiceId));

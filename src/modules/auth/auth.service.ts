@@ -104,6 +104,29 @@ async function slowedHere(userId: string, address: string | undefined, now: Date
   return failures >= MAX_FAILED_LOGINS;
 }
 
+/** How a wrong sign-in for an email with no account (or none with a password yet) is logged. */
+const unknownAccountSummary = (email: string) => `Failed login for ${email} (unknown account)`;
+
+/**
+ * The same wait for an email with no account here (or none with a password
+ * yet): five wrong tries for it from one place in 15 minutes make that place
+ * wait, with the same answer as a real account's, so the answer after five
+ * wrong passwords never tells whether the account exists.
+ */
+async function unknownSlowedHere(email: string, address: string | undefined, now: Date) {
+  const place = visitorAddress(address);
+  if (!place) return false;
+  const failures = await prisma.auditLog.count({
+    where: {
+      action: "LOGIN_FAILED",
+      ipAddress: place,
+      summary: unknownAccountSummary(email),
+      createdAt: { gt: new Date(now.getTime() - LOCKOUT_MS) },
+    },
+  });
+  return failures >= MAX_FAILED_LOGINS;
+}
+
 /**
  * Unlocks a person's sign-in (v6.4.1 B5): the wrong passwords before now no
  * longer slow it down anywhere. Through the bot with the PIN, the link
@@ -154,11 +177,15 @@ export async function login(rawInput: LoginInput, meta: RequestMeta = {}): Promi
 
   if (!user || !user.passwordHash) {
     await burnPasswordCheck(password);
+    // After five wrong tries: the same wait, and the same words, as a real account's.
+    if (await unknownSlowedHere(email, meta.ipAddress, new Date())) {
+      throw new AppError("ACCOUNT_LOCKED", SLOWED_TEXT);
+    }
     await recordAudit({
       action: "LOGIN_FAILED",
       entityType: "User",
       userId: user?.id,
-      summary: `Failed login for ${email} (unknown account)`,
+      summary: unknownAccountSummary(email),
       meta,
     });
     await afterFailedLogin(meta);

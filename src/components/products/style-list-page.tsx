@@ -11,6 +11,8 @@ import { requireCompanyPage } from "@/server/pages/guards";
 import { EmptyState } from "./bits";
 import { SkuMatchCard } from "./sku-match";
 import { StaleStylesHint } from "./stale-styles-hint";
+import { maySendType } from "@/modules/documents/send.service";
+
 import { StockSheetButton } from "./stock-sheet-button";
 import { StyleCards } from "./style-cards";
 import { StyleFilters } from "./style-filters";
@@ -79,6 +81,7 @@ export async function StyleListPage({
               <StockSheetButton
                 request={{ type: "STOCK_AVAILABILITY", brandId: view.brand }}
                 label={`${brandName} stock sheet`}
+                sendAs={maySendType(ctx, "STOCK_AVAILABILITY") ? ctx.company.name : null}
               />
             )}
             {canManage && (

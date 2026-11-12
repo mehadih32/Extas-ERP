@@ -51,6 +51,10 @@ export function CompanyView({ details }: { details: CompanyDetails }) {
           label="Buyer counts as dormant after"
           value={`${details.dormantAfterMonths} ${details.dormantAfterMonths === 1 ? "month" : "months"}`}
         />
+        <Row
+          label="WhatsApp PDF links work for"
+          value={`${details.documentLinkDays} ${details.documentLinkDays === 1 ? "day" : "days"}`}
+        />
       </dl>
     </section>
   );

@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import { AiRecordBox } from "@/components/ai/record-box";
 import { SectionError } from "@/components/dashboard/section-error";
 import { PrintDocumentButton } from "@/components/documents/print-button";
+import { SendBar, SentSection } from "@/components/documents/send-section";
+import { FollowUpSection } from "@/components/follow-ups/sections";
 import { UseTemplateButton } from "@/components/reports/use-template";
 import { FormAlert } from "@/components/forms/field";
 import { VerifiedBadge } from "@/components/parties/badges";
@@ -25,12 +27,16 @@ import { SalesNoAccess } from "@/components/sales/no-access";
 import { OrderActions } from "@/components/sales/order-actions";
 import { ReturnRecords } from "@/components/sales/return-records";
 import { SalesFlow } from "@/components/sales/sales-flow";
+import { ShareOrderStatus } from "@/components/sales/share-order-status";
 import { localDay } from "@/lib/dates";
 import { formatCount, formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
+import type { CompanyContext } from "@/modules/auth/context";
 import type { TemplateChoice } from "@/modules/reports/screens.service";
+import { canShareOrderStatus } from "@/modules/sales/order-status.service";
 import type { OrderScreen } from "@/modules/sales/screens.service";
 import { getAiRecordCostAction } from "@/server/actions/ai.actions";
+import { listStatusLinksAction } from "@/server/actions/order-status.actions";
 import { getOrderScreenAction } from "@/server/actions/sales.actions";
 import { templateChoicesAction } from "@/server/actions/templates.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -110,9 +116,11 @@ function Documents({
   screen,
   currency,
   templates,
+  ctx,
 }: {
   screen: OrderScreen;
   currency: string;
+  ctx: CompanyContext;
   /** The company's own invoice and challan designs this person may fill. */
   templates: { invoice: TemplateChoice[]; challan: TemplateChoice[] };
 }) {
@@ -123,6 +131,8 @@ function Documents({
     title: React.ReactNode;
     detail: React.ReactNode;
     print?: React.ReactNode;
+    /** Sending it to the buyer, on its own line under it. */
+    send?: React.ReactNode;
   }> = [];
   if (o.invoice) {
     rows.push({
@@ -168,6 +178,15 @@ function Documents({
       key: o.packingList.id,
       title: `Packing list ${o.packingList.number}`,
       detail: `${o.packingList.pieces} pcs${o.packingList.cartons ? ` · ${o.packingList.cartons} cartons` : ""}`,
+      send: (
+        <SendBar
+          ctx={ctx}
+          request={{ type: "PACKING_LIST", id: o.packingList.id }}
+          what={`Packing list ${o.packingList.number}`}
+          partyId={o.buyer?.id ?? null}
+          className="w-full"
+        />
+      ),
       print: (
         <PrintDocumentButton
           request={{ type: "PACKING_LIST", id: o.packingList.id }}
@@ -232,6 +251,7 @@ function Documents({
                 <p className="text-[0.8125rem] text-muted-foreground">{row.detail}</p>
               </div>
               {row.print && <div className="flex shrink-0 gap-2">{row.print}</div>}
+              {row.send}
             </li>
           ))}
         </ul>
@@ -255,11 +275,13 @@ export default async function OrderPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ orderId }, query] = await Promise.all([params, searchParams]);
-  const [result, invoiceTemplates, challanTemplates, aiBox] = await Promise.all([
+  const [result, invoiceTemplates, challanTemplates, aiBox, statusLinks] = await Promise.all([
     getOrderScreenAction(orderId),
     templateChoicesAction("COMMERCIAL_INVOICE"),
     templateChoicesAction("DELIVERY_CHALLAN"),
     getAiRecordCostAction("SalesOrder", orderId),
+    // Share order status: only for people who may share it (sales.order.share).
+    canShareOrderStatus(ctx) ? listStatusLinksAction(orderId) : null,
   ]);
   if (!result.ok) {
     if (result.error.code === "NOT_FOUND") notFound();
@@ -377,7 +399,16 @@ export default async function OrderPage({
             }
             canOpen={screen.can.openProduction}
           />
+          {statusLinks?.ok && (
+            <ShareOrderStatus
+              orderId={o.id}
+              orderNumber={o.number}
+              links={statusLinks.data}
+              cancelled={o.status === "CANCELLED"}
+            />
+          )}
           <Documents
+            ctx={ctx}
             screen={screen}
             currency={currency}
             templates={{
@@ -385,6 +416,14 @@ export default async function OrderPage({
               challan: challanTemplates.ok ? challanTemplates.data : [],
             }}
           />
+          {(o.invoice || o.packingList) && (
+            <SentSection
+              referenceIds={[o.invoice?.id, o.packingList?.id].filter((id): id is string =>
+                Boolean(id),
+              )}
+            />
+          )}
+          <FollowUpSection on={{ orderId: o.id }} what={`Order ${o.number}`} />
           <ReturnRecords returns={o.returns} currency={currency} />
           {costs && (
             <Panel title="Cost and margin" id="costs-heading">

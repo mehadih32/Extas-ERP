@@ -545,9 +545,9 @@
       "target": "marks"
     },
     "route": "/ai/bug-guard",
-    "screen": "271cabeae1067bc8",
+    "screen": "08f74d51a7136eef",
     "guide": "51b3fda614cd44ac",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "ai-chat": {
     "src": "/help/shots/ai-chat.webp",
@@ -889,9 +889,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "7784e57e62bb8648",
+    "screen": "9191c02632845910",
     "guide": "284e480596e7ffe7",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "backups-drive-key": {
     "src": "/help/shots/backups-drive-key.webp",
@@ -913,9 +913,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "7784e57e62bb8648",
+    "screen": "9191c02632845910",
     "guide": "8ce0629bbedfb5f0",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "backups-github-alert": {
     "src": "/help/shots/backups-github-alert.webp",
@@ -931,9 +931,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "7784e57e62bb8648",
+    "screen": "9191c02632845910",
     "guide": "0167dbb5b93d51c8",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "backups-google-setup": {
     "src": "/help/shots/backups-google-setup.webp",
@@ -950,9 +950,9 @@
       "target": "dialog"
     },
     "route": "/settings/backups",
-    "screen": "7784e57e62bb8648",
+    "screen": "9191c02632845910",
     "guide": "ab148c67cbc46a72",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "backups-new-server": {
     "src": "/help/shots/backups-new-server.webp",
@@ -971,9 +971,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "7784e57e62bb8648",
+    "screen": "9191c02632845910",
     "guide": "3dc0e28cf2a95202",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "backups-restore": {
     "src": "/help/shots/backups-restore.webp",
@@ -994,9 +994,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "7784e57e62bb8648",
+    "screen": "9191c02632845910",
     "guide": "d23f987fb10aefe1",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "backups-server-drill": {
     "src": "/help/shots/backups-server-drill.webp",
@@ -1014,9 +1014,9 @@
       "target": "marks"
     },
     "route": "/settings/backups",
-    "screen": "7784e57e62bb8648",
+    "screen": "9191c02632845910",
     "guide": "f4e7baa4ce96c993",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "business-buy-ready-stock": {
     "src": "/help/shots/business-buy-ready-stock.webp",
@@ -1035,9 +1035,9 @@
       "target": "dialog"
     },
     "route": "/business/retail/shop-stock",
-    "screen": "27619da5cd2a4655",
+    "screen": "4fa954be708d4532",
     "guide": "0310cef85b7627b8",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "business-downloads": {
     "src": "/help/shots/business-downloads.webp",
@@ -1054,9 +1054,9 @@
       "target": "Pad and year-end summaries"
     },
     "route": "/business/retail/stores/[storeId]",
-    "screen": "16067b0077b8497f",
+    "screen": "4688d7b585cf28fc",
     "guide": "c6630504fa1ec5a1",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "business-overview": {
     "src": "/help/shots/business-overview.webp",
@@ -1110,9 +1110,9 @@
       "target": "Shops' reserve"
     },
     "route": "/business/retail/shop-stock",
-    "screen": "27619da5cd2a4655",
+    "screen": "4fa954be708d4532",
     "guide": "63ebc6823ef37a9a",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "business-store-account": {
     "src": "/help/shots/business-store-account.webp",
@@ -1129,9 +1129,9 @@
       "target": "Account"
     },
     "route": "/business/retail/stores/[storeId]",
-    "screen": "16067b0077b8497f",
+    "screen": "4688d7b585cf28fc",
     "guide": "c975fe5b6016180b",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "business-store-books": {
     "src": "/help/shots/business-store-books.webp",
@@ -1149,9 +1149,9 @@
       "target": "Daily figures"
     },
     "route": "/business/retail/stores/[storeId]",
-    "screen": "16067b0077b8497f",
+    "screen": "4688d7b585cf28fc",
     "guide": "1a77bb3374c79039",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "business-store-dashboard": {
     "src": "/help/shots/business-store-dashboard.webp",
@@ -1172,9 +1172,9 @@
       "target": "Store dashboard"
     },
     "route": "/business/retail/stores/[storeId]",
-    "screen": "16067b0077b8497f",
+    "screen": "4688d7b585cf28fc",
     "guide": "192f59f0bf121963",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "business-store-prices": {
     "src": "/help/shots/business-store-prices.webp",
@@ -1194,9 +1194,9 @@
       "target": "Price rules"
     },
     "route": "/business/retail/stores/[storeId]",
-    "screen": "16067b0077b8497f",
+    "screen": "4688d7b585cf28fc",
     "guide": "e73953aabee54259",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "business-stores": {
     "src": "/help/shots/business-stores.webp",
@@ -1212,9 +1212,9 @@
       "target": "marks"
     },
     "route": "/business/retail/stores",
-    "screen": "3bd93037fcfd3a6f",
+    "screen": "0e562e02ad3d3f94",
     "guide": "8b6572fbd6e4f816",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "change-password": {
     "src": "/help/shots/change-password.webp",
@@ -1251,9 +1251,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "928f53bf43beb34a",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "compliance-add": {
     "src": "/help/shots/compliance-add.webp",
@@ -1335,9 +1335,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "c79084f1786987ea",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-arrange-sections": {
     "src": "/help/shots/dashboard-arrange-sections.webp",
@@ -1353,9 +1353,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "2c4a67642afac832",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-empty": {
     "src": "/help/shots/dashboard-empty.webp",
@@ -1371,9 +1371,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "f22fafcb75578d98",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-home-top-bar": {
     "src": "/help/shots/dashboard-home-top-bar.webp",
@@ -1391,9 +1391,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "0d0eaabea7c2a7f5",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-key-figures": {
     "src": "/help/shots/dashboard-key-figures.webp",
@@ -1413,9 +1413,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "fb07051e8baf1389",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-pipeline-activity": {
     "src": "/help/shots/dashboard-pipeline-activity.webp",
@@ -1436,9 +1436,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "3ceb217a108e22f1",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-predictive": {
     "src": "/help/shots/dashboard-predictive.webp",
@@ -1458,9 +1458,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "8c04dc28bf66afc1",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-pulse": {
     "src": "/help/shots/dashboard-pulse.webp",
@@ -1480,9 +1480,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "6c9dd1dfd771f6c1",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-sales-target": {
     "src": "/help/shots/dashboard-sales-target.webp",
@@ -1498,9 +1498,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "4bf1f97f750153f0",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-stock-alerts": {
     "src": "/help/shots/dashboard-stock-alerts.webp",
@@ -1518,9 +1518,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "166ff55b06c9748a",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "dashboard-top-sellers": {
     "src": "/help/shots/dashboard-top-sellers.webp",
@@ -1540,9 +1540,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "b43d057e7b9338ed",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "demo-site": {
     "src": "/help/shots/demo-site.webp",
@@ -1559,9 +1559,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "3aa31fc8317a3bd5",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "find-your-way": {
     "src": "/help/shots/find-your-way.webp",
@@ -1577,9 +1577,28 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "1a8e694ca6c23d50",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
+  },
+  "global-search": {
+    "src": "/help/shots/global-search.webp",
+    "width": 1280,
+    "height": 800,
+    "marks": [1, 4],
+    "labels": {
+      "1": "Search",
+      "4": "Close"
+    },
+    "clip": {
+      "y": 0,
+      "height": 800,
+      "target": "dialog"
+    },
+    "route": "/",
+    "screen": "d8faf9ca120e92c2",
+    "guide": "1392e217e13c1f17",
+    "taken": "2026-11-12"
   },
   "help-ai": {
     "src": "/help/shots/help-ai.webp",
@@ -1809,9 +1828,9 @@
       "target": "marks"
     },
     "route": "/hr/employees/[employeeId]",
-    "screen": "28c9b56b2bcc4181",
+    "screen": "efd778f4886422af",
     "guide": "e90f312430a64ede",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "hr-employee-directory": {
     "src": "/help/shots/hr-employee-directory.webp",
@@ -1870,9 +1889,9 @@
       "target": "System access"
     },
     "route": "/hr/employees/[employeeId]",
-    "screen": "28c9b56b2bcc4181",
+    "screen": "efd778f4886422af",
     "guide": "4b9567f3c7a86011",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "hr-gps-attendance": {
     "src": "/help/shots/hr-gps-attendance.webp",
@@ -2185,9 +2204,9 @@
       "target": "dialog"
     },
     "route": "/settings/integrations",
-    "screen": "5bb87478031a5a13",
+    "screen": "d05e8aea4889d1d5",
     "guide": "576a333d9efe876d",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "integrations-shop-key": {
     "src": "/help/shots/integrations-shop-key.webp",
@@ -2206,9 +2225,9 @@
       "target": "API key"
     },
     "route": "/settings/integrations/ecommerce/[integrationId]",
-    "screen": "b8747b48f9544b3b",
-    "guide": "ae51a675ac6d917f",
-    "taken": "2026-11-11"
+    "screen": "45a091537e464002",
+    "guide": "c0948549e61c868d",
+    "taken": "2026-11-12"
   },
   "integrations-webhooks": {
     "src": "/help/shots/integrations-webhooks.webp",
@@ -2225,9 +2244,9 @@
       "target": "Webhook log"
     },
     "route": "/settings/integrations/ecommerce/[integrationId]",
-    "screen": "b8747b48f9544b3b",
+    "screen": "45a091537e464002",
     "guide": "f2f93934f1832e7d",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "materials-add-material": {
     "src": "/help/shots/materials-add-material.webp",
@@ -2664,9 +2683,9 @@
       "target": "marks"
     },
     "route": "/parties/[list]/[partyId]",
-    "screen": "ec995e049600fbf1",
+    "screen": "ee14d556248f2f5b",
     "guide": "eb24d3a569271630",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "parties-dues": {
     "src": "/help/shots/parties-dues.webp",
@@ -2702,9 +2721,9 @@
       "target": "marks"
     },
     "route": "/parties/[list]/[partyId]",
-    "screen": "ec995e049600fbf1",
+    "screen": "ee14d556248f2f5b",
     "guide": "ed1cfd9f8b2ead12",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "parties-find": {
     "src": "/help/shots/parties-find.webp",
@@ -2824,9 +2843,9 @@
       "target": "marks"
     },
     "route": "/parties/[list]/[partyId]",
-    "screen": "ec995e049600fbf1",
+    "screen": "ee14d556248f2f5b",
     "guide": "eb24d3a569271630",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "pin": {
     "src": "/help/shots/pin.webp",
@@ -2862,9 +2881,9 @@
       "target": "marks"
     },
     "route": "/planner/automatic",
-    "screen": "96f3e16c97c7b203",
+    "screen": "6ce8df5f3193cc77",
     "guide": "db005f32adada740",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "planner-coming-up": {
     "src": "/help/shots/planner-coming-up.webp",
@@ -3847,9 +3866,9 @@
       "target": "marks"
     },
     "route": "/products/archived",
-    "screen": "9884fa0500237d9e",
+    "screen": "6749eac9274abc33",
     "guide": "dc240a7873c3b4d3",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "products-bad-stock": {
     "src": "/help/shots/products-bad-stock.webp",
@@ -3867,9 +3886,9 @@
       "target": "marks"
     },
     "route": "/products/bad-stock",
-    "screen": "7ac7430342c860ea",
+    "screen": "3a9e3603d97bfd6f",
     "guide": "6822537d558ad16b",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "products-bulk-update": {
     "src": "/help/shots/products-bulk-update.webp",
@@ -3879,7 +3898,7 @@
     "labels": {
       "1": "Bulk update",
       "2": "B-grade",
-      "6": "Upload packing list (AI scan)"
+      "6": "Upload packing list"
     },
     "clip": {
       "y": 757,
@@ -3887,9 +3906,9 @@
       "target": "Stock matrix"
     },
     "route": "/products/[styleId]",
-    "screen": "8f5894602529ffe5",
-    "guide": "5bd36e74ff6976dc",
-    "taken": "2026-11-11"
+    "screen": "2db85b74afb617b3",
+    "guide": "9c0ce15916cfac6c",
+    "taken": "2026-11-12"
   },
   "products-edit-sku": {
     "src": "/help/shots/products-edit-sku.webp",
@@ -3905,9 +3924,9 @@
       "target": "marks"
     },
     "route": "/products/[styleId]",
-    "screen": "8f5894602529ffe5",
+    "screen": "2db85b74afb617b3",
     "guide": "cd7838c6a6aec24c",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "products-find-style": {
     "src": "/help/shots/products-find-style.webp",
@@ -3925,9 +3944,9 @@
       "target": "marks"
     },
     "route": "/products",
-    "screen": "80e8ebf187dce730",
-    "guide": "6cf546f9152a12f4",
-    "taken": "2026-11-11"
+    "screen": "a7ac1065e6f2710d",
+    "guide": "6128872a07359a37",
+    "taken": "2026-11-12"
   },
   "products-inward-batches": {
     "src": "/help/shots/products-inward-batches.webp",
@@ -3945,9 +3964,9 @@
       "target": "Stock history"
     },
     "route": "/products/[styleId]",
-    "screen": "8f5894602529ffe5",
+    "screen": "2db85b74afb617b3",
     "guide": "f4b1a28afbf644ff",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "products-new-style": {
     "src": "/help/shots/products-new-style.webp",
@@ -3988,6 +4007,25 @@
     "guide": "c6fbdd4262a9edbd",
     "taken": "2026-11-11"
   },
+  "products-packing-list": {
+    "src": "/help/shots/products-packing-list.webp",
+    "width": 1280,
+    "height": 800,
+    "marks": [1, 2],
+    "labels": {
+      "1": "Upload packing list",
+      "2": "Read the list"
+    },
+    "clip": {
+      "y": 486,
+      "height": 800,
+      "target": "dialog"
+    },
+    "route": "/products/[styleId]",
+    "screen": "2db85b74afb617b3",
+    "guide": "15b988181f82ae61",
+    "taken": "2026-11-12"
+  },
   "products-setup": {
     "src": "/help/shots/products-setup.webp",
     "width": 1280,
@@ -4026,9 +4064,9 @@
       "target": "dialog"
     },
     "route": "/products/[styleId]",
-    "screen": "8f5894602529ffe5",
+    "screen": "2db85b74afb617b3",
     "guide": "fb76a8522f1b5a7c",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "products-stock-count": {
     "src": "/help/shots/products-stock-count.webp",
@@ -4207,7 +4245,7 @@
   "sales-edit-cancel-order": {
     "src": "/help/shots/sales-edit-cancel-order.webp",
     "width": 1280,
-    "height": 1118,
+    "height": 1356,
     "marks": [1, 2],
     "labels": {
       "1": "Edit",
@@ -4215,13 +4253,32 @@
     },
     "clip": {
       "y": 0,
-      "height": 1118,
+      "height": 1356,
       "target": "marks"
     },
     "route": "/sales/orders/[orderId]",
-    "screen": "a65412b1cab9e225",
+    "screen": "b07cc90cc6bfafdf",
     "guide": "9f5fcc0f3f087755",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
+  },
+  "sales-follow-ups": {
+    "src": "/help/shots/sales-follow-ups.webp",
+    "width": 1280,
+    "height": 800,
+    "marks": [1, 2],
+    "labels": {
+      "1": "Add the follow-up",
+      "2": "Note"
+    },
+    "clip": {
+      "y": 1631,
+      "height": 800,
+      "target": "Add the follow-up"
+    },
+    "route": "/sales/orders/[orderId]",
+    "screen": "b07cc90cc6bfafdf",
+    "guide": "6587e0cebc80e93a",
+    "taken": "2026-11-12"
   },
   "sales-force-override": {
     "src": "/help/shots/sales-force-override.webp",
@@ -4380,9 +4437,9 @@
       "target": "marks"
     },
     "route": "/sales/orders/[orderId]",
-    "screen": "a65412b1cab9e225",
+    "screen": "b07cc90cc6bfafdf",
     "guide": "f4a0644a4da2a4a9",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "sales-proforma": {
     "src": "/help/shots/sales-proforma.webp",
@@ -4503,6 +4560,43 @@
     "guide": "697d0c30fcbdab1e",
     "taken": "2026-11-11"
   },
+  "sales-send-documents": {
+    "src": "/help/shots/sales-send-documents.webp",
+    "width": 1280,
+    "height": 847,
+    "marks": [1, 4],
+    "labels": {
+      "1": "Send by email",
+      "4": "Sent"
+    },
+    "clip": {
+      "y": 521,
+      "height": 847,
+      "target": "Send by email"
+    },
+    "route": "/sales/invoices/[invoiceId]",
+    "screen": "628c2d7b44b40255",
+    "guide": "c633cf87b3a1973f",
+    "taken": "2026-11-12"
+  },
+  "sales-share-order-status": {
+    "src": "/help/shots/sales-share-order-status.webp",
+    "width": 1280,
+    "height": 800,
+    "marks": [1],
+    "labels": {
+      "1": "Share order status"
+    },
+    "clip": {
+      "y": 1000,
+      "height": 800,
+      "target": "Share order status"
+    },
+    "route": "/sales/orders/[orderId]",
+    "screen": "b07cc90cc6bfafdf",
+    "guide": "10390ec4739ac546",
+    "taken": "2026-11-12"
+  },
   "sales-use-credit": {
     "src": "/help/shots/sales-use-credit.webp",
     "width": 1280,
@@ -4537,9 +4631,9 @@
       "target": "marks"
     },
     "route": "/settings/team",
-    "screen": "62ba8059c7e33490",
+    "screen": "87f02ad28cd28501",
     "guide": "f697090af32b591b",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "settings-business-rules": {
     "src": "/help/shots/settings-business-rules.webp",
@@ -4558,9 +4652,9 @@
       "target": "marks"
     },
     "route": "/settings/company",
-    "screen": "e036d7ff99a72ca4",
+    "screen": "ca5c0c35155eecec",
     "guide": "887e6840e1ebfa76",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "settings-company-details": {
     "src": "/help/shots/settings-company-details.webp",
@@ -4580,9 +4674,9 @@
       "target": "marks"
     },
     "route": "/settings/company",
-    "screen": "e036d7ff99a72ca4",
+    "screen": "ca5c0c35155eecec",
     "guide": "89a1a10e7f0f9ed9",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "settings-edit-role": {
     "src": "/help/shots/settings-edit-role.webp",
@@ -4598,9 +4692,28 @@
       "target": "marks"
     },
     "route": "/settings/roles",
-    "screen": "f1749ed7ae94c7cd",
+    "screen": "b10fbcaef61b92ea",
     "guide": "5b5c21a98eba9ee2",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
+  },
+  "settings-fresh-start": {
+    "src": "/help/shots/settings-fresh-start.webp",
+    "width": 1280,
+    "height": 400,
+    "marks": [1, 2],
+    "labels": {
+      "1": "Fresh start",
+      "2": "Start fresh"
+    },
+    "clip": {
+      "y": 2440,
+      "height": 400,
+      "target": "Fresh start"
+    },
+    "route": "/settings/company",
+    "screen": "ca5c0c35155eecec",
+    "guide": "178c7c5e1733f013",
+    "taken": "2026-11-12"
   },
   "settings-manage-member": {
     "src": "/help/shots/settings-manage-member.webp",
@@ -4618,9 +4731,9 @@
       "target": "marks"
     },
     "route": "/settings/team",
-    "screen": "62ba8059c7e33490",
+    "screen": "87f02ad28cd28501",
     "guide": "aa4782d9ccbaeb3b",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "settings-member-permissions": {
     "src": "/help/shots/settings-member-permissions.webp",
@@ -4637,9 +4750,9 @@
       "target": "marks"
     },
     "route": "/settings/team",
-    "screen": "62ba8059c7e33490",
+    "screen": "87f02ad28cd28501",
     "guide": "668b4b277772f07e",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "settings-new-role": {
     "src": "/help/shots/settings-new-role.webp",
@@ -4658,9 +4771,9 @@
       "target": "marks"
     },
     "route": "/settings/roles",
-    "screen": "f1749ed7ae94c7cd",
+    "screen": "b10fbcaef61b92ea",
     "guide": "1e06cc2b53040be8",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "sign-in": {
     "src": "/help/shots/sign-in.webp",
@@ -4696,9 +4809,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "fdcd59a78bfb7213",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "switch-company": {
     "src": "/help/shots/switch-company.webp",
@@ -4800,9 +4913,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "2c04e3f0f85dd47e",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "whats-new-v62": {
     "src": "/help/shots/whats-new-v62.webp",
@@ -4819,9 +4932,9 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "2b50c89e85a7ec12",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "whats-new-v63": {
     "src": "/help/shots/whats-new-v63.webp",
@@ -4837,8 +4950,8 @@
       "target": "marks"
     },
     "route": "/",
-    "screen": "dc4b35003e4cb9d5",
+    "screen": "d8faf9ca120e92c2",
     "guide": "5e16c44fa8773b44",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   }
 }

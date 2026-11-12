@@ -61,6 +61,9 @@ export const REMINDER_TYPE_LABELS: Record<ReminderType, string> = {
   PAYMENT_DUE: "Payment due",
   INSTALLMENT_DUE: "Instalment due",
   CUSTOM: "Reminder",
+  QUOTATION_EXPIRY: "Quotation ends",
+  PROMISED_PAYMENT: "Promised payment",
+  FOLLOW_UP: "Follow-up",
 };
 
 /** What an agenda item is, as its small label. */
@@ -70,6 +73,10 @@ export const AGENDA_KIND_LABELS: Record<string, string> = {
   SHIPMENT: "Shipment",
   COMPLIANCE_EXPIRY: "Renewal",
   TASK_DUE: "Task",
+  QUOTATION_EXPIRY: "Quotation",
+  PAYMENT_DUE: "Payment due",
+  PROMISED_PAYMENT: "Promised",
+  FOLLOW_UP: "Follow-up",
   REMINDER: "Reminder",
 };
 
@@ -99,6 +106,10 @@ export const RULE_MANAGER_WORDS: Record<string, string | null> = {
   SHIPMENT: "People who take sales orders",
   COMPLIANCE_EXPIRY: "People who see the licences",
   TASK_DUE: null,
+  QUOTATION_EXPIRY: "People who make quotations, and the owner",
+  PAYMENT_DUE: "People who take orders or record money received, and the owner",
+  PROMISED_PAYMENT: "People who take orders or record money received, and the owner",
+  FOLLOW_UP: "The owner",
 };
 
 /** "Today", "Tomorrow", "Yesterday" or "12 Oct 2026". */
@@ -153,10 +164,20 @@ export function daysBeforeText(days: readonly number[]): string {
 }
 
 /** "Every 3 days while overdue". */
-export function overdueText(everyDays: number): string {
+/** Follow-ups with buyers: their repeats stop after 5 (FOLLOW_UP_LIMITS in rules.ts). */
+const FOLLOW_UP_KINDS = new Set([
+  "QUOTATION_EXPIRY",
+  "PAYMENT_DUE",
+  "PROMISED_PAYMENT",
+  "FOLLOW_UP",
+]);
+
+export function overdueText(everyDays: number, type?: string): string {
+  if (type === "QUOTATION_EXPIRY" && everyDays <= 0) return "Once, the day after it ends";
+  const limit = type && FOLLOW_UP_KINDS.has(type) ? ", 5 times at most" : "";
   if (everyDays <= 0) return "Not again once overdue";
-  if (everyDays === 1) return "Every day while overdue";
-  return `Every ${everyDays} days while overdue`;
+  if (everyDays === 1) return `Every day while overdue${limit}`;
+  return `Every ${everyDays} days while overdue${limit}`;
 }
 
 /** Reads "7, 3, 1, 0" into days; null when something is not a whole number 0–365. */

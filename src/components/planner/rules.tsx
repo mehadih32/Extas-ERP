@@ -227,7 +227,7 @@ export function RuleCards({ rules, canEdit }: { rules: RuleRow[]; canEdit: boole
                   <dd className="mt-1">
                     {daysBeforeText(rule.daysBefore)}, at {rule.sendTime}
                     <span className="block text-[0.8125rem] text-muted-foreground">
-                      {overdueText(rule.overdueEveryDays)}
+                      {overdueText(rule.overdueEveryDays, rule.type)}
                     </span>
                   </dd>
                 </div>

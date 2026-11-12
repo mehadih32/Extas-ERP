@@ -22,7 +22,26 @@ export const AUTO_TYPES = [
   "SHIPMENT",
   "COMPLIANCE_EXPIRY",
   "TASK_DUE",
+  // Follow-ups with buyers (they work whether the AI is on or off; they go to our own
+  // staff only, never to a buyer).
+  "QUOTATION_EXPIRY",
+  "PAYMENT_DUE",
+  "PROMISED_PAYMENT",
+  "FOLLOW_UP",
 ] as const satisfies readonly ReminderType[];
+
+/** The kinds that are follow-ups with buyers: also on Home ("Today's follow-ups") and the owner's bot. */
+export const FOLLOW_UP_TYPES = [
+  "QUOTATION_EXPIRY",
+  "PAYMENT_DUE",
+  "PROMISED_PAYMENT",
+  "FOLLOW_UP",
+] as const satisfies readonly AutoType[];
+
+export type FollowUpType = (typeof FOLLOW_UP_TYPES)[number];
+
+export const isFollowUpType = (type: string): type is FollowUpType =>
+  (FOLLOW_UP_TYPES as readonly string[]).includes(type);
 
 export type AutoType = (typeof AUTO_TYPES)[number];
 
@@ -88,7 +107,51 @@ export const DEFAULT_RULES: Record<AutoType, Defaults> = {
     notifyManagers: false,
     notifyOwner: true,
   },
+  // Three days before it ends, on its last day, then once the day after ("expired"):
+  // 0 here means that one "expired" reminder (see FOLLOW_UP_LIMITS).
+  QUOTATION_EXPIRY: {
+    isActive: true,
+    daysBefore: [3, 0],
+    overdueEveryDays: 0,
+    sendTime: "09:00",
+    notifyManagers: true,
+    notifyOwner: true,
+  },
+  PAYMENT_DUE: {
+    isActive: true,
+    daysBefore: [3, 0],
+    overdueEveryDays: 3,
+    sendTime: "09:00",
+    notifyManagers: true,
+    notifyOwner: true,
+  },
+  PROMISED_PAYMENT: {
+    isActive: true,
+    daysBefore: [0],
+    overdueEveryDays: 2,
+    sendTime: "09:00",
+    notifyManagers: true,
+    notifyOwner: true,
+  },
+  FOLLOW_UP: {
+    isActive: true,
+    daysBefore: [0],
+    overdueEveryDays: 2,
+    sendTime: "09:00",
+    notifyManagers: true,
+    notifyOwner: true,
+  },
 };
+
+/**
+ * Limits that keep follow-ups with buyers from nagging for ever:
+ *   - `repeats`: reminders after the date, at most (then it waits for Done or payment);
+ *   - `stalePeriods`: a date first seen this many repeat periods late is old news, never sent;
+ *   - a quotation with no repeat set still says "expired" once, the day after it ends.
+ * On a kind's first run, the dates already overdue are marked as reminded, not sent,
+ * so turning these on does not flood the inbox with the old backlog.
+ */
+export const FOLLOW_UP_LIMITS = { repeats: 5, stalePeriods: 2, onceAfter: 100_000 } as const;
 
 export const RULE_INFO: Record<
   AutoType,
@@ -123,6 +186,31 @@ export const RULE_INFO: Record<
     managers: [],
     owner: "the task's assignee and who created it",
     date: "the task's due date, until it is done",
+  },
+  // "The owner" is whoever answers for the company (ai.manage: Super Admin by default).
+  QUOTATION_EXPIRY: {
+    label: "Quotations ending",
+    managers: ["sales.quotation.manage", "ai.manage"],
+    owner: "(none)",
+    date: "the quotation's Valid until date (draft and sent quotations)",
+  },
+  PAYMENT_DUE: {
+    label: "Invoice payments due",
+    managers: ["accounts.receipts.record", "sales.order.create", "ai.manage"],
+    owner: "(none)",
+    date: "an invoice's due date, until it is paid in full",
+  },
+  PROMISED_PAYMENT: {
+    label: "Payments the buyer promised",
+    managers: ["accounts.receipts.record", "sales.order.create", "ai.manage"],
+    owner: "who wrote down the promise",
+    date: "the day the buyer promised to pay, until the invoice is paid in full",
+  },
+  FOLLOW_UP: {
+    label: "Follow-ups",
+    managers: ["ai.manage"],
+    owner: "who set the follow-up",
+    date: "the Follow up on date set on a buyer, a quotation or an order, until it is done",
   },
 };
 

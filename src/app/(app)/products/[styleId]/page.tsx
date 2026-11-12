@@ -21,6 +21,7 @@ import {
   listStockLotsAction,
   listStockMovementsAction,
 } from "@/server/actions/inventory.actions";
+import { maySendType } from "@/modules/documents/send.service";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Style" };
@@ -121,7 +122,13 @@ export default async function StylePage({
             unarchived. Its history stays in every report.
           </FormAlert>
         )}
-        <StyleActions key={style.id} screen={screen} currency={currency} notice={notice} />
+        <StyleActions
+          key={style.id}
+          screen={screen}
+          currency={currency}
+          notice={notice}
+          sendAs={maySendType(ctx, "STOCK_AVAILABILITY") ? ctx.company.name : null}
+        />
       </div>
 
       <StockMatrix screen={screen} currency={currency} openSku={one(query.sku)} />

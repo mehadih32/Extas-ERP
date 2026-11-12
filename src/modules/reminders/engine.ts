@@ -16,8 +16,11 @@ import {
   AUTO_TYPES,
   complianceSteps,
   dueStep,
+  FOLLOW_UP_LIMITS,
+  isFollowUpType,
   loadRules,
   RULE_INFO,
+  type AutoType,
   type RuleSettings,
 } from "@/modules/reminders/rules";
 import { dueItems, reminderText } from "@/modules/reminders/sources";
@@ -32,8 +35,10 @@ import { dueItems, reminderText } from "@/modules/reminders/sources";
  *      one reminder, from the rule's send time on. Its sourceKey (kind, record,
  *      date, step) is unique, so a step never fires twice, not even when two
  *      servers run at once; a moved date starts its steps afresh.
- * Only in-app messages go out for now; WhatsApp and email come with the
- * integrations stage.
+ * Only in-app messages go out to staff. Follow-ups with buyers (a quotation
+ * ending, an invoice due, a promised payment, a "Follow up on" date) also go,
+ * as one message per run, to the owner's bot when one is linked (an alarm:
+ * whether the AI is on or off). None of it ever goes to a buyer.
  */
 
 type CompanyRow = { id: string; timezone: string };
@@ -147,6 +152,8 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
   const rules = await loadRules(company.id);
   let fired = 0;
   let messages = 0;
+  /** Follow-ups with buyers fired in this run, for the owner's bot. */
+  const followUps: string[] = [];
 
   for (const type of AUTO_TYPES) {
     const rule = rules[type];
@@ -157,24 +164,38 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
       addDays(today, horizonDays(rule)),
       company.timezone,
     );
-    const steps = items.flatMap((item) => {
+    const followUp = isFollowUpType(type);
+    // A quotation with no repeat set says "expired" once, the day after it ends.
+    const every =
+      type === "QUOTATION_EXPIRY" && rule.overdueEveryDays <= 0
+        ? FOLLOW_UP_LIMITS.onceAfter
+        : rule.overdueEveryDays;
+    const period = every === FOLLOW_UP_LIMITS.onceAfter ? 1 : every;
+    let steps = items.flatMap((item) => {
       const daysLeft = daysBetween(today, item.dueDay);
-      const days =
-        type === "COMPLIANCE_EXPIRY"
+      // A follow-up snoozed from Home comes back on its new day, not days before it.
+      const days = item.originalDay
+        ? [0]
+        : type === "COMPLIANCE_EXPIRY"
           ? complianceSteps(rule.daysBefore, item.alertDaysBefore ?? 30)
           : rule.daysBefore;
-      const step = dueStep(daysLeft, days, rule.overdueEveryDays);
-      return step
-        ? [
-            {
-              item,
-              daysLeft,
-              step,
-              sourceKey: `${type}:${item.recordId}:${item.dueDay}:${step.key}`,
-            },
-          ]
-        : [];
+      const step = dueStep(daysLeft, days, followUp ? every : rule.overdueEveryDays);
+      if (!step) return [];
+      const late = step.offset < 0;
+      // Follow-ups with buyers repeat a few times only, then wait for Done or payment.
+      if (followUp && late && Number(step.key.slice(4)) >= FOLLOW_UP_LIMITS.repeats) return [];
+      return [
+        {
+          item,
+          daysLeft,
+          step,
+          sourceKey: `${type}:${item.recordId}:${item.dueDay}:${step.key}`,
+          // Seen first long after its date: sent only if it was reminded before.
+          stale: followUp && late && -daysLeft > FOLLOW_UP_LIMITS.stalePeriods * period,
+        },
+      ];
     });
+    if (followUp) steps = await holdBackBacklog(company.id, type, steps, now);
     if (steps.length === 0) continue;
 
     const done = new Set(
@@ -210,7 +231,11 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
         userIds,
         employeeIds.map((employeeId) => ({ employeeId, userId: staff.get(employeeId)!.userId })),
       );
-      const text = reminderText(item, daysLeft);
+      // The text tells the record's own date (a snoozed one's too), not the snoozed day.
+      const text = reminderText(
+        item,
+        item.originalDay ? daysBetween(today, item.originalDay) : daysLeft,
+      );
       try {
         const sent = await prisma.$transaction(async (tx) => {
           const reminder = await tx.reminder.create({
@@ -253,6 +278,7 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
         });
         fired += 1;
         messages += sent;
+        if (isFollowUpType(type)) followUps.push(`${text.subject}. ${text.body}`);
       } catch (error) {
         // Another run sent this step at the same moment.
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -262,5 +288,91 @@ async function fireAutomaticReminders(company: CompanyRow, members: Member[], no
       }
     }
   }
+  if (followUps.length > 0) await tellOwnersBot(company.id, followUps);
   return { fired, messages };
+}
+
+type Step = {
+  item: { recordId: string; dueDay: string };
+  step: { key: string; offset: number };
+  sourceKey: string;
+  stale: boolean;
+};
+
+/**
+ * Keeps a follow-up kind from flooding the inbox with old dates:
+ *   - its first run marks the dates already overdue as reminded (CANCELLED,
+ *     no one told) and leaves a start mark, so only what comes due from now on
+ *     is sent;
+ *   - later, a date first seen long after it passed (an old invoice entered
+ *     today) is left out unless it was reminded about before.
+ */
+async function holdBackBacklog<T extends Step>(
+  companyId: string,
+  type: AutoType,
+  steps: T[],
+  now: Date,
+): Promise<T[]> {
+  const startKey = `${type}:started`;
+  const started = await prisma.reminder.findUnique({
+    where: { companyId_sourceKey: { companyId, sourceKey: startKey } },
+    select: { id: true },
+  });
+  const quiet = (title: string, sourceKey: string, dueDay?: string, offset?: number) => ({
+    companyId,
+    type,
+    title,
+    message: "Not sent: it was already overdue when follow-up reminders began.",
+    remindAt: now,
+    sourceKey,
+    status: "CANCELLED" as const,
+    channels: [],
+    ...(dueDay ? { dueDate: dateColumn(dueDay), offsetDays: offset } : {}),
+  });
+  if (!started) {
+    const backlog = steps.filter((s) => s.step.offset < 0);
+    await prisma.reminder.createMany({
+      data: [
+        quiet("Follow-up reminders started", startKey),
+        ...backlog.map((s) =>
+          quiet("Already overdue when follow-ups began", s.sourceKey, s.item.dueDay, s.step.offset),
+        ),
+      ],
+      skipDuplicates: true,
+    });
+    return steps.filter((s) => s.step.offset >= 0);
+  }
+  const stale = steps.filter((s) => s.stale);
+  if (stale.length === 0) return steps;
+  const before = await prisma.reminder.findMany({
+    where: {
+      companyId,
+      OR: stale.map((s) => ({
+        sourceKey: { startsWith: `${type}:${s.item.recordId}:${s.item.dueDay}:` },
+      })),
+    },
+    select: { sourceKey: true },
+  });
+  const seen = new Set(before.map((r) => r.sourceKey!.split(":").slice(0, 3).join(":")));
+  return steps.filter((s) => !s.stale || seen.has(`${type}:${s.item.recordId}:${s.item.dueDay}`));
+}
+
+/** The follow-ups that fired, as one message on the owner's bot (never to anyone outside). */
+async function tellOwnersBot(companyId: string, lines: string[]) {
+  try {
+    const { pushToBot } = await import("@/modules/ai/bot/push");
+    const shown = lines.slice(0, 10);
+    const more = lines.length - shown.length;
+    const text = [
+      `Follow-ups for today (${lines.length}):`,
+      ...shown.map((line) => `• ${line}`),
+      ...(more > 0 ? [`…and ${more} more in the ERP inbox.`] : []),
+    ].join("\n");
+    await pushToBot(companyId, { kind: "text", text: text.slice(0, 3500) }, { alarm: true });
+  } catch (error) {
+    console.error(
+      "[reminders] follow-ups not sent to the bot",
+      error instanceof Error ? error.message : error,
+    );
+  }
 }

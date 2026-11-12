@@ -219,6 +219,9 @@ export function presentRun(run: BackupRun & { triggeredBy?: { id: string; name: 
     error: run.error,
     report: run.report,
     sourceName: run.sourceName,
+    /** Never removed by the keeping rules (the backup made before a fresh start). */
+    keepForever: run.keepForever,
+    label: run.label,
     triggeredBy: run.triggeredBy ?? null,
   };
 }
@@ -642,6 +645,8 @@ export async function claimRun(
   actor: Actor | null,
   kind: BackupKind = "BACKUP",
   name?: string,
+  /** Kept for ever (never removed by the keeping rules), with why: "Before fresh start". */
+  keepForever?: { label: string },
 ) {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('extras-erp:backup'))`;
@@ -674,6 +679,7 @@ export async function claimRun(
         name: name ?? null,
         status: "RUNNING",
         triggeredById: actor?.userId ?? null,
+        ...(keepForever ? { keepForever: true, label: keepForever.label } : {}),
       },
     });
   });
@@ -1238,11 +1244,17 @@ async function executeRun(run: BackupRun): Promise<BackupRun> {
  * returning; a manual run from the screen returns at once while it continues.
  */
 export async function runBackup(
-  options: { trigger: BackupTrigger; actor?: Actor | null; wait?: boolean },
+  options: {
+    trigger: BackupTrigger;
+    actor?: Actor | null;
+    wait?: boolean;
+    /** Kept for ever on the server and in Drive, with why (the backup before a fresh start). */
+    keepForever?: { label: string };
+  },
   meta?: RequestMeta,
 ) {
   const actor = options.actor ?? null;
-  const run = await claimRun(options.trigger, actor);
+  const run = await claimRun(options.trigger, actor, "BACKUP", undefined, options.keepForever);
   await audit(actor, meta, {
     action: "CREATE",
     entityType: "BackupRun",

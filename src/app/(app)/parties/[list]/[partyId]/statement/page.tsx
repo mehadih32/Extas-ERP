@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { PrintDocumentButton } from "@/components/documents/print-button";
+import { SendBar, SentSection } from "@/components/documents/send-section";
 import { FormAlert } from "@/components/forms/field";
 import { amountCell, drCr, money } from "@/components/parties/labels";
 import { PartiesNoAccess } from "@/components/parties/no-access";
@@ -269,6 +270,19 @@ export default async function StatementPage({
           />
         )}
       </div>
+      {screen?.can.print && (
+        <SendBar
+          ctx={ctx}
+          request={{
+            type: "LEDGER_STATEMENT",
+            partyId,
+            from: screen.from ?? undefined,
+            to: screen.to ?? undefined,
+          }}
+          what={`Statement of account for ${screen.party.name}`}
+          partyId={partyId}
+        />
+      )}
       <StatementRange
         from={range.from ?? null}
         to={range.to ?? null}
@@ -283,6 +297,7 @@ export default async function StatementPage({
           !result.ok && <FormAlert>{result.error.message}</FormAlert>
         )}
       </StatementRange>
+      {screen && <SentSection partyId={partyId} type="LEDGER_STATEMENT" />}
     </div>
   );
 }

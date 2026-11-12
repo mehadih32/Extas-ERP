@@ -4,6 +4,7 @@ import type { CompanyContext } from "@/modules/auth/context";
 
 import { ALL_CHECKS } from "./checks";
 import { describePlan } from "./corrections";
+import { codeFixesBlocked } from "./fixes.service";
 import { STALE_RUN_MS, startBugGuard } from "./runner";
 import { assertPlatform, settingsOf } from "./settings.service";
 import type {
@@ -139,6 +140,8 @@ export async function getBugGuard(ctx: CompanyContext, now: Date = new Date()) {
       scheduleText: describeSchedule(settings.schedule),
     },
     pinSet: Boolean(pin?.pinHash),
+    /** Why code fixes cannot go to Claude Code by itself now (shown by the switch), or null. */
+    codeFixesBlocked: await codeFixesBlocked(companyId),
     running: running ? { id: running.id, startedAt: running.startedAt } : null,
     last: lastDone
       ? {

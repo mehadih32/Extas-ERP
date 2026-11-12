@@ -5,7 +5,9 @@ import { FormAlert } from "@/components/forms/field";
 import { CompanyForms } from "@/components/settings/company/company-forms";
 import { timeZoneChoices } from "@/components/settings/company/company-options";
 import { CompanyView } from "@/components/settings/company/company-view";
+import { FreshStartCard } from "@/components/settings/company/fresh-start-card";
 import { getCompanyDetailsAction } from "@/server/actions/company.actions";
+import { getFreshStartAction } from "@/server/actions/fresh-start.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "Company" };
@@ -27,6 +29,8 @@ export default async function CompanyPage() {
     );
   }
   const { details, canEdit } = result.data;
+  // The owner's one-time Fresh start (only the owner sees it).
+  const freshStart = await getFreshStartAction();
 
   return (
     <section aria-labelledby="company-heading" className="grid gap-6">
@@ -50,6 +54,7 @@ export default async function CompanyPage() {
           <CompanyView details={details} />
         </>
       )}
+      {freshStart.ok && freshStart.data.visible && <FreshStartCard initial={freshStart.data} />}
     </section>
   );
 }

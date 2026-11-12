@@ -972,6 +972,72 @@ run("The bot", () => {
     expect(screen.messages.map((m) => m.text)).not.toContain("Extas: status");
   });
 
+  it("never takes a message for the other store as a wrong PIN when stores share one chat", async () => {
+    const api = botApi();
+    const uttara = await makeCompany("Extas Uttara");
+    await addToCompany(env.owner.user.id, uttara.company.id, uttara.roles.SUPER_ADMIN);
+    const ownerThere = await contextFor(env.owner.user.id, uttara.company.id);
+    await linkOwner(env);
+    await saveTelegram(ownerThere, { token: TOKEN });
+    const { code } = await startLink(ownerThere, "TELEGRAM");
+    await telegram(typed(OWNER_CHAT, code));
+    await setPin(env.owner, { pin: "2468" });
+
+    // Extas waits for the PIN; the owner then writes to Extas Uttara.
+    await telegram(typed(OWNER_CHAT, "Extas: unlock"));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Send your PIN to unlock your sign-in/);
+    await telegram(typed(OWNER_CHAT, "Extas Uttara: status"));
+    expect(api.said(OWNER_CHAT).at(-1)).not.toMatch(/PIN/);
+    expect(
+      await prisma.aiChatMessage.count({ where: { companyId: uttara.company.id, role: "OWNER" } }),
+    ).toBe(1);
+    // No wrong PIN was counted, and Extas still waits for its PIN.
+    expect(await prisma.aiPinTry.count({ where: { kind: "PIN", count: { gt: 0 } } })).toBe(0);
+    const extas = await prisma.aiBotLink.findFirstOrThrow({
+      where: { companyId: env.company.id },
+    });
+    expect(extas.pendingUntil!.getTime()).toBeGreaterThan(Date.now());
+    // The PIN named for its store is taken there.
+    await telegram(typed(OWNER_CHAT, "Extas: 2468"));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Unlocked: /);
+  });
+
+  it("asks which store when a name fits two, and stops on a store's cancel", async () => {
+    const api = botApi();
+    const uttara = await makeCompany("Extas Uttara");
+    await addToCompany(env.owner.user.id, uttara.company.id, uttara.roles.SUPER_ADMIN);
+    const ownerThere = await contextFor(env.owner.user.id, uttara.company.id);
+    await linkOwner(env);
+    await saveTelegram(ownerThere, { token: TOKEN });
+    const { code } = await startLink(ownerThere, "TELEGRAM");
+    await telegram(typed(OWNER_CHAT, code));
+    await setPin(env.owner, { pin: "2468" });
+    const which =
+      'Which store? Start with its name, like "Extas: status". Linked here: Extas, Extas Uttara.';
+    const wrongPins = () => prisma.aiPinTry.count({ where: { kind: "PIN", count: { gt: 0 } } });
+    const extasLink = () =>
+      prisma.aiBotLink.findFirstOrThrow({ where: { companyId: env.company.id } });
+
+    // "Ext" fits both stores: the bot asks, and never picks the first one.
+    await telegram(typed(OWNER_CHAT, "Ext: status"));
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(which);
+    expect(await prisma.aiChatMessage.count({ where: { role: "OWNER" } })).toBe(0);
+
+    // Extas waits for its PIN: a PIN under an unclear name is checked for no store.
+    await telegram(typed(OWNER_CHAT, "Extas: unlock"));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Send your PIN to unlock your sign-in/);
+    await telegram(typed(OWNER_CHAT, "Ext: 2468"));
+    expect(api.said(OWNER_CHAT).join("\n")).not.toMatch(/Unlocked: /);
+    expect(await wrongPins()).toBe(0);
+    expect((await extasLink()).pendingUntil!.getTime()).toBeGreaterThan(Date.now());
+
+    // "Extas: cancel" stops what waited, and is never counted as a wrong PIN.
+    await telegram(typed(OWNER_CHAT, "Extas: cancel"));
+    expect(api.said(OWNER_CHAT).at(-1)).toBe("Stopped: nothing changed.");
+    expect(await wrongPins()).toBe(0);
+    expect((await extasLink()).pendingUntil).toBeNull();
+  });
+
   it("has the WhatsApp plug ready: Meta's calls are checked and only the owner's number is answered", async () => {
     const api = botApi();
     await expectAppError(

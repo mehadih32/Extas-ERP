@@ -13,7 +13,7 @@ import {
 import Link from "next/link";
 import { useState, useTransition } from "react";
 
-import { usePinPrompt } from "@/components/ai/pin-prompt";
+import { PinField, usePinPrompt } from "@/components/ai/pin-prompt";
 import { useWhen } from "@/components/ai/when";
 import { Field, FormAlert } from "@/components/forms/field";
 import {
@@ -711,6 +711,9 @@ function SchedulePanel({ g, setMessage }: { g: Screen; setMessage: (m: Message) 
     dates: g.settings.schedule.dates,
   });
   const [errors, setErrors] = useState<Record<string, string[] | undefined>>({});
+  const [autoPrepare, setAutoPrepare] = useState(g.settings.autoPrepare);
+  // Turning "by itself" on asks for the PIN (the server asks too).
+  const askPin = autoPrepare && !g.settings.autoPrepare;
   const scheduleError = Object.entries(errors).find(([k]) => k.startsWith("schedule"))?.[1]?.[0];
   return (
     <Panel title="When Bug Guard checks" id="guard-schedule-heading">
@@ -725,6 +728,7 @@ function SchedulePanel({ g, setMessage }: { g: Screen; setMessage: (m: Message) 
               weeklyDay: Number(form.get("weeklyDay")),
               weeklyTime: String(form.get("weeklyTime") ?? ""),
               autoPrepare: form.get("autoPrepare") === "on",
+              ...(form.has("pin") ? { pin: String(form.get("pin") ?? "") } : {}),
             });
             setErrors(result.ok ? {} : (result.error.fieldErrors ?? {}));
             setMessage(
@@ -765,17 +769,30 @@ function SchedulePanel({ g, setMessage }: { g: Screen; setMessage: (m: Message) 
           <input
             type="checkbox"
             name="autoPrepare"
-            defaultChecked={g.settings.autoPrepare}
+            checked={autoPrepare}
+            onChange={(event) => setAutoPrepare(event.target.checked)}
             className="mt-1"
           />
           <span>
             Open fix pull requests and prepare data corrections by itself
             <span className="block text-muted-foreground">
-              Off by default. Applying a correction and merging a fix always wait for you and your
-              PIN.
+              Off by default; turning it on needs your PIN. Code fixes go only while AI is on.
+              Applying a correction and merging a fix always wait for you and your PIN.
             </span>
           </span>
         </label>
+        {autoPrepare && g.codeFixesBlocked && (
+          <FormAlert tone="note">
+            {`Code fixes cannot go to Claude Code by itself yet: ${g.codeFixesBlocked} Until then only data corrections are prepared; code problems wait for Fix.`}
+          </FormAlert>
+        )}
+        {askPin && (
+          <PinField
+            id="guard-pin"
+            error={errors.pin?.[0] ?? errors["pinNotSet"]?.[0]}
+            hint="Your PIN, to let Bug Guard prepare fixes by itself."
+          />
+        )}
         <div>
           <Button type="submit" disabled={pending}>
             Save

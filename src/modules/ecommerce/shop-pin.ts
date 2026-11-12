@@ -33,14 +33,19 @@ export function normalizeIp(ip: string): string {
  *   - an IP allow-list that lets more places call the API with the key: while
  *     the list has addresses only they may call, so adding one, or emptying the
  *     list (any address may then call), widens it. Taking addresses off while
- *     at least one stays, or starting a list, only narrows it: no PIN.
+ *     at least one stays, or starting a list, only narrows it: no PIN;
+ *   - another warehouse (when both are given): the shop's orders then take
+ *     their stock from there.
  */
 export function pinNeededFor(
-  before: { webhookUrl: string | null; ipAllowList: string[] },
-  after: { webhookUrl?: string | null; ipAllowList: string[] },
+  before: { webhookUrl: string | null; ipAllowList: string[]; warehouseId?: string | null },
+  after: { webhookUrl?: string | null; ipAllowList: string[]; warehouseId?: string | null },
 ): string | null {
   if ((after.webhookUrl ?? null) !== (before.webhookUrl ?? null)) {
     return "change the shop's webhook URL";
+  }
+  if (before.warehouseId && after.warehouseId && before.warehouseId !== after.warehouseId) {
+    return "change the shop's warehouse";
   }
   if (before.ipAllowList.length === 0) return null;
   const had = new Set(before.ipAllowList.map(normalizeIp));

@@ -706,6 +706,171 @@ run("Bug Guard", () => {
     });
   });
 
+  describe("preparing fixes by itself", () => {
+    const schedule = { mode: "DAYS", every: 1, times: ["02:00"] };
+    const accounts = async () => {
+      const make = (code: string, name: string) =>
+        prisma.ledgerAccount.create({
+          data: { companyId: env.company.id, code, name, type: "ASSET", subType: "BANK" },
+        });
+      return { cash: await make("T-CASH", "Test cash"), bank: await make("T-BANK", "Test bank") };
+    };
+    const found = async () => {
+      const { cash, bank } = await accounts();
+      world.found = [
+        thing("money", "IMPORTANT", {
+          fixKind: "DATA",
+          correction: {
+            kind: "JOURNAL",
+            date: "2026-10-20",
+            description: "ব্যাংক ও ক্যাশ মেলানো",
+            lines: [
+              { accountId: cash.id, account: cash.name, debit: "40.00", credit: "0" },
+              { accountId: bank.id, account: bank.name, debit: "0", credit: "40.00" },
+            ],
+          },
+        }),
+        thing("err", "URGENT", {
+          area: "APP",
+          fixKind: "CODE",
+          code: {
+            route: "/sales",
+            method: "GET",
+            status: 500,
+            errorType: "TypeError",
+            stack: [],
+            times: 2,
+          },
+        }),
+      ];
+    };
+    /** The AI switch (AI Center): on, off or paused. */
+    const ai = (state: "on" | "off" | "paused") => {
+      const data = { enabled: state !== "off", pausedAt: state === "paused" ? new Date() : null };
+      return prisma.aiSettings.upsert({
+        where: { companyId: env.company.id },
+        create: { companyId: env.company.id, ...data },
+        update: data,
+      });
+    };
+
+    it("is turned on only with the owner's PIN, and off without it", async () => {
+      const turnOn = (pin?: string) =>
+        saveSettings(env.owner, { schedule, autoPrepare: true, ...(pin ? { pin } : {}) });
+      await expectAppError(turnOn(), "VALIDATION", /PIN first/);
+      await setPin(env.owner, { pin: PIN });
+      await expectAppError(turnOn(), "VALIDATION", /Give your PIN to let Bug Guard prepare fixes/);
+      await expectAppError(turnOn("0000"), "VALIDATION", /PIN is not right/);
+      expect(await prisma.bugGuardSettings.count()).toBe(0);
+      await turnOn(PIN);
+      expect((await getBugGuard(env.owner)).settings.autoPrepare).toBe(true);
+      // Saving again while it is on, or turning it off, needs no PIN.
+      await saveSettings(env.owner, { schedule, autoPrepare: true, weeklyDay: 2 });
+      await saveSettings(env.owner, { schedule, autoPrepare: false });
+      expect((await getBugGuard(env.owner)).settings.autoPrepare).toBe(false);
+      const logged = await prisma.auditLog.findMany({
+        where: { entityType: "BugGuardSettings" },
+        orderBy: { createdAt: "asc" },
+      });
+      expect(logged.map((l) => /by itself: (on|off)/.exec(l.summary ?? "")?.[1])).toEqual([
+        "on",
+        "on",
+        "off",
+      ]);
+    });
+
+    it("prepares a correction that waits for the PIN, and says plainly why code fixes wait while GitHub is not connected", async () => {
+      await ai("on");
+      await setPin(env.owner, { pin: PIN });
+      await saveSettings(env.owner, { schedule, autoPrepare: true, pin: PIN });
+      expect((await getBugGuard(env.owner)).codeFixesBlocked).toMatch(/^GitHub is not connected/);
+      await found();
+      await guard(new Date());
+
+      // The correction is prepared by Bug Guard itself, and only prepared.
+      const corrections = await prisma.bugGuardCorrection.findMany();
+      expect(corrections).toHaveLength(1);
+      expect(corrections[0]).toMatchObject({ status: "PREPARED", preparedByGuard: true });
+      expect(await prisma.journalEntry.count()).toBe(0);
+      expect(await prisma.backupRun.count()).toBe(0);
+      // The code problem waits in the list, and the log says why.
+      expect((await findingOf("err")).status).toBe("OPEN");
+      expect(await prisma.claudeCodeRequest.count()).toBe(0);
+      const why = await prisma.bugGuardEvent.findFirstOrThrow({
+        where: { kind: "FAILED", findingId: (await findingOf("err")).id },
+      });
+      expect(why.byId).toBeNull();
+      expect(why.summary).toMatch(
+        /^Not sent to Claude Code by itself: GitHub is not connected\. Connect it in AI Center > Full check/,
+      );
+      const screen = await getBugGuard(env.owner);
+      expect(screen.events.map((e) => e.summary)).toContain(why.summary);
+      // Applying it still needs the PIN.
+      await expectAppError(
+        applyCorrection(env.owner, corrections[0]!.id, {}),
+        "VALIDATION",
+        /Give your PIN/,
+      );
+      expect((await prisma.bugGuardCorrection.findFirstOrThrow()).status).toBe("PREPARED");
+    });
+
+    it("sends a code problem to Claude Code by itself once GitHub is connected, and merges nothing", async () => {
+      const gh = await startFakeGitHub("extas/erp");
+      vi.stubEnv("GITHUB_API_URL", gh.url);
+      try {
+        await saveGitHub(env.owner, { repo: "extas/erp", token: gh.token });
+        await ai("on");
+        await setPin(env.owner, { pin: PIN });
+        await saveSettings(env.owner, { schedule, autoPrepare: true, pin: PIN });
+        expect((await getBugGuard(env.owner)).codeFixesBlocked).toBeNull();
+        await found();
+        await guard(new Date());
+        const err = await findingOf("err");
+        expect(err.status).toBe("FIXING");
+        const request = await prisma.claudeCodeRequest.findUniqueOrThrow({
+          where: { id: err.requestId! },
+        });
+        expect(request).toMatchObject({ kind: "FIX", state: "SENT" });
+        expect(gh.calls.some((c) => c.method === "PUT" && c.path.endsWith("/merge"))).toBe(false);
+        expect(await prisma.bugGuardCorrection.count({ where: { status: "PREPARED" } })).toBe(1);
+      } finally {
+        await gh.close();
+      }
+    });
+
+    it("keeps code problems waiting while AI is off or paused, and still prepares data corrections", async () => {
+      const gh = await startFakeGitHub("extas/erp");
+      vi.stubEnv("GITHUB_API_URL", gh.url);
+      try {
+        await saveGitHub(env.owner, { repo: "extas/erp", token: gh.token });
+        await setPin(env.owner, { pin: PIN });
+        await saveSettings(env.owner, { schedule, autoPrepare: true, pin: PIN });
+        await ai("off");
+        expect((await getBugGuard(env.owner)).codeFixesBlocked).toBe(
+          "AI is off. The owner turns it on in AI Center.",
+        );
+        await ai("paused");
+        expect((await getBugGuard(env.owner)).codeFixesBlocked).toMatch(/^AI is off: it is paused/);
+        await ai("off");
+        await found();
+        await guard(new Date());
+
+        const err = await findingOf("err");
+        expect(err.status).toBe("OPEN");
+        expect(await prisma.claudeCodeRequest.count()).toBe(0);
+        expect(gh.calls.some((c) => c.method !== "GET")).toBe(false);
+        const why = await prisma.bugGuardEvent.findFirstOrThrow({
+          where: { kind: "FAILED", findingId: err.id },
+        });
+        expect(why.summary).toMatch(/^Not sent to Claude Code by itself: AI is off\. /);
+        // The data correction is made without AI, so it is prepared as before.
+        expect(await prisma.bugGuardCorrection.count({ where: { status: "PREPARED" } })).toBe(1);
+      } finally {
+        await gh.close();
+      }
+    });
+  });
+
   describe("security", () => {
     const wrong = (email: string, ip: string) =>
       login({ email, password: "not-the-password" }, { ipAddress: ip }).catch(() => undefined);

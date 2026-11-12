@@ -4,7 +4,6 @@ import { ScanLineIcon, SheetIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 
-import { IntegrationPendingButton } from "@/components/feedback/integration-pending";
 import { FormAlert } from "@/components/forms/field";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -15,6 +14,7 @@ import type { StyleScreen } from "@/modules/inventory/screens.service";
 
 import { EmptyState, Swatch } from "./bits";
 import { BulkUpdateDialog } from "./bulk-update-dialog";
+import { PackingListDialog } from "./packing-list-dialog";
 import { SkuDialog } from "./sku-dialog";
 
 type Matrix = StyleScreen["matrix"];
@@ -108,6 +108,7 @@ export function StockMatrix({
   const known = matrix.rows.some((r) => r.cells.some((c) => c?.variantId === openSku));
   const [selected, setSelected] = useState<string | null>(known ? openSku! : null);
   const [bulk, setBulk] = useState(false);
+  const [packing, setPacking] = useState(false);
   const [notice, setNotice] = useState<string>();
   const count = (n: number) => formatCount(n, currency);
   const sizeName = new Map(matrix.sizes.map((s) => [s.id, s.name]));
@@ -174,22 +175,28 @@ export function StockMatrix({
         )}
       </div>
 
-      {screen.can.manage && matrix.rows.length > 0 && (
+      {screen.can.manage && (
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          {matrix.rows.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => setBulk(true)}
+            >
+              <SheetIcon aria-hidden />
+              Bulk update
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
             className="w-full sm:w-auto"
-            onClick={() => setBulk(true)}
+            onClick={() => setPacking(true)}
           >
-            <SheetIcon aria-hidden />
-            Bulk update
+            <ScanLineIcon aria-hidden />
+            Upload packing list
           </Button>
-          <IntegrationPendingButton icon={ScanLineIcon} label="Upload packing list (AI scan)">
-            Reading a factory packing list with AI comes with the integrations, which are on hold
-            for now. Until then, type the pieces into Bulk update, or receive the delivery from its
-            production project.
-          </IntegrationPendingButton>
         </div>
       )}
       {notice && <FormAlert tone="success">{notice}</FormAlert>}
@@ -309,6 +316,16 @@ export function StockMatrix({
           onClose={() => setBulk(false)}
           onSaved={(text) => {
             setBulk(false);
+            setNotice(text);
+          }}
+        />
+      )}
+      {packing && (
+        <PackingListDialog
+          screen={screen}
+          onClose={() => setPacking(false)}
+          onSaved={(text) => {
+            setPacking(false);
             setNotice(text);
           }}
         />

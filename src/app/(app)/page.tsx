@@ -27,6 +27,7 @@ import {
   SalesTargetSkeleton,
 } from "@/components/dashboard/skeletons";
 import { type TopSellersView, topSellersViewFrom } from "@/components/dashboard/top-sellers-view";
+import { TodaysFollowUpsSection } from "@/components/follow-ups/sections";
 import { roleLabel } from "@/components/shell/labels";
 import { PLANNER_KEYS } from "@/components/shell/nav-items";
 import { localDay } from "@/lib/dates";
@@ -37,6 +38,7 @@ import { canSeeFinancials, canSeeSalesAmounts, canSeeStock } from "@/modules/das
 import { pulseAccess } from "@/modules/dashboard/home.service";
 import { canSeePipeline } from "@/modules/dashboard/pipeline.service";
 import { predictiveAccess } from "@/modules/dashboard/predictive.service";
+import { seesFollowUps } from "@/modules/reminders/follow-up.service";
 import { HOME_SECTIONS, type HomeRange, type HomeSectionKey } from "@/modules/dashboard/schemas";
 import {
   getActionZoneAction,
@@ -335,6 +337,11 @@ export default async function DashboardPage({
         />
 
         <div className="mt-8 grid grid-cols-1 gap-12 md:mt-10 md:gap-16">
+          {seesFollowUps(ctx) && (
+            <Suspense fallback={null}>
+              <TodaysFollowUpsSection />
+            </Suspense>
+          )}
           {noFigures && (
             <section className="rounded-lg border bg-card px-6 py-12 text-center sm:px-10">
               <p className="font-serif text-2xl text-primary">No figures to show here yet</p>

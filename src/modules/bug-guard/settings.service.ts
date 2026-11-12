@@ -6,6 +6,7 @@ import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
 import type { RequestMeta } from "@/lib/request-meta";
 import { describeSchedule, nextRunAt, type Schedule, scheduleSchema } from "@/lib/schedule";
+import { type PinProof, requirePin } from "@/modules/ai/settings.service";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 
@@ -108,14 +109,32 @@ export const settingsSchema = z.object({
   autoPrepare: z.boolean().default(false),
   weeklyDay: z.coerce.number().int().min(0).max(6).default(6),
   weeklyTime: z.string().trim().regex(TIME, "Use a time like 10:00").default("10:00"),
+  /** Asked only when "prepare fixes by itself" is turned on. */
+  pin: z.string().trim().max(20).optional(),
 });
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-/** "Save" on Bug Guard's schedule. */
-export async function saveSettings(ctx: CompanyContext, input: unknown, meta?: RequestMeta) {
+/**
+ * "Save" on Bug Guard's schedule. Turning on "open fix pull requests and
+ * prepare data corrections by itself" needs the owner's PIN; turning it off
+ * needs none (it only takes something away).
+ */
+export async function saveSettings(
+  ctx: CompanyContext,
+  input: unknown,
+  meta?: RequestMeta,
+  proof?: PinProof,
+) {
   assertPlatform(ctx);
   const s = settingsSchema.parse(input);
+  const was = await prisma.bugGuardSettings.findUnique({
+    where: { companyId: ctx.company.id },
+    select: { autoPrepare: true },
+  });
+  if (s.autoPrepare && !was?.autoPrepare) {
+    await requirePin(ctx, proof ?? s.pin, "let Bug Guard prepare fixes by itself");
+  }
   const now = new Date();
   // An every-N-days schedule counts from today unless a start day was given.
   const schedule: Schedule =

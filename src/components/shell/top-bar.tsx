@@ -6,13 +6,14 @@ import { ROUTES } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 
 import { CompanySwitcher } from "./company-switcher";
+import { SearchButton } from "./global-search";
 import { MainNav } from "./main-nav";
 import type { ShellCompany, ShellUser } from "./types";
 import { UserMenu } from "./user-menu";
 
 /**
- * The green top bar: the house mark, the sections, the company switcher, the
- * inbox bell with the unread count, and the person.
+ * The green top bar: the house mark, the sections, the search, the company
+ * switcher, the inbox bell with the unread count, and the person.
  */
 export function TopBar({
   user,
@@ -20,6 +21,7 @@ export function TopBar({
   activeCompany,
   permissions,
   unread,
+  canSearch,
   className,
 }: {
   user: ShellUser;
@@ -28,6 +30,8 @@ export function TopBar({
   permissions: string[];
   /** Unread inbox messages. */
   unread: number;
+  /** Whether the person may search any kind of record (the Search button shows then). */
+  canSearch: boolean;
   /** Extra classes (the modern look shows the bar on phones only, "md:hidden"). */
   className?: string;
 }) {
@@ -44,7 +48,8 @@ export function TopBar({
           <Wordmark />
         </Link>
         <MainNav permissions={permissions} className="hidden md:flex" />
-        <div className="ml-auto flex min-w-0 items-center gap-3">
+        <div className="ml-auto flex min-w-0 items-center gap-2 lg:gap-3">
+          {canSearch && <SearchButton variant="bar" />}
           <CompanySwitcher companies={companies} activeCompany={activeCompany} />
           <InboxBell unread={unread} />
           <UserMenu

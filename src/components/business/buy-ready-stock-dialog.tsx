@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { groupAmount } from "@/lib/display";
 import { cn } from "@/lib/utils";
+import type { BuyPrefill } from "@/components/products/packing-list-model";
 import type { ShopStockPage } from "@/modules/retail/shop-stock.service";
 import { buyReadyStockAction } from "@/server/actions/retail.actions";
 
@@ -134,9 +135,12 @@ const asNumber = (v: string) => {
 export function BuyReadyStockDialog({
   page,
   onClose,
+  prefill,
 }: {
   page: ShopStockPage;
   onClose: () => void;
+  /** From "Upload packing list": the style and its pieces ("colourId:sizeId" -> pieces). */
+  prefill?: BuyPrefill | null;
 }) {
   const router = useRouter();
   const { currency } = page;
@@ -145,16 +149,27 @@ export function BuyReadyStockDialog({
     page.suppliers.length ? "PICK" : "RANDOM",
   );
   const [styleMode, setStyleMode] = useState<"PICK" | "NEW">(page.styles.length ? "PICK" : "NEW");
-  const [styleId, setStyleId] = useState(page.styles[0]?.id ?? "");
+  const prefilled = prefill ? page.styles.find((s) => s.id === prefill.styleId) : undefined;
+  const [styleId, setStyleId] = useState(prefilled?.id ?? page.styles[0]?.id ?? "");
   const style = page.styles.find((s) => s.id === styleId);
   // The colours and sizes ticked: at first those the style has.
   const own = (s: typeof style) => ({
     colours: [...new Set(s?.variants.map((v) => v.colorId) ?? [])],
     sizes: [...new Set(s?.variants.map((v) => v.sizeId) ?? [])],
   });
-  const [colourIds, setColourIds] = useState(own(style).colours);
-  const [sizeIds, setSizeIds] = useState(own(style).sizes);
-  const [pieces, setPieces] = useState<Record<string, string>>({});
+  // A packing list ticks only its own colours and sizes, with its pieces filled in.
+  const listed = prefilled && prefill ? Object.keys(prefill.pieces).map((k) => k.split(":")) : null;
+  const [colourIds, setColourIds] = useState(
+    listed ? [...new Set(listed.map(([c]) => c!))] : own(style).colours,
+  );
+  const [sizeIds, setSizeIds] = useState(
+    listed ? [...new Set(listed.map(([, z]) => z!))] : own(style).sizes,
+  );
+  const [pieces, setPieces] = useState<Record<string, string>>(
+    prefilled && prefill
+      ? Object.fromEntries(Object.entries(prefill.pieces).map(([k, n]) => [k, String(n)]))
+      : {},
+  );
   const [priceBasis, setPriceBasis] = useState<"PIECE" | "TOTAL">("PIECE");
   const [price, setPrice] = useState("");
   const [extras, setExtras] = useState([{ label: "Transport", amount: "" }]);

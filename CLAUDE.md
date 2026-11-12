@@ -211,6 +211,10 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-11-12 (handwritten packing lists): the owner chose a free reader that runs on our own server (no AI
+  service, no cost) for handwritten packing-list photos; whatever it reads is filled in and the owner checks the
+  totals. Before it is built in, it is tried on the owner's photos with `scripts/packing-list/handwriting-check.mjs`
+  (the photos never go into the repository).
 - 2026-11-12 (search and the buyer's order-status link): the search box in the top bar finds only the kinds of
   record each person may open (the same permissions as their pages) and never shows a money figure (no price,
   total, cost or salary). "Share order status" on an order makes a read-only link for the buyer that shows only

@@ -9,3 +9,5 @@ mobile/android
 mobile/www
 mobile/package-lock.json
 assets/knowledge
+# Claude Code's own settings, kept as the owner saved them on GitHub.
+.claude

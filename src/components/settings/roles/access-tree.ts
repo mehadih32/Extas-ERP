@@ -65,6 +65,16 @@ export const ACCESS_TREE: readonly AccessBranch[] = [
     ]),
     leaf("sales.returns.qc", "Check returned goods (QC)"),
     leaf("sales.campaigns.manage", "Win back quiet buyers (campaigns)"),
+    branch("sales.leads", "Leads (new buyers)", [
+      leaf("leads.view", "See their own leads and leads not given to anyone"),
+      leaf("leads.all", "See every lead"),
+      leaf("leads.manage", "Add and edit leads, contacts, history and samples"),
+      leaf("leads.assign", "Give leads to other people"),
+      leaf("leads.convert", "Make a lead a buyer"),
+      leaf("leads.export", "Download the lead list"),
+      leaf("leads.settings", "Set lead sources and the lead check rules"),
+      leaf("leads.erase", "Erase a contact's personal data"),
+    ]),
   ]),
   branch("business", "Business", [
     branch("business.retail", "Retail stores", [

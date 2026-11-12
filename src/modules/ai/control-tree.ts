@@ -52,6 +52,11 @@ export const NEVER_FOR_AI: ReadonlySet<string> = new Set([
   "company.roles.manage",
   "backups.manage",
   "integrations.ecommerce.manage",
+  // Leads: the list leaves only with the owner, and the AI never erases, assigns or sets rules.
+  "leads.export",
+  "leads.erase",
+  "leads.assign",
+  "leads.settings",
   "ai.view",
   "ai.manage",
 ]);

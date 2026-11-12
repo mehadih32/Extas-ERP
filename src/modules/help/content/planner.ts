@@ -707,7 +707,7 @@ export const plannerHelp: HelpSection = {
         },
         {
           label: "Who hears about it",
-          text: "টিক বাক্স: বিষয় অনুযায়ী দায়িত্বে থাকা মানুষ (যেমন যাঁরা প্রোডাকশন সামলান) আর রেকর্ডের নিজের মানুষ (যেমন যিনি অর্ডার দিয়েছেন, বা কাজের কর্মী)। বিষয় অনুযায়ী দায়িত্বের টিকের নাম: “People who manage production” (প্রোডাকশনের সময়সীমা), “People who buy materials” (মাল ইন-হাউস), “People who take sales orders” (শিপমেন্ট) বা “People who see the licences” (লাইসেন্স ও নিবন্ধন নবায়ন)।",
+          text: "টিক বাক্স: বিষয় অনুযায়ী দায়িত্বে থাকা মানুষ (যেমন যাঁরা প্রোডাকশন সামলান) আর রেকর্ডের নিজের মানুষ (যেমন যিনি অর্ডার দিয়েছেন, বা কাজের কর্মী)। বিষয় অনুযায়ী দায়িত্বের টিকের নাম: “People who manage production” (প্রোডাকশনের সময়সীমা), “People who buy materials” (মাল ইন-হাউস), “People who take sales orders” (শিপমেন্ট) বা “People who see the licences” (লাইসেন্স ও নিবন্ধন নবায়ন) বা “People who see every lead” (লিডের পরের কাজ, “Lead follow-ups”; লিডের নিজের মানুষ সবসময় পান)।",
         },
         {
           label: "Also tell (optional)",

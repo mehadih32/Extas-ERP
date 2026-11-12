@@ -22,6 +22,7 @@ export const AUTO_TYPES = [
   "SHIPMENT",
   "COMPLIANCE_EXPIRY",
   "TASK_DUE",
+  "LEAD_FOLLOW_UP",
 ] as const satisfies readonly ReminderType[];
 
 export type AutoType = (typeof AUTO_TYPES)[number];
@@ -88,6 +89,15 @@ export const DEFAULT_RULES: Record<AutoType, Defaults> = {
     notifyManagers: false,
     notifyOwner: true,
   },
+  // A lead's next step: its owner hears a day before, on the day, then every 2 days late.
+  LEAD_FOLLOW_UP: {
+    isActive: true,
+    daysBefore: [1, 0],
+    overdueEveryDays: 2,
+    sendTime: "09:00",
+    notifyManagers: false,
+    notifyOwner: true,
+  },
 };
 
 export const RULE_INFO: Record<
@@ -123,6 +133,12 @@ export const RULE_INFO: Record<
     managers: [],
     owner: "the task's assignee and who created it",
     date: "the task's due date, until it is done",
+  },
+  LEAD_FOLLOW_UP: {
+    label: "Lead follow-ups",
+    managers: ["leads.all"],
+    owner: "who follows the lead up (or who added it)",
+    date: "a lead's next step, while the lead is open",
   },
 };
 

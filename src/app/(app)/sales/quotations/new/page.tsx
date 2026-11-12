@@ -4,14 +4,20 @@ import { SectionError } from "@/components/dashboard/section-error";
 import { SalesNoAccess } from "@/components/sales/no-access";
 import { QuotationForm } from "@/components/sales/quotation-form";
 import { BackLink } from "@/components/settings/back-link";
+import { getQuotationBuyerAction } from "@/server/actions/leads.actions";
 import { getQuotationFormAction } from "@/server/actions/sales.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
 
 export const metadata: Metadata = { title: "New quotation" };
 
 /** A new quotation: for sales.quotation.manage, the permission createQuotationAction checks. */
-export default async function NewQuotationPage() {
+export default async function NewQuotationPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+} = {}) {
   await requireCompanyPage();
+  const { buyer } = (await searchParams) ?? {};
   const result = await getQuotationFormAction();
   if (!result.ok) {
     if (result.error.code === "FORBIDDEN") {
@@ -26,6 +32,10 @@ export default async function NewQuotationPage() {
     );
   }
 
+  // Started for one buyer (a lead just made a buyer): that buyer is picked already.
+  const picked = typeof buyer === "string" && buyer ? await getQuotationBuyerAction(buyer) : null;
+  const initialBuyer = picked?.ok ? picked.data : null;
+
   return (
     <div className="grid gap-6">
       <BackLink href="/sales/quotations">All quotations</BackLink>
@@ -36,7 +46,7 @@ export default async function NewQuotationPage() {
           becomes a proforma invoice that asks for the advance.
         </p>
       </div>
-      <QuotationForm form={result.data} />
+      <QuotationForm form={result.data} initialBuyer={initialBuyer} />
     </div>
   );
 }

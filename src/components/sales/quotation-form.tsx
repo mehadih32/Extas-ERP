@@ -107,11 +107,18 @@ function Section({
  * new quotations and for editing a draft or sent one; both need
  * sales.quotation.manage, as the quotation actions check.
  */
-export function QuotationForm({ form: data }: { form: QuotationFormData }) {
+export function QuotationForm({
+  form: data,
+  initialBuyer = null,
+}: {
+  form: QuotationFormData;
+  /** A new quotation started for a buyer (a lead just made a buyer). */
+  initialBuyer?: Buyer | null;
+}) {
   const router = useRouter();
   const editing = data.quotation;
   const currency = data.currency;
-  const [buyer, setBuyer] = useState<Buyer | null>(editing?.buyer ?? null);
+  const [buyer, setBuyer] = useState<Buyer | null>(editing?.buyer ?? initialBuyer);
   const [items, setItems] = useState<ItemDraft[]>(() =>
     editing
       ? editing.items.map((i, index) => ({

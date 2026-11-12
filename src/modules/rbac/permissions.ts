@@ -87,6 +87,35 @@ export const PERMISSIONS = [
     module: "WHOLESALE",
     description: "Run dormant buyer re-engagement campaigns",
   },
+  // Leads: companies that are not buyers yet (Sales > Leads)
+  {
+    key: "leads.view",
+    module: "SALES",
+    description: "See leads given to you and leads not given to anyone yet",
+  },
+  { key: "leads.all", module: "SALES", description: "See every lead, whoever follows it up" },
+  {
+    key: "leads.manage",
+    module: "SALES",
+    description: "Add and edit leads, their contacts, history, samples and next steps",
+  },
+  { key: "leads.assign", module: "SALES", description: "Give leads to other people" },
+  {
+    key: "leads.convert",
+    module: "SALES",
+    description: "Make a lead a buyer (also needs adding buyers)",
+  },
+  { key: "leads.export", module: "SALES", description: "Download the lead list (logged)" },
+  {
+    key: "leads.settings",
+    module: "SALES",
+    description: "Set lead sources and the lead check rules",
+  },
+  {
+    key: "leads.erase",
+    module: "SALES",
+    description: "Erase a lead contact's personal data (needs the PIN)",
+  },
   // Inventory
   { key: "inventory.view", module: "INVENTORY", description: "View stock and the product matrix" },
   {
@@ -389,6 +418,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "sales.quotation.manage",
     "sales.order.create",
     "sales.campaigns.manage",
+    "leads.view",
+    "leads.manage",
+    "leads.convert",
     "inventory.view",
     "parties.view",
     "parties.manage",

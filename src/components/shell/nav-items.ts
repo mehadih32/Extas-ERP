@@ -125,7 +125,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     href: "/sales",
     label: "Sales",
     icon: ReceiptTextIcon,
-    anyOf: ["sales.view"],
+    anyOf: ["sales.view", "leads.view", "leads.all"],
   },
   {
     // The production overview, projects, factory deliveries, supplier bills,

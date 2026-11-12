@@ -256,6 +256,14 @@ model Company {
   loginBlocks            LoginBlock[]
   serverErrors           ServerError[]
   usageCounts            UsageCount[]
+  leads                  Lead[]
+  leadContacts           LeadContact[]
+  leadActivities         LeadActivity[]
+  leadSamples            LeadSample[]
+  leadFiles              LeadFile[]
+  leadSources            LeadSource[]
+  leadSettings           LeadSettings?
+  leadSuppressions       LeadSuppression[]
 }
 
 /// A person who can log in. Global across companies.
@@ -394,6 +402,7 @@ model User {
   aiStaffUpdates      AiStaffUpdate[]        @relation("AiStaffUpdateBy")
   serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
   bugGuardEvents      BugGuardEvent[]        @relation("BugGuardEventBy")
+  leadsOwned          Lead[]                 @relation("LeadOwner")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -597,6 +606,7 @@ model FileAsset {
   logoMachineFiles    TechPackLogo[]           @relation("TechPackLogoMachineFile")
   logoSewOuts         TechPackLogo[]           @relation("TechPackLogoSewOut")
   labDipReports       TechPackColour[]         @relation("TechPackColourReport")
+  leadFiles           LeadFile[]
 
   @@index([companyId])
 }
@@ -1466,6 +1476,8 @@ model Party {
   projectSettlements   ProjectSettlement[]
   aiOrderRuns          AiOrderRun[]         @relation("AiOrderRunBuyer")
   techPacks            TechPack[]           @relation("TechPackBuyer")
+  /// The lead it was made from ("Make buyer"), with the lead's whole history.
+  fromLead             Lead?                @relation("LeadParty")
 
   @@unique([companyId, code])
   @@unique([companyId, systemRole])
@@ -6080,6 +6092,7 @@ enum ReminderType {
   PAYMENT_DUE
   INSTALLMENT_DUE
   CUSTOM
+  LEAD_FOLLOW_UP
 }
 
 enum ReminderStatus {
@@ -8057,4 +8070,311 @@ model StyleSizeChart {
   style   Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
 
   @@index([companyId, updatedAt])
+}
+
+// =============================================================================
+// Leads: companies that are not buyers yet (Sales > Leads, phase 1: no AI, the
+// ERP sends nothing itself). A lead becomes a buyer at its first quotation or by
+// "Make buyer", keeping its whole history.
+// =============================================================================
+
+/// Where a lead stands on its way to an order.
+enum LeadStage {
+  NEW
+  CONTACTED
+  IN_TALKS
+  SAMPLING
+  QUOTED
+  WON
+  LOST
+  NURTURE
+}
+
+/// What kind of company the lead is.
+enum LeadCategory {
+  BRAND
+  IMPORTER
+  WHOLESALER
+  SOURCING_AGENT
+  RETAIL_CHAIN
+  CORPORATE_UNIFORM
+  PROMOTIONAL
+  OTHER
+}
+
+/// Where leads come from (each company names its own sources, of these kinds).
+enum LeadSourceKind {
+  TRADE_FAIR
+  REFERRAL
+  SHIPMENT_DATA
+  LINKEDIN
+  WEBSITE
+  MARKETPLACE
+  COLD_RESEARCH
+  EXISTING_NETWORK
+  OTHER
+}
+
+/// One line of a lead's history. Lines are only ever added (a correction is a new note).
+enum LeadActivityKind {
+  NOTE
+  CALL
+  MEETING
+  FAIR_MEETING
+  EMAIL_OUT
+  EMAIL_IN
+  WHATSAPP
+  SAMPLE
+  STAGE
+  ASSIGN
+  NEXT_STEP
+  CONTACT
+  FILE
+  CONVERT
+  ERASE
+  EDIT
+}
+
+/// The kind of the next thing to do with a lead.
+enum LeadNextKind {
+  EMAIL
+  CALL
+  MEETING
+  SAMPLE
+  QUOTE
+  OTHER
+}
+
+/// A sample sent to a lead, on its way to a yes or a no.
+enum LeadSampleStatus {
+  REQUESTED
+  IN_MAKING
+  DISPATCHED
+  FEEDBACK
+  APPROVED
+  REJECTED
+}
+
+/// What a "Do not contact" entry blocks: one email address, a whole email domain, or a phone.
+enum LeadSuppressionKind {
+  EMAIL
+  DOMAIN
+  PHONE
+}
+
+/// Why it is on the "Do not contact" list.
+enum LeadSuppressionReason {
+  ASKED
+  ERASED
+  OWNER
+}
+
+/// A company that is not a buyer yet. Never deleted: archived instead.
+model Lead {
+  id             String        @id @default(cuid())
+  companyId      String
+  /// LD-0001, per company.
+  number         String
+  name           String
+  website        String?
+  /// The website's domain, lower case without www (duplicate check).
+  websiteDomain  String?
+  country        String?
+  city           String?
+  category       LeadCategory  @default(OTHER)
+  /// What they want: "Polo", "T-shirt"... (the lead check reads them).
+  products       String[]      @default([])
+  /// Pieces per style they usually order (the lead check's quantity).
+  piecesPerStyle Int?
+  /// The price per piece they talk about, in the company's money (the lead check's price).
+  targetPrice    Decimal?      @db.Decimal(14, 2)
+  /// What a first year with them could be worth, in the company's money (reports).
+  expectedValue  Decimal?      @db.Decimal(14, 2)
+  /// How they would pay, when known (the lead check's payment risk).
+  paymentTerms   TradePayment?
+  stage          LeadStage     @default(NEW)
+  stageChangedAt DateTime      @default(now())
+  /// Who follows it up; null = not given to anyone yet (everyone with Leads sees it).
+  ownerUserId    String?
+  sourceId       String?
+  /// "Met Anna at stand B12", "referred by Rahim of XYZ Knit".
+  sourceNote     String?
+  nextActionOn   DateTime?     @db.Date
+  nextActionKind LeadNextKind?
+  nextActionNote String?
+  lostReason     String?
+  wonAt          DateTime?
+  lostAt         DateTime?
+  /// The buyer it became ("Make buyer", or at its first quotation).
+  partyId        String?       @unique
+  convertedAt    DateTime?
+  convertedById  String?
+  /// Nobody at this lead is to be contacted (the email and WhatsApp buttons stop).
+  doNotContact   Boolean       @default(false)
+  lastActivityAt DateTime      @default(now())
+  archivedAt     DateTime?
+  createdById    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  owner      User?          @relation("LeadOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  source     LeadSource?    @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  party      Party?         @relation("LeadParty", fields: [partyId], references: [id], onDelete: SetNull)
+  contacts   LeadContact[]
+  activities LeadActivity[]
+  samples    LeadSample[]
+  files      LeadFile[]
+
+  @@unique([companyId, number])
+  @@index([companyId, stage, nextActionOn])
+  @@index([companyId, ownerUserId])
+  @@index([companyId, websiteDomain])
+}
+
+/// A person at a lead. Erasing their personal data blanks these fields for good.
+model LeadContact {
+  id              String    @id @default(cuid())
+  companyId       String
+  leadId          String
+  name            String
+  jobTitle        String?
+  email           String?
+  /// The email's domain, lower case (duplicate check; free-mail domains are not compared).
+  emailDomain     String?
+  phone           String?
+  whatsapp        String?
+  isPrimary       Boolean   @default(false)
+  isDecisionMaker Boolean   @default(false)
+  doNotContact    Boolean   @default(false)
+  /// When their personal data was erased (name, email and phones blanked).
+  erasedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead       Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  activities LeadActivity[]
+
+  @@index([companyId, email])
+  @@index([companyId, emailDomain])
+  @@index([leadId])
+}
+
+/// One line of a lead's history: added only, never edited or deleted.
+model LeadActivity {
+  id         String           @id @default(cuid())
+  companyId  String
+  leadId     String
+  contactId  String?
+  kind       LeadActivityKind
+  occurredAt DateTime         @default(now())
+  summary    String
+  body       String?
+  fromStage  LeadStage?
+  toStage    LeadStage?
+  userId     String?
+  createdAt  DateTime         @default(now())
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact LeadContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([leadId, occurredAt])
+  @@index([companyId, kind, occurredAt])
+}
+
+/// A sample sent to a lead (no money: courier or making costs go through Expenses).
+model LeadSample {
+  id          String           @id @default(cuid())
+  companyId   String
+  leadId      String
+  description String
+  quantity    Int?
+  status      LeadSampleStatus @default(REQUESTED)
+  courier     String?
+  trackingNo  String?
+  sentOn      DateTime?        @db.Date
+  feedback    String?
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+/// A file kept on a lead (their catalogue, a business card photo, a price list).
+model LeadFile {
+  id        String   @id @default(cuid())
+  companyId String
+  leadId    String
+  fileId    String
+  addedById String?
+  createdAt DateTime @default(now())
+
+  company Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  file    FileAsset @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+/// Where leads come from: a fair ("Texworld Paris Feb 2027"), a referral, LinkedIn...
+model LeadSource {
+  id        String         @id @default(cuid())
+  companyId String
+  name      String
+  kind      LeadSourceKind @default(OTHER)
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  leads   Lead[]
+
+  @@unique([companyId, name])
+}
+
+/// The lead check card's rules, set once by the owner.
+model LeadSettings {
+  id              String   @id @default(cuid())
+  companyId       String   @unique
+  /// Countries the company wants buyers from (green).
+  targetCountries String[] @default([])
+  /// Countries with payment or other risk (red).
+  riskyCountries  String[] @default([])
+  /// Products the company makes well ("Polo", "T-shirt").
+  productFocus    String[] @default([])
+  /// The fewest pieces per style worth taking.
+  minPieces       Int?
+  /// The price range per piece the company works in, in its own money.
+  priceMin        Decimal? @db.Decimal(14, 2)
+  priceMax        Decimal? @db.Decimal(14, 2)
+  /// Days to the next step when a new lead is added without one.
+  followUpDays    Int      @default(7)
+  updatedById     String?
+  updatedAt       DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// The "Do not contact" list: kept as a hash, so it still works after the person's data is erased.
+model LeadSuppression {
+  id          String                @id @default(cuid())
+  companyId   String
+  kind        LeadSuppressionKind
+  /// SHA-256 of the cleaned email, domain or phone digits.
+  valueHash   String
+  /// "j***@brand.com", "+44 *** 789": enough to recognise, never the whole value.
+  valueHint   String
+  reason      LeadSuppressionReason
+  note        String?
+  createdById String?
+  createdAt   DateTime              @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, kind, valueHash])
 }

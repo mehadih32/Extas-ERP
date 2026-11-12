@@ -209,6 +209,16 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-11-12 (leads, phase 1): Sales has a "Leads" tab for companies that are not buyers yet; phase 1 has no AI
+  and the ERP sends nothing itself (email and WhatsApp open in the person's own app, and "I sent it" logs it).
+  Staff see their own leads and those not given to anyone; only "See every lead" (the owner) sees all, and only the
+  owner (or whoever is given "Download the lead list") exports. A lead becomes a buyer with "Make buyer" or at its
+  first quotation, which moves it to Quoted; Won and Lost are set by hand, Lost always with a reason. A lead's
+  history is append-only. "Erase personal data" (only with "Erase a contact's personal data" and the PIN) blanks
+  one contact's name, job title, email and phones for good and keeps only a hashed "Do not contact" marker, so
+  nobody contacts them again; the lead, its history, money, stock and posted documents are never touched. Nothing
+  is ever taken off "Do not contact".
+
 - 2026-11-11 (B-grade lines for the shops): a shop order line may be A-grade or B-grade. A B line takes the
   factory's own B-grade stock at the B-grade cost; an approved returned B piece goes back to B-grade stock. A
   B-grade piece costs the shop the style's own "B-grade price" (set on the product, with the PIN), or, without one,

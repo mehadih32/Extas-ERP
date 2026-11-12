@@ -595,6 +595,8 @@ function canSee(ctx: CompanyContext, type: AutoType): boolean {
       return ctx.can("compliance.view") || ctx.can("compliance.manage");
     case "TASK_DUE":
       return true;
+    case "LEAD_FOLLOW_UP":
+      return ctx.can("leads.view") || ctx.can("leads.all");
   }
 }
 
@@ -631,6 +633,10 @@ export async function upcoming(ctx: CompanyContext, raw: unknown = {}, now: Date
           t.ownerUserIds.includes(ctx.user.id) ||
           (me !== null && t.ownerEmployeeIds.includes(me.id)),
       );
+    }
+    // Leads: your own and the ones not given to anyone, unless you see every lead.
+    if (type === "LEAD_FOLLOW_UP" && !ctx.can("leads.all")) {
+      found = found.filter((l) => l.openToAll || l.ownerUserIds.includes(ctx.user.id));
     }
     for (const item of found) {
       const daysLeft = daysBetween(today, item.dueDay);

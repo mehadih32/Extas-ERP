@@ -74,6 +74,7 @@ export function Sidebar({
   companies,
   activeCompany,
   unread,
+  canSearch,
   initialMode,
 }: {
   permissions: string[];
@@ -81,6 +82,8 @@ export function Sidebar({
   companies: ShellCompany[];
   activeCompany: { id: string; name: string };
   unread: number;
+  /** Whether the person may search any kind of record (the Search line shows then). */
+  canSearch: boolean;
   /** The choice saved on this device (SIDEBAR_COOKIE), read by the server. */
   initialMode: SidebarMode;
 }) {
@@ -133,9 +136,11 @@ export function Sidebar({
         />
       </div>
 
-      <div className="shrink-0 px-3 pb-3" title={wide ? undefined : "Search"}>
-        <SearchButton variant="sidebar" labelClassName={WIDE_ONLY[mode]} />
-      </div>
+      {canSearch && (
+        <div className="shrink-0 px-3 pb-3" title={wide ? undefined : "Search"}>
+          <SearchButton variant="sidebar" labelClassName={WIDE_ONLY[mode]} />
+        </div>
+      )}
 
       <nav aria-label="Main" data-layout-nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         <ul className="grid gap-0.5">

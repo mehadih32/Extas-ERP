@@ -21,6 +21,7 @@ export function TopBar({
   activeCompany,
   permissions,
   unread,
+  canSearch,
   className,
 }: {
   user: ShellUser;
@@ -29,6 +30,8 @@ export function TopBar({
   permissions: string[];
   /** Unread inbox messages. */
   unread: number;
+  /** Whether the person may search any kind of record (the Search button shows then). */
+  canSearch: boolean;
   /** Extra classes (the modern look shows the bar on phones only, "md:hidden"). */
   className?: string;
 }) {
@@ -45,8 +48,8 @@ export function TopBar({
           <Wordmark />
         </Link>
         <MainNav permissions={permissions} className="hidden md:flex" />
-        <div className="ml-auto flex min-w-0 items-center gap-3">
-          <SearchButton variant="bar" />
+        <div className="ml-auto flex min-w-0 items-center gap-2 lg:gap-3">
+          {canSearch && <SearchButton variant="bar" />}
           <CompanySwitcher companies={companies} activeCompany={activeCompany} />
           <InboxBell unread={unread} />
           <UserMenu

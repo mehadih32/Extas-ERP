@@ -16,6 +16,7 @@ import { ROUTES } from "@/lib/routes";
 import { currentInterfaceStyle } from "@/modules/appearance/appearance.service";
 import { getCurrentSession } from "@/modules/auth/context";
 import { getMe } from "@/modules/auth/me.service";
+import { searchableKinds } from "@/modules/search/search.service";
 import { unreadNotificationsAction } from "@/server/actions/reminders.actions";
 
 /**
@@ -48,6 +49,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const companies = me.companies.map((c) => ({ id: c.id, name: c.name, roleName: c.roleName }));
   const activeCompany = { id: me.activeCompany.id, name: me.activeCompany.name };
   const modern = (await currentInterfaceStyle()) === "MODERN";
+  // The search (button, window and shortcuts) only for people who may open some kind of record.
+  const canSearch =
+    searchableKinds((key) => (me.permissions as readonly string[]).includes(key)).length > 0;
   // Every section this person may open: the layout checks (scripts/full-check/layout.mjs)
   // check each can be reached at every width, in a menu marked data-layout-nav.
   const menu = visibleNavItems(me.permissions)
@@ -68,7 +72,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       <BottomNav permissions={me.permissions} user={user} companyName={activeCompany.name} />
       {/* The one search window ("/" or Ctrl+K, or a Search button in the bar or side menu). */}
-      <GlobalSearch />
+      {canSearch && <GlobalSearch />}
       {dutyTracker}
       <InstallApp />
       {/* How the ERP is used, for Bug Guard; the Full check's own visits are not counted. */}
@@ -88,6 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           companies={companies}
           activeCompany={activeCompany}
           unread={unread}
+          canSearch={canSearch}
           initialMode={sidebar}
         />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -97,6 +102,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             activeCompany={activeCompany}
             permissions={me.permissions}
             unread={unread}
+            canSearch={canSearch}
             className="md:hidden"
           />
           <main
@@ -120,6 +126,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         activeCompany={activeCompany}
         permissions={me.permissions}
         unread={unread}
+        canSearch={canSearch}
       />
       <main
         id="main"

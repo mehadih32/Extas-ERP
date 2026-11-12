@@ -26,6 +26,7 @@ import { prisma } from "@/lib/prisma";
 import type { CompanyContext } from "@/modules/auth/context";
 import { DEFAULT_ROLE_PERMISSIONS } from "@/modules/rbac/permissions";
 import * as links from "@/modules/sales/order-status.service";
+import * as orders from "@/modules/sales/order.service";
 
 import { addToCompany, contextFor, makeCompany, makeUser, resetDb } from "./helpers";
 
@@ -354,6 +355,33 @@ run("Share order status: a read-only link for the buyer", () => {
     // ...and its own order's link shows its own order only.
     const theirs = await links.makeStatusLink(ownerB, b.order.id, {});
     expect((await links.readOrderStatus(tokenOf(theirs.path)))!.order.number).toBe("SO-B-0001");
+  });
+
+  it("notes when the buyer last opened it, and stops the links when the order is cancelled", async () => {
+    const { path, id } = await links.makeStatusLink(owner, a.order.id, {});
+    expect((await links.listStatusLinks(owner, a.order.id))[0]!.lastOpenedOn).toBeNull();
+    await links.readOrderStatus(tokenOf(path));
+    const opened = await prisma.orderStatusLink.findUniqueOrThrow({ where: { id } });
+    expect(opened.lastOpenedAt).not.toBeNull();
+    expect((await links.listStatusLinks(owner, a.order.id))[0]!.lastOpenedOn).toMatch(
+      /^\d{4}-\d{2}-\d{2}$/,
+    );
+
+    // Cancelling an order stops its working links, in the activity log.
+    const second = await prisma.salesOrder.findFirstOrThrow({ where: { number: "SO-A-0002" } });
+    const first = await links.makeStatusLink(owner, second.id, {});
+    const other = await links.makeStatusLink(owner, second.id, { days: 7 });
+    await orders.cancelOrder(owner, second.id, { reason: "Buyer withdrew the order" });
+    const rows = await prisma.orderStatusLink.findMany({ where: { orderId: second.id } });
+    expect(rows.map((r) => r.stoppedById)).toEqual([owner.user.id, owner.user.id]);
+    expect(await links.readOrderStatus(tokenOf(first.path))).toBeNull();
+    expect(await links.readOrderStatus(tokenOf(other.path))).toBeNull();
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { entityId: second.id, summary: { contains: "status link" } },
+    });
+    expect(audit.summary).toContain("Stopped 2 read-only status links of order SO-A-0002");
+    // The other order's link still works.
+    expect(await links.readOrderStatus(tokenOf(path))).not.toBeNull();
   });
 
   it("needs sales.order.share (the owner's by default), and refuses a cancelled order", async () => {

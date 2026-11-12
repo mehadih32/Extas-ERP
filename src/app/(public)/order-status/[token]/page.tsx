@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import { formatDay } from "@/lib/display";
 import { cn } from "@/lib/utils";
@@ -10,12 +11,34 @@ import {
 } from "@/modules/sales/order-status.service";
 
 export const dynamic = "force-dynamic";
-// The link is the key: never sent on to another site, never kept by a search engine.
-export const metadata: Metadata = {
-  title: { absolute: "Order status" },
-  robots: { index: false, follow: false },
-  referrer: "no-referrer",
-};
+
+/** One read a request, shared by the page and its tab title. */
+const read = cache(readOrderStatus);
+
+/** A blank tab icon: the buyer's page carries the company's name, never the app's mark. */
+const BLANK_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+
+/**
+ * The tab title and the name a phone gives the page are the company's own,
+ * not the app's (the root layout's "Extas ERP"). The link is the key: never
+ * sent on to another site, never kept by a search engine.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const view = await read((await params).token);
+  const name = view?.company.name ?? "Order status";
+  return {
+    title: { absolute: view ? `${view.order.number} · ${name}` : "Order status" },
+    applicationName: name,
+    appleWebApp: { capable: false, title: name },
+    icons: { icon: BLANK_ICON, apple: BLANK_ICON },
+    robots: { index: false, follow: false },
+    referrer: "no-referrer",
+  };
+}
 
 const count = (value: number) => value.toLocaleString("en-US");
 
@@ -105,7 +128,7 @@ function StyleCard({ style }: { style: StyleProgress }) {
  */
 export default async function OrderStatusPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const view = await readOrderStatus(token);
+  const view = await read(token);
   if (!view) notFound();
   const { company, order, styles } = view;
 

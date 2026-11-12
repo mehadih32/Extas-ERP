@@ -10,6 +10,7 @@ CREATE TABLE "OrderStatusLink" (
     "expiresAt" TIMESTAMP(3),
     "stoppedAt" TIMESTAMP(3),
     "stoppedById" TEXT,
+    "lastOpenedAt" TIMESTAMP(3),
     "createdById" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

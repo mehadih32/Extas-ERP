@@ -1728,17 +1728,19 @@ model SalesOrderItem {
 /// once); it may end on a day and can be stopped at any time. Nothing is sent by itself:
 /// the person who made it copies and shares it.
 model OrderStatusLink {
-  id          String    @id @default(cuid())
-  companyId   String
-  orderId     String
+  id           String    @id @default(cuid())
+  companyId    String
+  orderId      String
   /// SHA-256 (hex) of the token in the link; the token itself is never stored.
-  tokenHash   String    @unique
+  tokenHash    String    @unique
   /// The link stops working after this moment. Null: until it is stopped.
-  expiresAt   DateTime?
-  stoppedAt   DateTime?
-  stoppedById String?
-  createdById String?
-  createdAt   DateTime  @default(now())
+  expiresAt    DateTime?
+  stoppedAt    DateTime?
+  stoppedById  String?
+  /// When the buyer last opened the page (kept to the minute; never on a Full check).
+  lastOpenedAt DateTime?
+  createdById  String?
+  createdAt    DateTime  @default(now())
 
   company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   order     SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)

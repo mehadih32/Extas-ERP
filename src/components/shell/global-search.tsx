@@ -22,7 +22,7 @@ const OPEN_EVENT = "extras:open-search";
 /** The fewest letters searched for (search.service.ts MIN_QUERY). */
 const MIN_QUERY = 2;
 /** How long typing pauses before the search runs. */
-const PAUSE_MS = 200;
+const PAUSE_MS = 300;
 
 export function openGlobalSearch() {
   window.dispatchEvent(new Event(OPEN_EVENT));
@@ -37,6 +37,13 @@ function typingIn(target: EventTarget | null) {
     target.tagName === "TEXTAREA" ||
     target.tagName === "SELECT"
   );
+}
+
+/** Whether a dialog is open (or the key was pressed inside one): the shortcuts then stay away. */
+function dialogOpen(target: EventTarget | null) {
+  if (target instanceof Element && target.closest('[role="dialog"],[role="alertdialog"]'))
+    return true;
+  return document.querySelector('[role="dialog"],[role="alertdialog"]') !== null;
 }
 
 type State =
@@ -62,6 +69,7 @@ export function GlobalSearch() {
   useEffect(() => {
     const show = () => setOpen(true);
     const onKey = (event: KeyboardEvent) => {
+      if (dialogOpen(event.target)) return;
       if (event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey) && !event.altKey) {
         event.preventDefault();
         setOpen(true);
@@ -263,8 +271,9 @@ export function GlobalSearch() {
 }
 
 /**
- * The button that opens the search: an icon in the top bar (with the word and
- * its shortcut on large screens), or a menu line in the modern side menu.
+ * The button that opens the search: an icon in the top bar at every width (the
+ * bar's sections need the room), or a menu line with its shortcut in the modern
+ * side menu.
  */
 export function SearchButton({
   variant,
@@ -301,12 +310,11 @@ export function SearchButton({
         aria-label="Search"
         aria-keyshortcuts="Control+K /"
         title="Search (Ctrl+K or /)"
-        className="inline-flex size-9 cursor-pointer items-center justify-center gap-2 rounded-md text-primary-foreground/85 transition-colors outline-none hover:bg-primary-foreground/10 hover:text-primary-foreground focus-visible:ring-[3px] focus-visible:ring-primary-foreground/30 2xl:w-52 2xl:justify-start 2xl:bg-primary-foreground/10 2xl:px-3"
+        className="inline-flex size-9 cursor-pointer items-center justify-center rounded-md text-primary-foreground/85 transition-colors outline-none hover:bg-primary-foreground/10 hover:text-primary-foreground focus-visible:ring-[3px] focus-visible:ring-primary-foreground/30"
       >
         <SearchIcon className="size-[1.125rem] shrink-0" aria-hidden />
-        <span className="hidden flex-1 text-left text-sm 2xl:inline">Search</span>
+        <span className="sr-only">Search</span>
       </button>
-      <Shortcut className="hidden 2xl:inline" />
     </span>
   );
 }

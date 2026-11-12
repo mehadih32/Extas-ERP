@@ -165,6 +165,11 @@ export function ShareOrderStatus({
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
+                <p className="text-[0.8125rem] text-muted-foreground">
+                  {link.lastOpenedOn
+                    ? `Last opened ${formatDay(link.lastOpenedOn)}`
+                    : "Not opened yet"}
+                </p>
               </div>
               {link.state === "ACTIVE" && (
                 <Button type="button" variant="outline" size="sm" onClick={() => setStopping(link)}>

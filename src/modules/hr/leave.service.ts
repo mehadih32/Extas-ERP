@@ -7,6 +7,7 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
 import { assertAllowed } from "@/lib/verdict";
 import { monthsBetween } from "@/modules/accounts/periods";
+import { notifyApprovers } from "@/modules/ai/bot/approvals";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import {
@@ -466,6 +467,7 @@ export async function createLeave(ctx: CompanyContext, raw: unknown, meta?: Requ
     );
     return request.id;
   }, TX_OPTIONS);
+  if (!input.approve) await notifyApprovers(ctx.company.id, "leave", id);
   return getLeaveRequest(ctx, id);
 }
 
@@ -800,6 +802,7 @@ export async function requestMyLeave(ctx: CompanyContext, raw: unknown, meta?: R
     );
     return request.id;
   }, TX_OPTIONS);
+  await notifyApprovers(ctx.company.id, "leave", id);
   return getLeaveRequest(ctx, id);
 }
 

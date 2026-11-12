@@ -28,6 +28,14 @@ import {
   checkBotPin,
   PIN_CHECKED,
 } from "../settings.service";
+import {
+  companyOfApproval,
+  factsVersion,
+  flowOf,
+  isReasonWait,
+  type ReasonWait,
+  renderApproval,
+} from "./approvals";
 import { logBot, senderFor } from "./bot.service";
 import { botOwner } from "./owner";
 import type { Incoming } from "./channel";
@@ -93,7 +101,10 @@ type PinChecks = Record<string, { right: boolean; problem?: string; wrongToday?:
 async function checkPinNow(mine: AiBotLink[], m: Incoming, now: Date): Promise<PinChecks | null> {
   const text = m.text?.trim() ?? "";
   if (!text || m.callback || STOP_WORDS.test(text)) return null;
-  const waiting = mine.filter((l) => l.pending && l.pendingUntil && l.pendingUntil > now);
+  // A request for a reason (Reject on an approval) takes words, never a PIN.
+  const waiting = mine.filter(
+    (l) => l.pending && !isReasonWait(l.pending) && l.pendingUntil && l.pendingUntil > now,
+  );
   if (waiting.length === 0) return null;
   const checks: PinChecks = {};
   for (const link of waiting) {
@@ -634,7 +645,9 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
   const now = new Date();
   if (
     (pin !== null || text === PIN_TEXT) &&
-    !mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil > now)
+    !mine.some(
+      (l) => l.pending && !isReasonWait(l.pending) && l.pendingUntil && l.pendingUntil > now,
+    )
   ) {
     return pinNotWaited(mine, m, now);
   }
@@ -660,9 +673,39 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
   }
   const sender = senderFor(link);
 
+  // The reason asked for after Reject on an approval: the person's own words.
+  if (
+    link.pendingUntil &&
+    link.pendingUntil > new Date() &&
+    isReasonWait(link.pending) &&
+    text &&
+    text !== PIN_TEXT
+  ) {
+    await prisma.aiBotLink.update({
+      where: { id: link.id },
+      data: { pending: Prisma.DbNull, pendingUntil: null },
+    });
+    if (STOP_WORDS.test(text)) return say(link, m.chatId, words("Stopped: nothing changed."));
+    const waiting = link.pending as unknown as ReasonWait;
+    return decideApproval(
+      link,
+      ctx,
+      m.chatId,
+      { kind: "approval", ...waiting.reason, approve: false },
+      waiting.sourceId,
+      text,
+    );
+  }
+
   // A PIN asked for a moment ago (checked when it arrived): take it out of the
   // chat, and do what waited for it.
-  if (link.pendingUntil && link.pendingUntil > new Date() && link.pending && text) {
+  if (
+    link.pendingUntil &&
+    link.pendingUntil > new Date() &&
+    link.pending &&
+    !isReasonWait(link.pending) &&
+    text
+  ) {
     await prisma.aiBotLink.update({
       where: { id: link.id },
       data: { pending: Prisma.DbNull, pendingUntil: null },
@@ -786,6 +829,15 @@ async function storeOfPress(mine: AiBotLink[], press: ButtonPress) {
         select,
       });
       break;
+    case "approval": {
+      const companyId = await companyOfApproval(
+        press.what,
+        press.id,
+        mine.map((l) => l.companyId),
+      );
+      row = companyId ? { companyId } : null;
+      break;
+    }
     case "guard-run":
     case "unlock":
       row = mine.some((l) => l.companyId === press.companyId)
@@ -855,6 +907,8 @@ async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<strin
     }
     case "unlock":
       return "unlock your sign-in";
+    case "approval":
+      return press.approve ? flowOf(press.what).pinToApprove : null;
     case "guard-correction":
       return press.choice === "apply"
         ? "apply a data correction"
@@ -897,6 +951,10 @@ async function act(
   pin: typeof PIN_CHECKED | null,
 ) {
   const sender = senderFor(link);
+  // An approval decided elsewhere, changed, or no longer the person's to answer: said before any PIN.
+  if (press.kind === "approval" && (await approvalStopped(link, ctx, chatId, press, sourceId))) {
+    return;
+  }
   // Send sends only the draft as its message showed it: checked before the PIN
   // is asked and again after it (the draft may change in between).
   if (press.kind === "send" && !(await draftAsShown(ctx, press))) {
@@ -933,6 +991,8 @@ async function act(
       return say(link, chatId, words(`Send your PIN to ${why}. (Write "বাতিল" to stop.)`));
     }
   }
+  if (press.kind === "approval")
+    return decideApproval(link, ctx, chatId, press, sourceId, null, pin);
   const m = meta(link);
   let result: string;
   try {
@@ -996,6 +1056,131 @@ async function act(
   }
   await sender.clearButtons(chatId, sourceId);
   await say(link, chatId, words(result));
+}
+
+/**
+ * Whether an approval press stops here, and why (said in the chat): the item
+ * is gone, decided elsewhere ("Already decided by ..."), changed since its
+ * message showed it (shown again as it is now), or the person may no longer
+ * approve it.
+ */
+async function approvalStopped(
+  link: AiBotLink,
+  ctx: CompanyContext,
+  chatId: string,
+  press: Extract<ButtonPress, { kind: "approval" }>,
+  sourceId: string | null,
+): Promise<boolean> {
+  const sender = senderFor(link);
+  const flow = flowOf(press.what);
+  const facts = await flow.facts(link.companyId, press.id);
+  if (!facts) {
+    await sender.clearButtons(chatId, sourceId);
+    await say(link, chatId, words("This is not there any more."));
+    return true;
+  }
+  if (!facts.pending) {
+    await sender.clearButtons(chatId, sourceId);
+    await say(
+      link,
+      chatId,
+      words(
+        `Already decided by ${facts.decidedBy ?? "someone else"}: ${facts.title}. Nothing was done.`,
+      ),
+    );
+    return true;
+  }
+  if (factsVersion(facts) !== press.version) {
+    await sender.clearButtons(chatId, sourceId);
+    await say(
+      link,
+      chatId,
+      words(
+        `${facts.title} changed after that message showed it, so nothing was done. Here it is as it is now:`,
+      ),
+    );
+    await say(link, chatId, renderApproval(press.what, press.id, facts));
+    return true;
+  }
+  if (!ctx.can(flow.permission)) {
+    await say(
+      link,
+      chatId,
+      words(`Not done: you may no longer approve a ${flow.noun}. Ask the owner in the ERP.`),
+    );
+    return true;
+  }
+  return false;
+}
+
+/** How long the bot waits for the reason after Reject. */
+const REASON_MINUTES = 10;
+
+/**
+ * Approve or Reject pressed under an approval message (approvals.ts), or the
+ * reason written after Reject. Read again at every step: an item decided
+ * elsewhere answers who decided it; one whose facts changed after its message
+ * is shown again as it is now and nothing is done; the person's permission is
+ * the one they hold now (their context is read at the press). Approving money
+ * or prices waits for the PIN (act). The ERP's own service does the work, in
+ * the person's name, with its own checks.
+ */
+async function decideApproval(
+  link: AiBotLink,
+  ctx: CompanyContext,
+  chatId: string,
+  press: Extract<ButtonPress, { kind: "approval" }>,
+  sourceId: string | null,
+  reason: string | null,
+  pin: typeof PIN_CHECKED | null = null,
+) {
+  if (await approvalStopped(link, ctx, chatId, press, sourceId)) return;
+  const sender = senderFor(link);
+  const flow = flowOf(press.what);
+  const facts = (await flow.facts(link.companyId, press.id))!;
+  if (!press.approve && !flow.canReject) {
+    return say(link, chatId, words(`A ${flow.noun} is not rejected from the bot. Use the ERP.`));
+  }
+  // Reject: the reason first, from the next message.
+  if (!press.approve && reason === null) {
+    const wait: ReasonWait = {
+      reason: { what: press.what, id: press.id, version: press.version },
+      sourceId,
+    };
+    await prisma.aiBotLink.update({
+      where: { id: link.id },
+      data: {
+        pending: wait as unknown as Prisma.InputJsonObject,
+        pendingUntil: new Date(Date.now() + REASON_MINUTES * 60_000),
+      },
+    });
+    return say(
+      link,
+      chatId,
+      words(`Write why you reject ${facts.title}. (Write "বাতিল" to stop.)`),
+    );
+  }
+  // Approving money or prices: only after the PIN (pinNeeded asked for it in act).
+  if (press.approve && flow.pinToApprove && pin !== PIN_CHECKED) return;
+  const m = meta(link);
+  let result: string;
+  try {
+    result = press.approve
+      ? await flow.approve(ctx, press.id, m)
+      : await flow.reject!(ctx, press.id, reason!, m);
+  } catch (error) {
+    if (error instanceof AppError) return say(link, chatId, words(`Not done: ${error.message}`));
+    if (error instanceof ZodError) {
+      return say(
+        link,
+        chatId,
+        words("Not done: write a short reason (a few words) and try again."),
+      );
+    }
+    throw error;
+  }
+  await sender.clearButtons(chatId, sourceId);
+  return say(link, chatId, words(result));
 }
 
 /** A cap on what one stranger can make the log keep (the bot never answers them). */

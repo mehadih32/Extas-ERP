@@ -17,12 +17,14 @@ import { StatusBadge } from "@/components/sales/badges";
 import { Panel } from "@/components/sales/detail-bits";
 import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { BotScreen as Bot } from "@/modules/ai/bot/bot.service";
 import {
   removeBotAction,
   saveTelegramAction,
   saveWhatsAppAction,
+  setBotApprovalsAction,
   startLinkAction,
   testBotAction,
   unlinkBotAction,
@@ -225,6 +227,32 @@ export function BotScreen({ bot: b }: { bot: Bot }) {
                 write in AI Center &gt; Chat: the same commands, the same Control.
               </p>
               {linkPanel("TELEGRAM", b.telegram)}
+              <div className="grid gap-1 border-t pt-3">
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="bot-approvals"
+                    className="mt-0.5"
+                    checked={b.approvals.sendApprovals}
+                    disabled={pending}
+                    onCheckedChange={(checked) =>
+                      run(
+                        () => setBotApprovalsAction({ sendApprovals: checked === true }),
+                        checked === true
+                          ? "Approvals waiting for you now come to the bot."
+                          : "Approvals no longer come to the bot. They still wait for you in the ERP.",
+                      )
+                    }
+                  />
+                  <label htmlFor="bot-approvals" className="font-medium">
+                    Send me approvals on Telegram
+                  </label>
+                </div>
+                <p className="pl-6 text-[0.8125rem] text-muted-foreground">
+                  {b.approvals.kinds.length > 0
+                    ? `What waits for your approval (${b.approvals.kinds.join(", ")}) comes to the bot with Approve and Reject. Money and prices ask for your PIN.`
+                    : "Your role approves nothing the bot brings, so nothing comes."}
+                </p>
+              </div>
             </>
           ) : (
             <ol className="grid list-decimal gap-1 pl-5 text-muted-foreground">

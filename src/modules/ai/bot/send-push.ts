@@ -25,6 +25,7 @@ const appUrl = () => (process.env.APP_URL || "http://localhost:3000").replace(/\
  * tried again: everything it says is waiting in the ERP too.
  */
 export async function sendPush(companyId: string, push: QueuedPush) {
+  if (push.kind === "approval") return sendApproval(companyId, push);
   const found = await prisma.aiBotLink.findMany({
     where: {
       companyId,
@@ -52,12 +53,40 @@ export async function sendPush(companyId: string, push: QueuedPush) {
   }
 }
 
+/**
+ * An item waiting for approval, to each linked person who may approve it and
+ * wants approvals on the bot (approvals.ts), read now: one decided meanwhile
+ * is not sent.
+ */
+async function sendApproval(companyId: string, push: Extract<BotPush, { kind: "approval" }>) {
+  const { approverLinks, flowOf, renderApproval } = await import("./approvals");
+  const facts = await flowOf(push.what).facts(companyId, push.id);
+  if (!facts?.pending) return;
+  const out = renderApproval(push.what, push.id, facts);
+  for (const link of await approverLinks(companyId, push.what)) {
+    try {
+      await senderFor(link).send(link.chatId!, out);
+      await logBot(link, { direction: "OUT", chatId: link.chatId, text: out.text, status: "SENT" });
+    } catch (error) {
+      await logBot(link, {
+        direction: "OUT",
+        chatId: link.chatId,
+        text: out.text,
+        status: "FAILED",
+        error: error instanceof Error ? error.message : "Not sent",
+      });
+    }
+  }
+}
+
 async function render(
   ownerId: string | null,
   companyId: string,
   push: BotPush,
 ): Promise<BotOut | null> {
   switch (push.kind) {
+    case "approval":
+      return null;
     case "text":
       return { text: push.text, buttons: push.buttons ?? [] };
     case "permission": {

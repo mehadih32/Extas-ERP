@@ -14,6 +14,7 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
+import { notifyApprovers } from "@/modules/ai/bot/approvals";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import { isAiAddress } from "@/modules/ai/ai-address";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -958,7 +959,10 @@ export async function createBooking(
     return { id: booking.id, orderId };
   }, TX_OPTIONS);
   const intoStock = input.receiveNow ? await receiveInFull(ctx, saved.orderId, meta) : null;
-  return { ...(await getBooking(ctx, saved.id)), intoStock };
+  const made = await getBooking(ctx, saved.id);
+  // A new draft waits for approval: the approvers linked to the bot hear of it.
+  if (made.stage === "DRAFT") await notifyApprovers(ctx.company.id, "booking", saved.id);
+  return { ...made, intoStock };
 }
 
 /**
@@ -1069,6 +1073,7 @@ export async function updateBooking(
   const supplier = await assertPartyCanTransact(ctx, input.supplierId, "PURCHASE");
   const plan = current.order.batchId ? await batchMaterialPlan(ctx, current.order.batchId) : null;
   const { lines, collar } = await prepareLines(ctx, input);
+  let madeRevision = false;
   await runTransaction(async (tx) => {
     const { order } = await lockBooking(tx, ctx, bookingId);
     assertAllowed(canChangeOrderLines(orderState(order)));
@@ -1116,6 +1121,7 @@ export async function updateBooking(
     await tx.booking.update({ where: { id: bookingId }, data: bookingFields(input, collar) });
     await writeCollar(tx, bookingId, collar);
     const revised = await afterChange(tx, bookingId, before);
+    madeRevision = Boolean(revised);
     await auditInCompany(
       ctx,
       meta,
@@ -1131,6 +1137,8 @@ export async function updateBooking(
       tx,
     );
   }, TX_OPTIONS);
+  // A change after approval made a new revision: it waits for approval again.
+  if (madeRevision) await notifyApprovers(ctx.company.id, "booking", bookingId);
   return getBooking(ctx, bookingId);
 }
 
@@ -1155,6 +1163,7 @@ export async function updateBookingPaperwork(
   });
   if (!current) throw new AppError("NOT_FOUND", "Booking not found.");
   assertCanMake(ctx, current.source);
+  let madeRevision = false;
   await runTransaction(async (tx) => {
     const { order } = await lockBooking(tx, ctx, bookingId);
     assertAllowed(canChangeOrder(orderState(order)));
@@ -1188,6 +1197,7 @@ export async function updateBookingPaperwork(
       },
     });
     const revised = await afterChange(tx, bookingId, before);
+    madeRevision = Boolean(revised);
     await auditInCompany(
       ctx,
       meta,
@@ -1204,6 +1214,8 @@ export async function updateBookingPaperwork(
       tx,
     );
   }, TX_OPTIONS);
+  // A change after approval made a new revision: it waits for approval again.
+  if (madeRevision) await notifyApprovers(ctx.company.id, "booking", bookingId);
   return getBooking(ctx, bookingId);
 }
 
@@ -1455,6 +1467,7 @@ export async function attachBooking(
   assertCanAttach(ctx);
   const plan = await batchPlan(ctx, batchId);
   const rows = new Map(plan.materials.map((m) => [m.material.id, m]));
+  let madeRevision = false;
   const unmatched = await runTransaction(async (tx) => {
     const { order } = await lockBooking(tx, ctx, bookingId);
     await lockRow(tx, "ProductionBatch", plan.batch.id);
@@ -1487,6 +1500,7 @@ export async function attachBooking(
     }
     await tx.purchaseOrder.update({ where: { id: order.id }, data: { batchId: plan.batch.id } });
     const revised = await afterChange(tx, bookingId, before);
+    madeRevision = Boolean(revised);
     await auditInCompany(
       ctx,
       meta,
@@ -1506,6 +1520,8 @@ export async function attachBooking(
     );
     return missing;
   }, TX_OPTIONS);
+  // A change after approval made a new revision: it waits for approval again.
+  if (madeRevision) await notifyApprovers(ctx.company.id, "booking", bookingId);
   const booking = await getBooking(ctx, bookingId);
   return {
     booking,
@@ -1519,6 +1535,7 @@ export async function attachBooking(
 /** Takes a booking off its batch while nothing has arrived on it. */
 export async function detachBooking(ctx: CompanyContext, bookingId: string, meta?: RequestMeta) {
   assertCanAttach(ctx);
+  let madeRevision = false;
   await runTransaction(async (tx) => {
     const { order } = await lockBooking(tx, ctx, bookingId);
     if (!order.batchId) throw new AppError("CONFLICT", `${order.number} is not on a batch.`);
@@ -1538,6 +1555,7 @@ export async function detachBooking(ctx: CompanyContext, bookingId: string, meta
     });
     await tx.purchaseOrder.update({ where: { id: order.id }, data: { batchId: null } });
     const revised = await afterChange(tx, bookingId, before);
+    madeRevision = Boolean(revised);
     await auditInCompany(
       ctx,
       meta,
@@ -1554,6 +1572,8 @@ export async function detachBooking(ctx: CompanyContext, bookingId: string, meta
       tx,
     );
   }, TX_OPTIONS);
+  // A change after approval made a new revision: it waits for approval again.
+  if (madeRevision) await notifyApprovers(ctx.company.id, "booking", bookingId);
   return getBooking(ctx, bookingId);
 }
 

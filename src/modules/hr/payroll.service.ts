@@ -25,6 +25,7 @@ import {
   reverseJournalEntry,
 } from "@/modules/accounts/journal.service";
 import { assertCanPayMoney, assertCanReceiveMoney } from "@/modules/accounts/money-guards";
+import { notifyApprovers } from "@/modules/ai/bot/approvals";
 import { auditInCompany, recordAudit } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
 import { letterhead } from "@/modules/companies/letterhead";
@@ -694,6 +695,8 @@ export async function createPayrollRun(ctx: CompanyContext, raw: unknown, meta?:
     );
     return run.id;
   }, TX_OPTIONS);
+  // A new payroll waits for approval: the approvers linked to the bot hear of it.
+  await notifyApprovers(ctx.company.id, "payroll", runId);
   return getPayrollRun(ctx, runId);
 }
 

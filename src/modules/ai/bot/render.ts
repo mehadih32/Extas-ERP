@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { CardStatus, ChatCard } from "../chat/cards";
+import { type ApprovalKind, KIND_OF_CODE } from "./approval-codes";
 import { countOf } from "@/lib/display";
 import { profitBothWays } from "@/modules/costing/costing-labels";
 
@@ -15,6 +16,8 @@ import { profitBothWays } from "@/modules/costing/costing-labels";
  *   bg:<finding>:f|i|l   Bug Guard: Fix, Ignore, Remind me later
  *   bg:run:<company>     Bug Guard: Run now
  *   bc:<correction>:a|x|u  Bug Guard: Apply, Cancel or Undo a correction
+ *   ok|no:<b|p|l|e>:<id>:<version>  Approve or Reject a booking, payroll,
+ *                        leave request or expense claim as its message showed it
  * Pure: no database and no network. A Send button carries the draft's
  * version (draftVersion), so a draft changed after the message showed it is
  * never sent from that message (v6.4.1).
@@ -183,6 +186,8 @@ export type ButtonPress =
   | { kind: "guard"; findingId: string; choice: "fix" | "ignore" | "later" }
   | { kind: "guard-run"; companyId: string }
   | { kind: "guard-correction"; correctionId: string; choice: "apply" | "cancel" | "undo" }
+  /** Approve or Reject an item waiting for approval (approvals.ts), as its message showed it. */
+  | { kind: "approval"; what: ApprovalKind; id: string; approve: boolean; version: string }
   /** The owner wrote "unlock" (v6.4.1 B5): never a button, so readButton never makes it. */
   | { kind: "unlock"; companyId: string };
 
@@ -211,6 +216,16 @@ export function readButton(data: string): ButtonPress | null {
   }
   m = new RegExp(`^dr:(${ID}):(y|n)$`).exec(data);
   if (m) return { kind: "deletion", requestId: m[1]!, approve: m[2] === "y" };
+  m = new RegExp(`^(ok|no):([bple]):(${ID}):([a-f0-9]{8})$`).exec(data);
+  if (m) {
+    return {
+      kind: "approval",
+      what: KIND_OF_CODE[m[2]!]!,
+      id: m[3]!,
+      approve: m[1] === "ok",
+      version: m[4]!,
+    };
+  }
   m = new RegExp(`^bg:run:(${ID})$`).exec(data);
   if (m) return { kind: "guard-run", companyId: m[1]! };
   m = new RegExp(`^bg:(${ID}):(f|i|l)$`).exec(data);

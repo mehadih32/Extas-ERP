@@ -138,6 +138,7 @@ model Company {
   cheques                Cheque[]
   integrations           SalesChannelIntegration[]
   retailStores           RetailStore[]
+  freshStart             FreshStart?
   retailPrices           RetailPrice[]
   retailPriceChanges     RetailPriceChange[]
   retailOrders           RetailOrder[]
@@ -397,6 +398,7 @@ model User {
   aiStaffUpdates      AiStaffUpdate[]        @relation("AiStaffUpdateBy")
   serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
   bugGuardEvents      BugGuardEvent[]        @relation("BugGuardEventBy")
+  freshStarts         FreshStart[]
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -4946,10 +4948,51 @@ model BackupRun {
   /// restore which backup it put back.
   report           Json?
   sourceName       String?
+  /// Kept for ever: never removed by the server's "newest N" or Drive's "newest 3"
+  /// rules (the backup made just before a fresh start, 2026-11-12).
+  keepForever      Boolean       @default(false)
+  /// Why it is kept for ever, shown with it ("Before fresh start").
+  label            String?
 
   triggeredBy User? @relation(fields: [triggeredById], references: [id], onDelete: SetNull)
 
   @@index([startedAt])
+}
+
+/// The one fresh start a company may ever make (Settings > Company, the owner only,
+/// 2026-11-12): its business data erased after a backup kept for ever. One row per
+/// company, claimed first so two clicks never run it twice; once DONE it stays for
+/// good and the button is gone. A FAILED row (nothing erased) may be claimed again.
+model FreshStart {
+  id            String           @id @default(cuid())
+  companyId     String           @unique
+  status        FreshStartStatus @default(BACKING_UP)
+  /// The owner's ticks: what is kept besides the settings.
+  keepParties   Boolean          @default(false)
+  keepProducts  Boolean          @default(false)
+  keepEmployees Boolean          @default(false)
+  startedById   String?
+  startedByName String
+  startedAt     DateTime         @default(now())
+  /// The backup made just before (BackupRun, kept for ever), once it is checked in Drive.
+  backupRunId   String?
+  backupName    String?
+  finishedAt    DateTime?
+  /// Why it stopped, in plain words (nothing was erased).
+  error         String?
+  /// Rows erased per table, and files removed.
+  report        Json?
+  updatedAt     DateTime         @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  startedBy User?   @relation(fields: [startedById], references: [id], onDelete: SetNull)
+}
+
+enum FreshStartStatus {
+  BACKING_UP
+  ERASING
+  DONE
+  FAILED
 }
 
 // =============================================================================

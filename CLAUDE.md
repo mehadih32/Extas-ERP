@@ -46,7 +46,8 @@ places disagree, the newer instruction wins.
 - **Additive migrations only.** A migration never deletes data, drops or renames a column or table, or changes a
   type. A new required column has a default. Never run `prisma migrate reset` on any shared database.
 - **The ERP reverses, it never deletes history.** Money, stock and posted documents are corrected by reversing or
-  adjusting entries, never by editing or deleting posted rows.
+  adjusting entries, never by editing or deleting posted rows. The one exception is the owner's one-time "Fresh
+  start" (section 9, 2026-11-12).
 - **AI never deletes data.** A delete becomes a Deletion request the owner approves; it then runs once, in the
   owner's name, through the normal checks. The lock is in the AI tool layer.
 - **AI never changes permissions or roles**, its own or anyone else's.
@@ -209,6 +210,24 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-11-12 (Fresh start, once for life): the one exception to "the ERP reverses, it never deletes history".
+  Settings > Company has a "Fresh start" card that only the platform owner (Super Admin) sees; it erases this
+  company's business data once in the ERP's life, after the owner types the company name exactly and gives the PIN.
+  Three ticks, all off at first: "Keep buyers and suppliers", "Keep products and styles", "Keep employees". Kept
+  always: the Company record, users, roles, permissions, PIN, sessions, backup settings and Drive, recovery key,
+  bot, AI settings and keys, shop connections and keys, the chart of accounts, bank accounts, warehouses and every
+  other setting, the Walk-in customers account and each retail store's own buyer. Erased (this company only):
+  every order, document, money and stock record, journal, production, tech pack, retail order, HR record, loan,
+  fixed cost, asset, reminder, inbox item, AI draft and log, Bug Guard finding, activity log and file nothing kept
+  uses; kept rows' running figures (opening balances, average costs, material stock, leave used) go back to zero,
+  so every balance is zero. First a complete backup through the normal backup system must be checked in Google
+  Drive, or nothing is erased; it is labelled "Before fresh start" and kept for ever (never counted in the server's
+  newest N or Drive's newest 3; the frozen restore files are unchanged). The wipe, the DONE mark and one "Fresh
+  start" activity-log row are one transaction. A one-time row per company (`FreshStart`) is claimed first, so a
+  second click is refused; once DONE the card says when and by whom and the button is gone. The AI (never a Super
+  Admin in its context) and the bot (no command reaches it) can never start it. Every table is classified in
+  `src/modules/fresh-start/plan.ts` (a test fails for a new table not in the list). Restoring a backup from before
+  the fresh start brings the old data, and the button, back.
 - 2026-11-11 (B-grade lines for the shops): a shop order line may be A-grade or B-grade. A B line takes the
   factory's own B-grade stock at the B-grade cost; an approved returned B piece goes back to B-grade stock. A
   B-grade piece costs the shop the style's own "B-grade price" (set on the product, with the PIN), or, without one,

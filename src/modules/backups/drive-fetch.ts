@@ -44,6 +44,10 @@ export type DriveBackup = {
   standby: boolean;
   /** The web address of the ERP that made it (null: made before 2026-10-30). */
   site: string | null;
+  /** Kept for ever, never removed by the keeping rules (the backup before a fresh start). */
+  keepForever?: boolean;
+  /** Why it is kept for ever ("Before fresh start"). */
+  label?: string | null;
 };
 
 export function presentBackup(folder: drive.DriveFile): DriveBackup {
@@ -60,6 +64,8 @@ export function presentBackup(folder: drive.DriveFile): DriveBackup {
     format: labels.format ? Number(labels.format) : 2,
     standby: labels.standby === "yes",
     site: labels.site ?? null,
+    keepForever: labels.keep === "forever",
+    label: labels.note ?? null,
   };
 }
 

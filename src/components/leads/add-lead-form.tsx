@@ -49,11 +49,14 @@ export function AddLeadForm({ form }: { form: Form }) {
       country: textOf(data, "country") || null,
       email: textOf(data, "email") || null,
       phone: textOf(data, "phone") || textOf(data, "whatsapp") || null,
-    }).then((result) => {
-      if (!result.ok) return;
-      setMatches(result.data.matches);
-      setSuppressed(result.data.suppressed);
-    });
+    })
+      .then((result) => {
+        if (!result.ok) return;
+        setMatches(result.data.matches);
+        setSuppressed(result.data.suppressed);
+      })
+      // The duplicate hint is only a help: when it cannot be reached, the save still checks.
+      .catch(() => undefined);
   }
 
   function submit(anyway: boolean) {

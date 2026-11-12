@@ -126,6 +126,7 @@ describe("Production in the menu, by role", () => {
       "Bills",
       "Cost heads",
       "Fault log",
+      "T&A calendar",
     ]);
   });
 
@@ -139,6 +140,7 @@ describe("Production in the menu, by role", () => {
       "Projects",
       "Deliveries",
       "Fault log",
+      "T&A calendar",
     ]);
     // Someone who only receives goods lands on Deliveries.
     expect(tabs(["production.stock_intake"])).toEqual(["Deliveries"]);
@@ -153,6 +155,7 @@ describe("Production in the menu, by role", () => {
       "Deliveries",
       "Bills",
       "Fault log",
+      "T&A calendar",
     ]);
   });
 

@@ -302,9 +302,12 @@ run("Sales screens", () => {
               "/sales/returns",
               "/sales/wholesale-returns",
             ]
-          : ["sales.returns.approve", "sales.returns.qc"].some((k) => ctx.can(k))
-            ? ["/sales/wholesale-returns"]
-            : [],
+          : [
+              ...leadsTab,
+              ...(ctx.can("sales.returns.approve") || ctx.can("sales.returns.qc")
+                ? ["/sales/wholesale-returns"]
+                : []),
+            ],
       );
 
       // Each screen's data comes exactly to the people its page is shown to.

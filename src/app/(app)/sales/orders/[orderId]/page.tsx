@@ -277,15 +277,16 @@ export default async function OrderPage({
 }) {
   const ctx = await requireCompanyPage();
   const [{ orderId }, query] = await Promise.all([params, searchParams]);
-  const [result, invoiceTemplates, challanTemplates, aiBox, statusLinks, taResult] = await Promise.all([
-    getOrderScreenAction(orderId),
-    templateChoicesAction("COMMERCIAL_INVOICE"),
-    templateChoicesAction("DELIVERY_CHALLAN"),
-    getAiRecordCostAction("SalesOrder", orderId),
-    // Share order status: only for people who may share it (sales.order.share).
-    canShareOrderStatus(ctx) ? listStatusLinksAction(orderId) : null,
-    getOrderTaAction(orderId),
-  ]);
+  const [result, invoiceTemplates, challanTemplates, aiBox, statusLinks, taResult] =
+    await Promise.all([
+      getOrderScreenAction(orderId),
+      templateChoicesAction("COMMERCIAL_INVOICE"),
+      templateChoicesAction("DELIVERY_CHALLAN"),
+      getAiRecordCostAction("SalesOrder", orderId),
+      // Share order status: only for people who may share it (sales.order.share).
+      canShareOrderStatus(ctx) ? listStatusLinksAction(orderId) : null,
+      getOrderTaAction(orderId),
+    ]);
   // The order's T&A calendar, for people who see it (sales.view or production.view).
   const ta = taResult.ok ? taResult.data : null;
   if (!result.ok) {

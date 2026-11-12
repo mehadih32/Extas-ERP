@@ -2571,7 +2571,7 @@ export const salesHelp: HelpSection = {
         "কোম্পানির Settings-এর “Business rules”-এ “WhatsApp PDF links work for (days)” দিয়ে লিংক কত দিন চলবে ঠিক করা যায়।",
         "লিংকে শুধু সেই PDF থাকে, যেটি পাঠানোর সময় তৈরি হয়েছিল; পরে কোটেশন বদলালে নতুন করে পাঠান।",
       ],
-      shot: { route: "/sales/quotations/[quotationId]", target: "Send by email" },
+      shot: { route: "/sales/invoices/[invoiceId]", target: "Send by email" },
     },
     {
       slug: "sales-follow-ups",
@@ -2702,7 +2702,7 @@ export const salesHelp: HelpSection = {
         "কোটেশনের “Valid until” দিনের 3 দিন আগে আর সেদিন নিজে থেকেই মনে করানো আসে; আলাদা ফলো-আপ রাখতে হয় না।",
         "কত দিন আগে আর কাকে মনে করাবে তা Planner > “Automatic reminders”-এ “Quotations ending”, “Invoice payments due”, “Payments the buyer promised” আর “Follow-ups” কার্ডে বদলানো যায়।",
       ],
-      shot: { route: "/sales/quotations/[quotationId]", target: "Add the follow-up" },
+      shot: { route: "/sales/orders/[orderId]", target: "Add the follow-up" },
     },
     {
       slug: "sales-proforma",

@@ -189,7 +189,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Buyers & suppliers",
     shortLabel: "Parties",
     icon: HandshakeIcon,
-    anyOf: ["parties.view", "parties.ledger.view"],
+    anyOf: ["parties.view", "parties.ledger.view", "sales.campaigns.manage"],
   },
   {
     // Employees, attendance, leave, payroll, salary advances, holidays and HR rules

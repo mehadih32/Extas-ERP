@@ -134,7 +134,7 @@ export const createCampaignSchema = z.object({
   channel: z.enum(MessageChannel).refine((c) => c === "WHATSAPP" || c === "EMAIL" || c === "SMS", {
     message: "Campaigns go out by WhatsApp, Email or SMS",
   }),
-  /** Supports {BuyerName}, {ContactPerson}, {CompanyName} and {CatalogLink}. */
+  /** Supports {name} (the buyer's name), {BuyerName}, {ContactPerson}, {CompanyName} and {CatalogLink}. */
   message: z.string().trim().min(5).max(2000),
   catalogFileUrl: z.url().nullish(),
   /** Explicit recipients; defaults to every dormant wholesale / B2B buyer. */
@@ -142,7 +142,8 @@ export const createCampaignSchema = z.object({
 });
 
 export const recipientStatusSchema = z.object({
-  status: z.enum(["SENT", "DELIVERED", "READ", "FAILED"]),
+  /** PENDING takes the "Sent" tick off again (it was ticked by mistake). */
+  status: z.enum(["PENDING", "SENT", "DELIVERED", "READ", "FAILED"]),
   error: z.string().trim().max(500).optional(),
   responded: z.boolean().optional(),
 });

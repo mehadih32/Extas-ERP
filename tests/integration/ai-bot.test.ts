@@ -1002,6 +1002,42 @@ run("The bot", () => {
     expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Unlocked: /);
   });
 
+  it("asks which store when a name fits two, and stops on a store's cancel", async () => {
+    const api = botApi();
+    const uttara = await makeCompany("Extas Uttara");
+    await addToCompany(env.owner.user.id, uttara.company.id, uttara.roles.SUPER_ADMIN);
+    const ownerThere = await contextFor(env.owner.user.id, uttara.company.id);
+    await linkOwner(env);
+    await saveTelegram(ownerThere, { token: TOKEN });
+    const { code } = await startLink(ownerThere, "TELEGRAM");
+    await telegram(typed(OWNER_CHAT, code));
+    await setPin(env.owner, { pin: "2468" });
+    const which =
+      'Which store? Start with its name, like "Extas: status". Linked here: Extas, Extas Uttara.';
+    const wrongPins = () => prisma.aiPinTry.count({ where: { kind: "PIN", count: { gt: 0 } } });
+    const extasLink = () =>
+      prisma.aiBotLink.findFirstOrThrow({ where: { companyId: env.company.id } });
+
+    // "Ext" fits both stores: the bot asks, and never picks the first one.
+    await telegram(typed(OWNER_CHAT, "Ext: status"));
+    expect(api.said(OWNER_CHAT).at(-1)).toBe(which);
+    expect(await prisma.aiChatMessage.count({ where: { role: "OWNER" } })).toBe(0);
+
+    // Extas waits for its PIN: a PIN under an unclear name is checked for no store.
+    await telegram(typed(OWNER_CHAT, "Extas: unlock"));
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Send your PIN to unlock your sign-in/);
+    await telegram(typed(OWNER_CHAT, "Ext: 2468"));
+    expect(api.said(OWNER_CHAT).join("\n")).not.toMatch(/Unlocked: /);
+    expect(await wrongPins()).toBe(0);
+    expect((await extasLink()).pendingUntil!.getTime()).toBeGreaterThan(Date.now());
+
+    // "Extas: cancel" stops what waited, and is never counted as a wrong PIN.
+    await telegram(typed(OWNER_CHAT, "Extas: cancel"));
+    expect(api.said(OWNER_CHAT).at(-1)).toBe("Stopped: nothing changed.");
+    expect(await wrongPins()).toBe(0);
+    expect((await extasLink()).pendingUntil).toBeNull();
+  });
+
   it("has the WhatsApp plug ready: Meta's calls are checked and only the owner's number is answered", async () => {
     const api = botApi();
     await expectAppError(

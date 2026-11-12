@@ -326,7 +326,7 @@ export async function getServerHealth(ctx: CompanyContext) {
   ]);
   return {
     weekly: settings?.healthWeekly ?? false,
-    weeklyText: `Every Saturday at 09:00 (${ctx.company.timezone || TIMEZONE} time). The report comes to your inbox and the bot.`,
+    weeklyText: `Every Saturday at 09:00 (${zoneOrDhaka(ctx.company.timezone)} time). The report comes to your inbox and the bot.`,
     runs: runs.map((r) => ({
       id: r.id,
       trigger: r.trigger,
@@ -344,13 +344,24 @@ export async function getServerHealth(ctx: CompanyContext) {
 
 export type ServerHealthScreen = Awaited<ReturnType<typeof getServerHealth>>;
 
-/** The company's own time zone (Bangladesh time when none is set). */
+/** A time zone the clock can read: the one given, or Bangladesh time when it is empty or unknown. */
+export function zoneOrDhaka(timeZone: string | null | undefined): string {
+  if (!timeZone) return TIMEZONE;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return timeZone;
+  } catch {
+    return TIMEZONE;
+  }
+}
+
+/** The company's own time zone (Bangladesh time when none is set or it is unknown). */
 async function timeZoneOf(companyId: string) {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
     select: { timezone: true },
   });
-  return company?.timezone || TIMEZONE;
+  return zoneOrDhaka(company?.timezone);
 }
 
 /** Is it Saturday from 09:00 in the company's time? */
@@ -383,16 +394,17 @@ export async function runWeeklyHealth(
   });
   let ran = 0;
   for (const { companyId, healthRanOn, company } of on) {
-    const timeZone = company.timezone || TIMEZONE;
-    if (!weeklyDue(now, timeZone)) continue;
-    const day = localDay(now, timeZone);
-    if (healthRanOn === day) continue;
-    const claimed = await prisma.aiSettings.updateMany({
-      where: { companyId, OR: [{ healthRanOn: null }, { healthRanOn: { not: day } }] },
-      data: { healthRanOn: day },
-    });
-    if (claimed.count === 0) continue;
+    // One company's trouble (even a time zone the clock cannot read) never stops the others.
     try {
+      const timeZone = zoneOrDhaka(company.timezone);
+      if (!weeklyDue(now, timeZone)) continue;
+      const day = localDay(now, timeZone);
+      if (healthRanOn === day) continue;
+      const claimed = await prisma.aiSettings.updateMany({
+        where: { companyId, OR: [{ healthRanOn: null }, { healthRanOn: { not: day } }] },
+        data: { healthRanOn: day },
+      });
+      if (claimed.count === 0) continue;
       const run = await runServerHealth(companyId, "WEEKLY", null, { ...options, now });
       const members = await activeMembers(companyId);
       const owners = await prisma.user.findMany({

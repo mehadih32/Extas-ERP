@@ -4,9 +4,11 @@ import type { ProductionStage, SalesOrderStatus } from "@prisma/client";
 import { z } from "zod";
 
 import { hashText } from "@/lib/crypto";
+import type { Db } from "@/lib/db-types";
 import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { readOnlyReason } from "@/lib/read-only";
 import type { RequestMeta } from "@/lib/request-meta";
 import { ROUTES } from "@/lib/routes";
 import { tenantDb, type TenantDb } from "@/lib/tenant-db";
@@ -85,6 +87,7 @@ export async function listStatusLinks(ctx: CompanyContext, orderId: string) {
       createdAt: true,
       expiresAt: true,
       stoppedAt: true,
+      lastOpenedAt: true,
       createdBy: { select: { name: true } },
       stoppedBy: { select: { name: true } },
     },
@@ -98,6 +101,8 @@ export async function listStatusLinks(ctx: CompanyContext, orderId: string) {
     endsOn: r.expiresAt ? localDay(r.expiresAt, tz) : null,
     stoppedOn: r.stoppedAt ? localDay(r.stoppedAt, tz) : null,
     stoppedBy: r.stoppedBy?.name ?? null,
+    /** The day the buyer last opened it; null: never opened. */
+    lastOpenedOn: r.lastOpenedAt ? localDay(r.lastOpenedAt, tz) : null,
     state: (r.stoppedAt
       ? "STOPPED"
       : r.expiresAt && r.expiresAt <= now
@@ -180,7 +185,60 @@ export async function stopStatusLink(ctx: CompanyContext, linkId: string, meta?:
   return { id: link.id, orderId: link.order.id, stopped: count > 0 };
 }
 
+/**
+ * Stops every working link of an order being cancelled, inside its transaction
+ * (sales/order.service.ts cancelOrder), with one line in the activity log.
+ */
+export async function stopLinksOfCancelledOrderTx(
+  tx: Db,
+  ctx: Pick<CompanyContext, "company" | "user" | "byAi">,
+  order: { id: string; number: string },
+  meta?: RequestMeta,
+) {
+  const { count } = await tx.orderStatusLink.updateMany({
+    where: { companyId: ctx.company.id, orderId: order.id, stoppedAt: null },
+    data: { stoppedAt: new Date(), stoppedById: ctx.user.id },
+  });
+  if (count > 0) {
+    await auditInCompany(
+      ctx,
+      meta,
+      {
+        action: "STATUS_CHANGE",
+        entityType: "SalesOrder",
+        entityId: order.id,
+        summary: `Stopped ${count} read-only status link${count === 1 ? "" : "s"} of order ${order.number}: the order was cancelled`,
+      },
+      tx,
+    );
+  }
+  return count;
+}
+
 // --- The buyer's page --------------------------------------------------------------------
+
+/** The buyer's opens are kept to the minute: one write a minute at most. */
+const OPENED_EVERY_MS = 60_000;
+
+/** Notes that the buyer opened the link; never on a Full check (it only reads), never failing the page. */
+async function noteOpened(linkId: string) {
+  try {
+    if (await readOnlyReason()) return;
+    const now = new Date();
+    await prisma.orderStatusLink.updateMany({
+      where: {
+        id: linkId,
+        OR: [
+          { lastOpenedAt: null },
+          { lastOpenedAt: { lt: new Date(now.getTime() - OPENED_EVERY_MS) } },
+        ],
+      },
+      data: { lastOpenedAt: now },
+    });
+  } catch {
+    // Seeing the page matters more than noting the visit.
+  }
+}
 
 export type StepState = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
@@ -286,7 +344,7 @@ export async function readOrderStatus(token: string): Promise<OrderStatusView | 
   if (!TOKEN.test(token)) return null;
   const link = await prisma.orderStatusLink.findUnique({
     where: { tokenHash: hashText(token) },
-    select: { companyId: true, orderId: true, expiresAt: true, stoppedAt: true },
+    select: { id: true, companyId: true, orderId: true, expiresAt: true, stoppedAt: true },
   });
   if (!link || link.stoppedAt || (link.expiresAt && link.expiresAt <= new Date())) return null;
 
@@ -314,7 +372,9 @@ export async function readOrderStatus(token: string): Promise<OrderStatusView | 
       },
     }),
   ]);
-  if (!company || !company.isActive || !order) return null;
+  // A cancelled order has nothing to show (its links are stopped when it is cancelled).
+  if (!company || !company.isActive || !order || order.status === "CANCELLED") return null;
+  await noteOpened(link.id);
   const tz = company.timezone;
 
   const [challans, projects, logo] = await Promise.all([

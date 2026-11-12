@@ -209,6 +209,14 @@ overwrites a stored total or figure.
 
 ## 9. Decisions log (newest first)
 
+- 2026-11-12 (search and the buyer's order-status link): the search box in the top bar finds only the kinds of
+  record each person may open (the same permissions as their pages) and never shows a money figure (no price,
+  total, cost or salary). "Share order status" on an order makes a read-only link for the buyer that shows only
+  the company's name and logo, the styles and pieces, the cutting, sewing, finishing and packing progress and the
+  planned and actual ship dates, never prices, costs, profit or supplier and factory names. Only the link's hash
+  is kept; it can end after some days, can be stopped at any time and stops when the order is cancelled. Making
+  links (`sales.order.share`) is Super Admin's only by default, stays Ask for the AI, and the ERP never sends the
+  link by itself: the person copies and shares it.
 - 2026-11-11 (B-grade lines for the shops): a shop order line may be A-grade or B-grade. A B line takes the
   factory's own B-grade stock at the B-grade cost; an approved returned B piece goes back to B-grade stock. A
   B-grade piece costs the shop the style's own "B-grade price" (set on the product, with the PIN), or, without one,

@@ -43,6 +43,7 @@ import {
   updateOrderSchema,
   voidInvoiceSchema,
 } from "@/modules/sales/schemas";
+import { stopLinksOfCancelledOrderTx } from "@/modules/sales/order-status.service";
 import { assertCanRefund, REFUND_KIND_TEXT, refundBuyerTx } from "@/modules/sales/refund.service";
 import {
   canCancelOrder,
@@ -718,6 +719,8 @@ export async function cancelOrder(
       where: { id: order.id },
       data: { status: "CANCELLED", dueAmount: 0 },
     });
+    // Its links for the buyer stop with it (Share order status).
+    await stopLinksOfCancelledOrderTx(tx, ctx, order, meta);
     if (current.warehouseId) {
       // Delivery already took its pieces off the reservation; only the rest is freed.
       const left = new Map(delivered);

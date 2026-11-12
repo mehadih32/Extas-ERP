@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
+import { partyHref } from "@/components/parties/labels";
 import { localDay } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -24,6 +25,8 @@ import type { PermissionKey } from "@/modules/rbac/permissions";
 
 /** At most this many results of each kind. */
 export const RESULTS_PER_KIND = 5;
+/** Kinds searched at the same time, so one search never holds many database connections. */
+const KINDS_AT_ONCE = 4;
 /** The fewest letters searched for. */
 export const MIN_QUERY = 2;
 const MAX_QUERY = 80;
@@ -188,9 +191,6 @@ const proformas: Finder = async (ctx, q) => {
   }));
 };
 
-/** A buyer's or supplier's profile, as its list holds it (parties/labels.ts partyHref). */
-const partyList = (kind: string, oneTime: boolean) =>
-  kind !== "SUPPLIER" ? "buyers" : oneTime ? "other-suppliers" : "suppliers";
 const PARTY_KIND: Record<string, string> = {
   BUYER: "Buyer",
   SUPPLIER: "Supplier",
@@ -216,7 +216,7 @@ const parties: Finder = async (ctx, q) => {
     id: r.id,
     title: r.name,
     detail: join(PARTY_KIND[r.kind], r.code, r.city),
-    href: at(`/parties/${partyList(r.kind, r.oneTime)}`, r.id),
+    href: partyHref(r),
   }));
 };
 
@@ -444,7 +444,11 @@ export async function globalSearch(ctx: CompanyContext, input: unknown): Promise
   const query = parsed.data.q;
   if (query.length < MIN_QUERY) return { query, groups: [] };
   const allowed = SEARCH_KINDS.filter((k) => k.anyOf.some((p) => ctx.can(p)));
-  const found = await Promise.all(allowed.map((k) => k.find(ctx, query)));
+  const found: SearchHit[][] = [];
+  for (let i = 0; i < allowed.length; i += KINDS_AT_ONCE) {
+    const batch = allowed.slice(i, i + KINDS_AT_ONCE);
+    found.push(...(await Promise.all(batch.map((k) => k.find(ctx, query)))));
+  }
   return {
     query,
     groups: allowed

@@ -1,4 +1,4 @@
-export const metadata = { title: "Link not working" };
+export const metadata = { title: { absolute: "Link not working" } };
 
 /**
  * A status link that is unknown, stopped or ended: the same page for each, and

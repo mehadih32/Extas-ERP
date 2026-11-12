@@ -9,6 +9,7 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
+import { notifyApprovers } from "@/modules/ai/bot/approvals";
 import { money, ZERO } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import {
@@ -635,7 +636,10 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
     );
     return expense.id;
   }, TX_OPTIONS);
-  return getExpense(ctx, expenseId);
+  const saved = await getExpense(ctx, expenseId);
+  // A claim waits for Accounts: those linked to the bot hear of it.
+  if (saved.status === "PENDING") await notifyApprovers(ctx.company.id, "expense", expenseId);
+  return saved;
 }
 
 /**

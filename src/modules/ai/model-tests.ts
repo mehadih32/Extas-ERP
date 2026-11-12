@@ -400,6 +400,8 @@ export const TASK_TESTS: Record<AiTaskKey, readonly string[]> = {
   "read.documents": ["reading-packing", "reading-invoice"],
   "read.updates": ["reading-update", "intent-sales"],
   "bot.command": ["intent-sales", "intent-stop"],
+  // What a voice note says goes on as a bot command, often in Bengali.
+  "voice.text": ["intent-sales", "bengali-factory"],
   "data.gather": ["tool-lookup", "reading-packing"],
   "help.answer": ["bengali-help", "bengali-factory"],
 };

@@ -383,7 +383,8 @@ export async function testBot(ctx: CompanyContext, rawChannel: unknown) {
 /** AI Center > Bot (the owner's): both plugs, the PIN, the AI's state and the last messages. */
 export async function getBot(ctx: CompanyContext) {
   assertManage(ctx);
-  const [links, settings, messages, pinTries] = await Promise.all([
+  const { getApprovalSetting } = await import("./approvals");
+  const [links, settings, messages, pinTries, approvals] = await Promise.all([
     prisma.aiBotLink.findMany({ where: { companyId: ctx.company.id } }),
     aiSettingsOf(ctx.company.id),
     prisma.aiBotMessage.findMany({
@@ -401,6 +402,7 @@ export async function getBot(ctx: CompanyContext) {
       },
       select: { count: true, windowStart: true },
     }),
+    getApprovalSetting(ctx),
   ]);
   const now = new Date();
   const dayStart = now.getTime() - BOT_PIN_DAY_MINUTES * 60_000;
@@ -432,6 +434,8 @@ export async function getBot(ctx: CompanyContext) {
       wrongToday: pinTries && pinTries.windowStart.getTime() > dayStart ? pinTries.count : 0,
     },
     ai: { state: off ?? ("on" as const), text: off ? OFF_TEXT[off] : null },
+    // Your own choice: approvals waiting for you come to the bot with Approve and Reject (Release 5).
+    approvals,
     messages: messages.map((m) => ({
       id: m.id,
       at: m.createdAt,

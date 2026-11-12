@@ -123,6 +123,17 @@ export const AI_TASKS = [
     model: "claude-haiku-5-5",
     module: "AI",
   },
+  /**
+   * A voice note on the bot as text (Release 5). Hearing sound needs a model
+   * that takes audio (a Gemini model, picked on AI Center > Models): until one
+   * is picked, the bot says so and calls nothing (voice.ts).
+   */
+  {
+    key: "voice.text",
+    label: "Voice notes to text",
+    model: "claude-haiku-5-5",
+    module: "AI",
+  },
   {
     key: "data.gather",
     label: "Gathering data and small checks",

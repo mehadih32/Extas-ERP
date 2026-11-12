@@ -13,6 +13,14 @@ import type { BotButton } from "./render";
 
 export type BotFile = { name: string; content: Buffer; type: string };
 
+/** A voice note, photo or file the owner sent: the provider's id, read only when it is needed. */
+export type IncomingFile = {
+  id: string;
+  name: string | null;
+  mime: string | null;
+  size: number | null;
+};
+
 /** One message the owner wrote or a button they pressed, read from either plug. */
 export type Incoming = {
   /** The provider's id of the update (Telegram) or message (WhatsApp). */
@@ -26,6 +34,10 @@ export type Incoming = {
   text: string | null;
   /** A voice note, photo or file instead of text. */
   media: "voice" | "file" | null;
+  /** The voice note, photo or file itself (Telegram; none on an older message). */
+  file?: IncomingFile | null;
+  /** The words sent with a photo or file. */
+  caption?: string | null;
   callback: { id: string | null; data: string; messageId: string | null } | null;
 };
 
@@ -43,6 +55,8 @@ export interface BotSender {
   /** Removes a message (the PIN the owner typed): true once it is gone, false when it is not. */
   remove(chatId: string, messageId: string | null): Promise<boolean>;
   typing(chatId: string): Promise<void>;
+  /** Fetches a voice note, photo or file the owner sent (Telegram; WhatsApp not yet). */
+  download?(fileId: string): Promise<Buffer>;
 }
 
 export type BotCall = {
@@ -51,6 +65,8 @@ export type BotCall = {
   headers?: Record<string, string>;
   json?: unknown;
   form?: FormData;
+  /** The answer is a file: its bytes come back as they are. */
+  binary?: boolean;
 };
 
 export type BotReply = { status: number; body: unknown };
@@ -67,6 +83,9 @@ const fetchTransport: Transport = async (call) => {
     body: call.json !== undefined ? JSON.stringify(call.json) : call.form,
     signal: AbortSignal.timeout(20_000),
   });
+  if (call.binary) {
+    return { status: response.status, body: Buffer.from(await response.arrayBuffer()) };
+  }
   const text = await response.text();
   let body: unknown = text;
   try {

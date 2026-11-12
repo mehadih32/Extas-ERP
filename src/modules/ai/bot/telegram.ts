@@ -116,21 +116,58 @@ export function telegramSender(token: string): BotSender {
         () => undefined,
       );
     },
+    async download(fileId) {
+      const file = await tg<{ file_path?: string; file_size?: number }>(token, "getFile", {
+        json: { file_id: fileId },
+      });
+      if (!file.file_path) throw new BotApiError(404, "Telegram has no copy of this file now.");
+      const { status, body } = await botCall({
+        url: `${API}/file/bot${token}/${file.file_path}`,
+        method: "GET",
+        binary: true,
+      });
+      if (status !== 200 || !Buffer.isBuffer(body)) {
+        throw new BotApiError(status, `Telegram answered ${status}`);
+      }
+      return body;
+    },
   };
 }
 
 type TgUser = { id?: number; first_name?: string; username?: string };
+type TgFile = { file_id?: string; file_size?: number; mime_type?: string; file_name?: string };
 type TgMessage = {
   message_id?: number;
   chat?: { id?: number; type?: string };
   from?: TgUser;
   text?: string;
-  voice?: unknown;
-  audio?: unknown;
-  photo?: unknown;
-  document?: unknown;
+  caption?: string;
+  voice?: TgFile;
+  audio?: TgFile;
+  photo?: TgFile[];
+  document?: TgFile;
   video?: unknown;
 };
+
+/** The voice note, photo (its largest size) or document of a message, if any. */
+function fileOf(message: TgMessage): Incoming["file"] {
+  const pick = (f: TgFile | undefined, mime: string | null, name: string | null) =>
+    f?.file_id
+      ? {
+          id: f.file_id,
+          name: f.file_name ?? name,
+          mime: f.mime_type ?? mime,
+          size: typeof f.file_size === "number" ? f.file_size : null,
+        }
+      : null;
+  if (message.voice) return pick(message.voice, "audio/ogg", "voice-note.ogg");
+  if (message.audio) return pick(message.audio, "audio/mpeg", "audio");
+  if (Array.isArray(message.photo) && message.photo.length > 0) {
+    return pick(message.photo.at(-1), "image/jpeg", "photo.jpg");
+  }
+  if (message.document) return pick(message.document, null, "file");
+  return null;
+}
 type TgUpdate = {
   update_id?: number;
   message?: TgMessage;
@@ -179,6 +216,8 @@ export function readTelegramUpdate(raw: unknown): Incoming | null {
         : message.photo || message.document || message.video
           ? "file"
           : null,
+    file: fileOf(message),
+    caption: typeof message.caption === "string" ? message.caption : null,
     callback: null,
   };
 }

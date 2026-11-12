@@ -250,6 +250,7 @@ model Company {
   documentLinks          DocumentLink[]
   followUps              FollowUp[]
   aiBotLinks             AiBotLink[]
+  botApprovalSettings    BotApprovalSetting[]
   aiPinTries             AiPinTry[]
   aiBotMessages          AiBotMessage[]
   aiOrderRuns            AiOrderRun[]
@@ -395,6 +396,7 @@ model User {
   houseRulesDecided   HouseRule[]            @relation("HouseRuleDecidedBy")
   mailSettingsSet     CompanyMailSettings[]  @relation("MailSettingsUpdatedBy")
   aiBotLinksOwned     AiBotLink[]            @relation("AiBotLinkOwner")
+  botApprovalSettings BotApprovalSetting[]
   aiBotLinkCodes      AiBotLink[]            @relation("AiBotLinkCodeOwner")
   aiBotLinksSet       AiBotLink[]            @relation("AiBotLinkUpdatedBy")
   aiOrderRunsMade     AiOrderRun[]           @relation("AiOrderRunCreatedBy")
@@ -6815,6 +6817,25 @@ model AiBotLink {
   @@unique([companyId, channel])
   @@index([webhookKey])
   @@index([channel, botKey])
+}
+
+/// A person's own choice in a store (Release 5): whether the bot brings them
+/// what waits for their approval (bookings, payroll, leave, expense claims)
+/// with Approve and Reject buttons. No row means yes, for anyone who may
+/// approve something.
+model BotApprovalSetting {
+  id            String   @id @default(cuid())
+  companyId     String
+  userId        String
+  sendApprovals Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([userId])
 }
 
 /// PIN tries counted per person and store (v6.4.1), kept here so a restart

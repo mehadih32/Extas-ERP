@@ -13,6 +13,8 @@ export const CHANGE_ACTIONS = [
   "profit.set",
   "task.create",
   "followup.set",
+  /** A new buyer read from a visiting card sent to the bot (Release 5). */
+  "buyer.create",
 ] as const;
 
 export type ChangeAction = (typeof CHANGE_ACTIONS)[number];

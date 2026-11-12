@@ -18,7 +18,7 @@ import { AI_MAX_IMAGE_BYTES } from "@/modules/production/ai-intake";
 import { activeMembers, membersWith } from "@/modules/reminders/audience";
 import { sendInApp } from "@/modules/reminders/notification.service";
 
-import { auditAsAi } from "../account";
+import { aiAccountOf, auditAsAi } from "../account";
 import { pushToBot } from "../bot/push";
 import { type Ask, askerFor, toolInputOf } from "../claude";
 import type { TokenUse } from "../models";
@@ -41,7 +41,9 @@ import {
   stepsFor,
   stylesOf,
   taDates,
+  type TaTemplateDays,
 } from "./order-run";
+import { taTemplateOf } from "@/modules/ta/ta.service";
 
 /*
  * AI Center > Orders: a new order from the buyer's PO, order sheet or photos.
@@ -196,6 +198,48 @@ export async function createRun(
         entityType: "AiOrderRun",
         entityId: run.id,
         summary: `New order for Mehedi 2.0: ${run.number} (${input.title})`,
+      },
+      tx,
+    );
+    return run;
+  });
+}
+
+/**
+ * A buyer's PO, order sheet or photo sent to the bot (Release 5): a new order
+ * draft made in the AI's name with the file attached, waiting for the owner
+ * on AI Center > Orders like any other (nothing is booked or sent from it
+ * until the owner approves its plan). The person who sent it must be one who
+ * gives Mehedi 2.0 new orders.
+ */
+export async function createRunFromBot(
+  ctx: CompanyContext,
+  file: { id: string; fileName: string },
+) {
+  assertManage(ctx);
+  const ai = await aiAccountOf(ctx.company.id);
+  return runTransaction(async (tx) => {
+    const number = await nextDocumentNumber(tx, ctx.company.id, "AI_ORDER_RUN");
+    const run = await tx.aiOrderRun.create({
+      data: {
+        companyId: ctx.company.id,
+        number,
+        title: `Order from the bot (${file.fileName})`.slice(0, 160),
+        fields: asJson(EMPTY_FIELDS),
+        missing: missingFields(EMPTY_FIELDS),
+        fileIds: [file.id],
+        startedVia: "BOT",
+        createdById: ai.id,
+      },
+      select: { id: true, number: true },
+    });
+    await auditAsAi(
+      ctx.company.id,
+      {
+        action: "CREATE",
+        entityType: "AiOrderRun",
+        entityId: run.id,
+        summary: `New order draft ${run.number} from a file sent to the bot, waiting for the owner`,
       },
       tx,
     );
@@ -514,6 +558,7 @@ async function checksFor(ctx: CompanyContext, run: AiOrderRun, f: OrderFields) {
     rules: await rulesFor(ctx.company.id, f.buyer),
     buyerFound: run.buyerId !== null,
     styles: known.map((s) => s.code),
+    template: await taTemplateOf(ctx.company.id),
   });
 }
 
@@ -653,10 +698,12 @@ function planText(input: {
   blocked: string[];
   mode: "DRY_RUN" | "ASK";
   dryRunNo: number;
+  /** The company's T&A template. */
+  template: TaTemplateDays;
 }) {
   const { f } = input;
   const pieces = f.lines.reduce((sum, l) => sum + l.quantity, 0);
-  const ta = f.shipDate ? taDates(f.shipDate) : [];
+  const ta = f.shipDate ? taDates(f.shipDate, input.template) : [];
   const risks = [...input.checks, ...(input.card ?? [])].filter((c) => c.signal !== "green");
   return [
     `Order ${input.run.number}: ${input.run.title}`,
@@ -747,6 +794,7 @@ export async function makePlan(
     blocked: estimate.blocked,
     mode,
     dryRunNo: approved + 1,
+    template: await taTemplateOf(ctx.company.id),
   });
 
   let plan = facts;
@@ -983,6 +1031,7 @@ async function stepsOf(companyId: string, timezone: string, run: AiOrderRun, now
     shipDate: fieldsOf(run).shipDate,
     done,
     hrefs,
+    template: await taTemplateOf(companyId),
   });
 }
 
@@ -1225,7 +1274,8 @@ export async function runOrderFollowUps(
       const ship = fieldsOf(run).shipDate;
       const near =
         ship !== null &&
-        localDay(now, company.timezone) >= taDates(ship).find((d) => d.key === "packed")!.by;
+        localDay(now, company.timezone) >=
+          taDates(ship, await taTemplateOf(company.id)).find((d) => d.key === "packed")!.by;
       if (near || late.some((s) => s.key === "booking" || s.key === "making")) {
         await pushToBot(company.id, {
           kind: "text",

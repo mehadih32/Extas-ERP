@@ -48,32 +48,34 @@ datasource db {
 
 /// A distinct business entity. All data is isolated per company.
 model Company {
-  id                    String          @id @default(cuid())
-  name                  String
-  slug                  String          @unique
-  legalName             String?
+  id                      String          @id @default(cuid())
+  name                    String
+  slug                    String          @unique
+  legalName               String?
   // Letterhead / branding info used on every PDF & the blank letterhead pad
-  logoUrl               String?
+  logoUrl                 String?
   /// Uploaded logo (PNG or JPG) printed on the letterhead of every PDF.
-  logoFileId            String?         @unique
-  address               String?
-  phone                 String?
-  email                 String?
-  website               String?
-  letterheadFooter      String?
+  logoFileId              String?         @unique
+  address                 String?
+  phone                   String?
+  email                   String?
+  website                 String?
+  letterheadFooter        String?
   /// Printed under the name in the header of booking books and bookings; null prints
   /// "Manufacturing | Sourcing | Export".
-  tagline               String?
+  tagline                 String?
   /// Which way round booking books and bookings print until a person picks one (each
   /// person's last pick is kept in UserPreference.pdfOrientation).
-  bookOrientation       PageOrientation @default(LANDSCAPE)
-  primaryColor          String          @default("#0B3D2E")
-  accentColor           String          @default("#BE1434")
-  currency              String          @default("BDT")
-  timezone              String          @default("Asia/Dhaka")
+  bookOrientation         PageOrientation @default(LANDSCAPE)
+  primaryColor            String          @default("#0B3D2E")
+  accentColor             String          @default("#BE1434")
+  currency                String          @default("BDT")
+  /// A wholesale return's refund above this (company currency) needs the owner's PIN to approve.
+  wholesaleReturnPinAbove Decimal         @default(10000) @db.Decimal(14, 2)
+  timezone                String          @default("Asia/Dhaka")
   /// When the terms of employment staff must have agreed to were published (null: no terms yet).
   /// Staff linked to a login agree before they work in the app (hr/terms.service.ts).
-  termsRequiredSince    DateTime?
+  termsRequiredSince      DateTime?
   // Business rules
   lowStockThreshold     Int             @default(5)
   defaultAdvancePercent Decimal         @default(30) @db.Decimal(5, 2)
@@ -159,6 +161,8 @@ model Company {
   retailDailySummaries   RetailDailySummary[]
   retailFixedCosts       RetailFixedCost[]
   retailBudgets          RetailBudget[]
+  b2bBudgets             B2bAcquisitionBudget[]
+  wholesaleReturns       WholesaleReturn[]
   retailTargets          RetailTarget[]
   retailYearReports      RetailYearReport[]
   retailAlerts           RetailAlert[]
@@ -250,6 +254,7 @@ model Company {
   documentLinks          DocumentLink[]
   followUps              FollowUp[]
   aiBotLinks             AiBotLink[]
+  botApprovalSettings    BotApprovalSetting[]
   aiPinTries             AiPinTry[]
   aiBotMessages          AiBotMessage[]
   aiOrderRuns            AiOrderRun[]
@@ -264,6 +269,17 @@ model Company {
   loginBlocks            LoginBlock[]
   serverErrors           ServerError[]
   usageCounts            UsageCount[]
+  leads                  Lead[]
+  leadContacts           LeadContact[]
+  leadActivities         LeadActivity[]
+  leadSamples            LeadSample[]
+  leadFiles              LeadFile[]
+  leadSources            LeadSource[]
+  leadSettings           LeadSettings?
+  leadSuppressions       LeadSuppression[]
+  taTemplateSteps        TaTemplateStep[]
+  taSettings             TaSettings?
+  orderTaSteps           OrderTaStep[]
 }
 
 /// A person who can log in. Global across companies.
@@ -395,6 +411,7 @@ model User {
   houseRulesDecided   HouseRule[]            @relation("HouseRuleDecidedBy")
   mailSettingsSet     CompanyMailSettings[]  @relation("MailSettingsUpdatedBy")
   aiBotLinksOwned     AiBotLink[]            @relation("AiBotLinkOwner")
+  botApprovalSettings BotApprovalSetting[]
   aiBotLinkCodes      AiBotLink[]            @relation("AiBotLinkCodeOwner")
   aiBotLinksSet       AiBotLink[]            @relation("AiBotLinkUpdatedBy")
   aiOrderRunsMade     AiOrderRun[]           @relation("AiOrderRunCreatedBy")
@@ -405,6 +422,8 @@ model User {
   serverHealthRuns    ServerHealthRun[]      @relation("ServerHealthRunBy")
   bugGuardEvents      BugGuardEvent[]        @relation("BugGuardEventBy")
   freshStarts         FreshStart[]
+  leadsOwned          Lead[]                 @relation("LeadOwner")
+  taStepsDone         OrderTaStep[]          @relation("TaStepDoneBy")
 }
 
 /// A signed-in device. `token` stores the SHA-256 hash of the cookie value, never
@@ -609,6 +628,7 @@ model FileAsset {
   logoMachineFiles    TechPackLogo[]           @relation("TechPackLogoMachineFile")
   logoSewOuts         TechPackLogo[]           @relation("TechPackLogoSewOut")
   labDipReports       TechPackColour[]         @relation("TechPackColourReport")
+  leadFiles           LeadFile[]
 
   @@index([companyId])
 }
@@ -776,23 +796,25 @@ model ProductVariant {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  company           Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  style             Style                  @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  color             Color                  @relation(fields: [colorId], references: [id])
-  size              Size                   @relation(fields: [sizeId], references: [id])
-  stockBalances     StockBalance[]
-  stockMovements    StockMovement[]
-  badStockEntries   BadStockEntry[]
-  orderItems        SalesOrderItem[]
-  returnItems       SalesReturnItem[]
-  intakeLines       StockIntakeLine[]
-  packingListItems  PackingListItem[]
-  challanItems      DeliveryChallanItem[]
-  productionTargets ProductionTargetLine[]
-  retailPrices      RetailPrice[]
-  retailOrderLines  RetailOrderLine[]
-  retailReturns     RetailReturnPiece[]
-  readyStockLines   ReadyStockLine[]
+  company                Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  style                  Style                  @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  color                  Color                  @relation(fields: [colorId], references: [id])
+  size                   Size                   @relation(fields: [sizeId], references: [id])
+  stockBalances          StockBalance[]
+  stockMovements         StockMovement[]
+  badStockEntries        BadStockEntry[]
+  orderItems             SalesOrderItem[]
+  returnItems            SalesReturnItem[]
+  wholesaleReturnLines   WholesaleReturnLine[]  @relation("WholesaleReturnLineVariant")
+  wholesaleExchangeLines WholesaleReturnLine[]  @relation("WholesaleReturnLineNewVariant")
+  intakeLines            StockIntakeLine[]
+  packingListItems       PackingListItem[]
+  challanItems           DeliveryChallanItem[]
+  productionTargets      ProductionTargetLine[]
+  retailPrices           RetailPrice[]
+  retailOrderLines       RetailOrderLine[]
+  retailReturns          RetailReturnPiece[]
+  readyStockLines        ReadyStockLine[]
 
   @@unique([companyId, sku])
   @@unique([styleId, colorId, sizeId])
@@ -1451,6 +1473,7 @@ model Party {
   payments             Payment[]
   refunds              Refund[]
   salesReturns         SalesReturn[]
+  wholesaleReturns     WholesaleReturn[]
   creditAllocations    CreditAllocation[]
   cheques              Cheque[]
   journalLines         JournalLine[]
@@ -1478,6 +1501,8 @@ model Party {
   projectSettlements   ProjectSettlement[]
   aiOrderRuns          AiOrderRun[]         @relation("AiOrderRunBuyer")
   techPacks            TechPack[]           @relation("TechPackBuyer")
+  /// The lead it was made from ("Make buyer"), with the lead's whole history.
+  fromLead             Lead?                @relation("LeadParty")
 
   @@unique([companyId, code])
   @@unique([companyId, systemRole])
@@ -1674,6 +1699,8 @@ model SalesOrder {
   deliveryChallans   DeliveryChallan[]
   shipments          Shipment[]
   returns            SalesReturn[]
+  wholesaleReturns   WholesaleReturn[]        @relation("WholesaleReturnOrder")
+  exchangeFor        WholesaleReturn?         @relation("WholesaleReturnExchange")
   payments           Payment[]
   refunds            Refund[]
   creditAllocations  CreditAllocation[]
@@ -1685,6 +1712,8 @@ model SalesOrder {
   aiOrderRuns        AiOrderRun[]
   /// Read-only links to its progress for the buyer ("Share order status").
   statusLinks        OrderStatusLink[]
+  /// Its T&A calendar: one row per step, from the company template.
+  taSteps            OrderTaStep[]
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalOrderId])
@@ -2272,6 +2301,8 @@ model SalesReturn {
   items        SalesReturnItem[]
   allocations  CreditAllocation[]
   refunds      Refund[]
+  /// The wholesale return whose approval made this credit note (2026-11-12).
+  wholesale    WholesaleReturn?
 
   @@unique([companyId, number])
   @@unique([companyId, integrationId, externalReturnId])
@@ -2280,6 +2311,82 @@ model SalesReturn {
   @@index([invoiceId])
   @@index([orderId])
   @@index([partyId])
+}
+
+/// A wholesale buyer's return in three steps (2026-11-12): "Receive return" (the pieces
+/// come back into "Returns to check", counted but not sellable; an exchange's new pieces
+/// leave at once on their own order, invoice and challan), "Approve" (how many pieces are
+/// refunded: the credit note, `salesReturnId`) and "QC" (each line's pieces split into
+/// A-grade, B-grade and Reject stock). Approval and QC come in either order. Its status
+/// follows from approvedAt and checkedAt (Received, Approved, Checked, Done).
+model WholesaleReturn {
+  id              String    @id @default(cuid())
+  companyId       String
+  number          String
+  orderId         String
+  invoiceId       String
+  partyId         String
+  warehouseId     String
+  reason          String
+  notes           String?
+  receivedAt      DateTime  @default(now())
+  receivedById    String?
+  /// The sale of the exchange's new pieces (its own order, invoice and challan).
+  exchangeOrderId String?   @unique
+  approvedAt      DateTime?
+  approvedById    String?
+  /// Why fewer pieces than came back are refunded.
+  approveNote     String?
+  salesReturnId   String?   @unique
+  checkedAt       DateTime?
+  checkedById     String?
+  /// The QC entry: the pieces' cost back to Inventory (A and B) or to Inventory Loss (Reject).
+  qcJournalId     String?   @unique
+  createdAt       DateTime  @default(now())
+
+  company       Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order         SalesOrder            @relation("WholesaleReturnOrder", fields: [orderId], references: [id], onDelete: Cascade)
+  party         Party                 @relation(fields: [partyId], references: [id])
+  exchangeOrder SalesOrder?           @relation("WholesaleReturnExchange", fields: [exchangeOrderId], references: [id], onDelete: SetNull)
+  salesReturn   SalesReturn?          @relation(fields: [salesReturnId], references: [id], onDelete: SetNull)
+  lines         WholesaleReturnLine[]
+
+  @@unique([companyId, number])
+  @@index([companyId, receivedAt])
+  @@index([partyId])
+  @@index([orderId])
+}
+
+/// One SKU line of a wholesale return: its pieces, Refund or Exchange, what was refunded and
+/// the QC split (A + B + Reject = quantity once checked).
+model WholesaleReturnLine {
+  id              String                 @id @default(cuid())
+  companyId       String
+  returnId        String
+  orderItemId     String
+  variantId       String
+  quantity        Int
+  /// The price billed per piece and the cost each piece left at.
+  unitPrice       Decimal                @default(0) @db.Decimal(14, 2)
+  unitCost        Decimal                @default(0) @db.Decimal(14, 4)
+  mode            WholesaleReturnMode
+  exchangeKind    WholesaleExchangeKind?
+  newVariantId    String?
+  newQuantity     Int?
+  newUnitPrice    Decimal?               @db.Decimal(14, 2)
+  /// The new pieces' price less the returned pieces' credit: + added to the buyer's due, - credit.
+  priceDifference Decimal                @default(0) @db.Decimal(14, 2)
+  refunded        Int                    @default(0)
+  qcA             Int                    @default(0)
+  qcB             Int                    @default(0)
+  qcReject        Int                    @default(0)
+
+  wholesaleReturn WholesaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  variant         ProductVariant  @relation("WholesaleReturnLineVariant", fields: [variantId], references: [id])
+  newVariant      ProductVariant? @relation("WholesaleReturnLineNewVariant", fields: [newVariantId], references: [id])
+
+  @@index([returnId])
+  @@index([orderItemId])
 }
 
 /// QC decision per returned SKU: Move to Main Stock or Move to Bad Stock.
@@ -3517,14 +3624,17 @@ model CapitalInstallment {
 // =============================================================================
 
 model ExpenseHead {
-  id               String          @id @default(cuid())
+  id               String              @id @default(cuid())
   companyId        String
   name             String
   category         ExpenseCategory
   ledgerAccountId  String?
-  isProductionCost Boolean         @default(false)
-  requiresEmployee Boolean         @default(false) // true for Conveyance / Food
-  isActive         Boolean         @default(true)
+  isProductionCost Boolean             @default(false)
+  requiresEmployee Boolean             @default(false) // true for Conveyance / Food
+  isActive         Boolean             @default(true)
+  /// One of the "Customer acquisition (B2B)" sub-heads (2026-11-12): an office cost, shown on
+  /// Business > B2B; never part of order costing and never mixed with the shops' ad spend.
+  acquisitionLine  B2bAcquisitionLine?
 
   company         Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   ledgerAccount   LedgerAccount?           @relation(fields: [ledgerAccountId], references: [id], onDelete: SetNull)
@@ -3534,6 +3644,7 @@ model ExpenseHead {
   recurring       RecurringExpense[]
 
   @@unique([companyId, name])
+  @@unique([companyId, acquisitionLine])
 }
 
 /// General expense (incl. Quick Add). Conveyance/Food entries must name an
@@ -5739,6 +5850,16 @@ enum ReturnStatus {
   COMPLETED
 }
 
+enum WholesaleReturnMode {
+  REFUND
+  EXCHANGE
+}
+
+enum WholesaleExchangeKind {
+  SIZE // the same style and colour, another size
+  OTHER // another product
+}
+
 enum ReturnItemQcStatus {
   PENDING
   MOVED_TO_MAIN_STOCK
@@ -5949,6 +6070,16 @@ enum ExpenseCategory {
   OTHER
 }
 
+/// The "Customer acquisition (B2B)" sub-heads (2026-11-12).
+enum B2bAcquisitionLine {
+  ONLINE_ADS
+  TRADE_FAIRS
+  SAMPLES
+  PLATFORMS
+  TRAVEL
+  OTHER
+}
+
 enum AdPlatform {
   FACEBOOK
   INSTAGRAM
@@ -6089,6 +6220,7 @@ enum DocumentType {
   REPORT
   REFUND_VOUCHER
   BUYER_360 // a buyer's whole history on one PDF (Customer 360°)
+  WHOLESALE_RETURN // a wholesale buyer's return (WR-), 2026-11-12
   SUPPLIER_360 // a supplier's projects, deliveries and dues on one PDF (Supplier 360°)
   STOCK_LOT // inward batches of finished goods (LOT-2026-00001)
   MATERIAL_CHALLAN // materials sent to a factory for a production project (MC-2026-00001)
@@ -6172,6 +6304,7 @@ enum ReminderType {
   QUOTATION_EXPIRY
   PROMISED_PAYMENT
   FOLLOW_UP
+  LEAD_FOLLOW_UP
 }
 
 enum ReminderStatus {
@@ -6815,6 +6948,25 @@ model AiBotLink {
   @@unique([companyId, channel])
   @@index([webhookKey])
   @@index([channel, botKey])
+}
+
+/// A person's own choice in a store (Release 5): whether the bot brings them
+/// what waits for their approval (bookings, payroll, leave, expense claims)
+/// with Approve and Reject buttons. No row means yes, for anyone who may
+/// approve something.
+model BotApprovalSetting {
+  id            String   @id @default(cuid())
+  companyId     String
+  userId        String
+  sendApprovals Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([userId])
 }
 
 /// PIN tries counted per person and store (v6.4.1), kept here so a restart
@@ -8075,6 +8227,23 @@ model RetailBudget {
   @@unique([storeId, month])
 }
 
+/// The owner's monthly budget for one "Customer acquisition (B2B)" sub-head (Business > B2B):
+/// 80% yellow, over 100% red.
+model B2bAcquisitionBudget {
+  id        String             @id @default(cuid())
+  companyId String
+  /// YYYY-MM
+  month     String
+  line      B2bAcquisitionLine
+  amount    Decimal            @db.Decimal(14, 2)
+  setById   String?
+  updatedAt DateTime           @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, month, line])
+}
+
 /// A note the ERP sent about the retail side (plan v6 sec 13): the night summary, an alert
 /// or the weekly analysis, kept so each goes once and can be read again.
 model RetailAlert {
@@ -8293,4 +8462,401 @@ model PackingListSource {
 
   @@unique([companyId, key])
   @@index([companyId, updatedAt])
+}
+
+// =============================================================================
+// Leads: companies that are not buyers yet (Sales > Leads, phase 1: no AI, the
+// ERP sends nothing itself). A lead becomes a buyer at its first quotation or by
+// "Make buyer", keeping its whole history.
+// =============================================================================
+
+/// Where a lead stands on its way to an order.
+enum LeadStage {
+  NEW
+  CONTACTED
+  IN_TALKS
+  SAMPLING
+  QUOTED
+  WON
+  LOST
+  NURTURE
+}
+
+/// What kind of company the lead is.
+enum LeadCategory {
+  BRAND
+  IMPORTER
+  WHOLESALER
+  SOURCING_AGENT
+  RETAIL_CHAIN
+  CORPORATE_UNIFORM
+  PROMOTIONAL
+  OTHER
+}
+
+/// Where leads come from (each company names its own sources, of these kinds).
+enum LeadSourceKind {
+  TRADE_FAIR
+  REFERRAL
+  SHIPMENT_DATA
+  LINKEDIN
+  WEBSITE
+  MARKETPLACE
+  COLD_RESEARCH
+  EXISTING_NETWORK
+  OTHER
+}
+
+/// One line of a lead's history. Lines are only ever added (a correction is a new note).
+enum LeadActivityKind {
+  NOTE
+  CALL
+  MEETING
+  FAIR_MEETING
+  EMAIL_OUT
+  EMAIL_IN
+  WHATSAPP
+  SAMPLE
+  STAGE
+  ASSIGN
+  NEXT_STEP
+  CONTACT
+  FILE
+  CONVERT
+  ERASE
+  EDIT
+}
+
+/// The kind of the next thing to do with a lead.
+enum LeadNextKind {
+  EMAIL
+  CALL
+  MEETING
+  SAMPLE
+  QUOTE
+  OTHER
+}
+
+/// A sample sent to a lead, on its way to a yes or a no.
+enum LeadSampleStatus {
+  REQUESTED
+  IN_MAKING
+  DISPATCHED
+  FEEDBACK
+  APPROVED
+  REJECTED
+}
+
+/// What a "Do not contact" entry blocks: one email address, a whole email domain, or a phone.
+enum LeadSuppressionKind {
+  EMAIL
+  DOMAIN
+  PHONE
+}
+
+/// Why it is on the "Do not contact" list.
+enum LeadSuppressionReason {
+  ASKED
+  ERASED
+  OWNER
+}
+
+/// A company that is not a buyer yet. Never deleted: archived instead.
+model Lead {
+  id             String        @id @default(cuid())
+  companyId      String
+  /// LD-0001, per company.
+  number         String
+  name           String
+  website        String?
+  /// The website's domain, lower case without www (duplicate check).
+  websiteDomain  String?
+  country        String?
+  city           String?
+  category       LeadCategory  @default(OTHER)
+  /// What they want: "Polo", "T-shirt"... (the lead check reads them).
+  products       String[]      @default([])
+  /// Pieces per style they usually order (the lead check's quantity).
+  piecesPerStyle Int?
+  /// The price per piece they talk about, in the company's money (the lead check's price).
+  targetPrice    Decimal?      @db.Decimal(14, 2)
+  /// What a first year with them could be worth, in the company's money (reports).
+  expectedValue  Decimal?      @db.Decimal(14, 2)
+  /// How they would pay, when known (the lead check's payment risk).
+  paymentTerms   TradePayment?
+  stage          LeadStage     @default(NEW)
+  stageChangedAt DateTime      @default(now())
+  /// Who follows it up; null = not given to anyone yet (everyone with Leads sees it).
+  ownerUserId    String?
+  sourceId       String?
+  /// "Met Anna at stand B12", "referred by Rahim of XYZ Knit".
+  sourceNote     String?
+  nextActionOn   DateTime?     @db.Date
+  nextActionKind LeadNextKind?
+  nextActionNote String?
+  lostReason     String?
+  wonAt          DateTime?
+  lostAt         DateTime?
+  /// The buyer it became ("Make buyer", or at its first quotation).
+  partyId        String?       @unique
+  convertedAt    DateTime?
+  convertedById  String?
+  /// Nobody at this lead is to be contacted (the email and WhatsApp buttons stop).
+  doNotContact   Boolean       @default(false)
+  lastActivityAt DateTime      @default(now())
+  archivedAt     DateTime?
+  createdById    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  owner      User?          @relation("LeadOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  source     LeadSource?    @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  party      Party?         @relation("LeadParty", fields: [partyId], references: [id], onDelete: SetNull)
+  contacts   LeadContact[]
+  activities LeadActivity[]
+  samples    LeadSample[]
+  files      LeadFile[]
+
+  @@unique([companyId, number])
+  @@index([companyId, stage, nextActionOn])
+  @@index([companyId, ownerUserId])
+  @@index([companyId, websiteDomain])
+}
+
+/// A person at a lead. Erasing their personal data blanks these fields for good.
+model LeadContact {
+  id              String    @id @default(cuid())
+  companyId       String
+  leadId          String
+  name            String
+  jobTitle        String?
+  email           String?
+  /// The email's domain, lower case (duplicate check; free-mail domains are not compared).
+  emailDomain     String?
+  phone           String?
+  whatsapp        String?
+  isPrimary       Boolean   @default(false)
+  isDecisionMaker Boolean   @default(false)
+  doNotContact    Boolean   @default(false)
+  /// When their personal data was erased (name, email and phones blanked).
+  erasedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead       Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  activities LeadActivity[]
+
+  @@index([companyId, email])
+  @@index([companyId, emailDomain])
+  @@index([leadId])
+}
+
+/// One line of a lead's history: added only, never edited or deleted.
+model LeadActivity {
+  id         String           @id @default(cuid())
+  companyId  String
+  leadId     String
+  contactId  String?
+  kind       LeadActivityKind
+  occurredAt DateTime         @default(now())
+  summary    String
+  body       String?
+  fromStage  LeadStage?
+  toStage    LeadStage?
+  userId     String?
+  createdAt  DateTime         @default(now())
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact LeadContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([leadId, occurredAt])
+  @@index([companyId, kind, occurredAt])
+}
+
+/// A sample sent to a lead (no money: courier or making costs go through Expenses).
+model LeadSample {
+  id          String           @id @default(cuid())
+  companyId   String
+  leadId      String
+  description String
+  quantity    Int?
+  status      LeadSampleStatus @default(REQUESTED)
+  courier     String?
+  trackingNo  String?
+  sentOn      DateTime?        @db.Date
+  feedback    String?
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+/// A file kept on a lead (their catalogue, a business card photo, a price list).
+model LeadFile {
+  id        String   @id @default(cuid())
+  companyId String
+  leadId    String
+  fileId    String
+  addedById String?
+  createdAt DateTime @default(now())
+
+  company Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  file    FileAsset @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+/// Where leads come from: a fair ("Texworld Paris Feb 2027"), a referral, LinkedIn...
+model LeadSource {
+  id        String         @id @default(cuid())
+  companyId String
+  name      String
+  kind      LeadSourceKind @default(OTHER)
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  leads   Lead[]
+
+  @@unique([companyId, name])
+}
+
+/// The lead check card's rules, set once by the owner.
+model LeadSettings {
+  id              String   @id @default(cuid())
+  companyId       String   @unique
+  /// Countries the company wants buyers from (green).
+  targetCountries String[] @default([])
+  /// Countries with payment or other risk (red).
+  riskyCountries  String[] @default([])
+  /// Products the company makes well ("Polo", "T-shirt").
+  productFocus    String[] @default([])
+  /// The fewest pieces per style worth taking.
+  minPieces       Int?
+  /// The price range per piece the company works in, in its own money.
+  priceMin        Decimal? @db.Decimal(14, 2)
+  priceMax        Decimal? @db.Decimal(14, 2)
+  /// Days to the next step when a new lead is added without one.
+  followUpDays    Int      @default(7)
+  updatedById     String?
+  updatedAt       DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// The "Do not contact" list: kept as a hash, so it still works after the person's data is erased.
+model LeadSuppression {
+  id          String                @id @default(cuid())
+  companyId   String
+  kind        LeadSuppressionKind
+  /// SHA-256 of the cleaned email, domain or phone digits.
+  valueHash   String
+  /// "j***@brand.com", "+44 *** 789": enough to recognise, never the whole value.
+  valueHint   String
+  reason      LeadSuppressionReason
+  note        String?
+  createdById String?
+  createdAt   DateTime              @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, kind, valueHash])
+}
+
+// --- T&A calendar (time and action) -------------------------------------------------------
+
+/// What ERP fact finishes a T&A step by itself; a step without one is ticked by hand.
+enum TaFact {
+  TECH_PACK_APPROVED
+  BOOKING_APPROVED
+  FABRIC_IN_HOUSE
+  CUTTING_STARTED
+  SEWING_DONE
+  PACKED
+  SHIPPED
+}
+
+/// How a T&A step was finished.
+enum TaDoneHow {
+  AUTO
+  MANUAL
+}
+
+/// One step of a company's T&A template: so many days before the ship date.
+model TaTemplateStep {
+  id             String   @id @default(cuid())
+  companyId      String
+  /// Stable key: TECH_PACK, FABRIC_BOOKING ... for the starting steps, or a made-up one.
+  key            String
+  name           String
+  daysBeforeShip Int
+  position       Int
+  fact           TaFact?
+  /// On the critical path: late here puts the ship date at risk.
+  critical       Boolean  @default(true)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, key])
+  @@index([companyId, position])
+}
+
+/// A company's T&A settings.
+model TaSettings {
+  id          String   @id @default(cuid())
+  companyId   String   @unique
+  /// A step due within this many days shows yellow.
+  dueSoonDays Int      @default(3)
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// One T&A step of one sales order, copied from the template when the order has a ship date.
+model OrderTaStep {
+  id             String     @id @default(cuid())
+  companyId      String
+  salesOrderId   String
+  key            String
+  name           String
+  position       Int
+  fact           TaFact?
+  critical       Boolean    @default(true)
+  daysBeforeShip Int
+  /// The day the template gives (ship date minus its days).
+  plannedOn      DateTime   @db.Date
+  /// The day it is due: the planned day, or the day changed on this order.
+  dueOn          DateTime   @db.Date
+  /// Changed on this order by hand: a new ship date then leaves it alone.
+  dueChanged     Boolean    @default(false)
+  doneAt         DateTime?
+  doneOn         DateTime?  @db.Date
+  doneHow        TaDoneHow?
+  doneById       String?
+  /// When the one "late" reminder went out (never twice for a step).
+  lateNotifiedAt DateTime?
+  /// A person took back the ERP's own tick: the ERP no longer ticks this step by itself.
+  autoOff        Boolean   @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  doneBy     User?      @relation("TaStepDoneBy", fields: [doneById], references: [id], onDelete: SetNull)
+
+  @@unique([salesOrderId, key])
+  @@index([companyId, dueOn])
+  @@index([companyId, doneAt])
 }

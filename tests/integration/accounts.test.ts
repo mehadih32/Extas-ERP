@@ -1177,7 +1177,8 @@ run("expenses and claims", () => {
   it("lets Accounts pay expenses and turns everyone else's into claims", async () => {
     const env = await setup();
     const heads = new Map((await expenses.listExpenseHeads(env.employee)).map((h) => [h.name, h]));
-    expect([...heads.keys()]).toHaveLength(12);
+    // 12 heads plus the six "Customer acquisition (B2B)" ones (2026-11-12).
+    expect([...heads.keys()]).toHaveLength(18);
     expect(heads.get("Conveyance")).toMatchObject({
       requiresEmployee: true,
       ledgerAccount: { code: "6700" },

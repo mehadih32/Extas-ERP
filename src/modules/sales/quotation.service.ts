@@ -23,6 +23,7 @@ import {
   updateQuotationSchema,
 } from "@/modules/sales/schemas";
 import { quotationLineQuantity, quotationTotals } from "@/modules/sales/totals";
+import { noteQuotationOnLead } from "@/modules/leads/lead.service";
 
 /*
  * Quotation builder: buyer, items (category / style, fabric, quantity or a size
@@ -150,6 +151,8 @@ export async function createQuotation(ctx: CompanyContext, raw: unknown, meta?: 
       },
       tx,
     );
+    // A buyer that came from a lead: the lead moves to Quoted and its history says so.
+    await noteQuotationOnLead(tx, ctx, party.id, created.number);
     return created;
   });
   return getQuotation(ctx, quotation.id);

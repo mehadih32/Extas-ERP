@@ -106,6 +106,9 @@ export const refreshPartyStatusesAction = async () =>
 // --- Re-engagement campaigns -----------------------------------------------------
 export const listCampaignsAction = async () =>
   runAction(async () => campaigns.listCampaigns(await campaignsManage()));
+/** The buyers a new campaign can go to (the picker on Buyers & suppliers > Campaigns). */
+export const campaignBuyersAction = async () =>
+  runAction(async () => campaigns.campaignBuyers(await campaignsManage()));
 export const getCampaignAction = async (campaignId: string) =>
   runAction(async () => campaigns.getCampaign(await campaignsManage(), campaignId));
 export const createCampaignAction = async (input: unknown) =>

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * PATCH /api/parties/campaigns/:campaignId/recipients/:recipientId —
- * { status: "SENT" | "DELIVERED" | "READ" | "FAILED", error?, responded? }
+ * { status: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED", error?, responded? }
  */
 export const PATCH = apiRoute<Params>(async (request, { campaignId, recipientId }) =>
   campaigns.updateRecipientStatus(

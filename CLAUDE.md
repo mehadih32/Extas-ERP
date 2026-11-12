@@ -249,6 +249,53 @@ overwrites a stored total or figure.
   for shop or sales orders can never be moved to bad stock or counted away (A-grade and B-grade), checked on the
   server. Changing a retail shop's warehouse needs the PIN. `docs/later-list.md` holds the owner's later list, an
   exact copy of the owner's file.
+- 2026-11-12 (Release 5: bot approvals, voice notes and files, campaigns): what waits for approval (bookings and
+  their revisions, payrolls, leave requests, expense claims) comes to the person linked to the bot who may approve
+  it, unless they turn off "Send me approvals on Telegram" (on at first); the AI switch does not stop these. A press
+  runs the same service as the ERP's own button, in that person's name, with their permission checked first at the
+  press (without it the bot says nothing more about the item). Bookings and payrolls ask for the PIN; a stale or
+  changed item (a booking's total quantity and value count) is never approved from an old button. Expense claims are
+  approved only in the ERP, where the person picks the "Paid from" account: the bot offers Reject and the ERP's
+  link, never a payment from an account it chose. Never for deletions, permissions or roles. Voice notes and files
+  on the bot need the AI on (and a Gemini model for "Voice notes to text"); too large ones are never fetched or read;
+  they only make drafts in the AI's own account (an order draft, a buyer draft added only on Apply, a delivery draft
+  confirmed by a person), and nothing posts by itself. Buyers & suppliers > Campaigns (`sales.campaigns.manage`)
+  fills each buyer's name into one message and opens it in WhatsApp or email on the person's own device: the
+  person sends it, the ERP never does.
+- 2026-11-12 (wholesale returns): a wholesale buyer's return has three steps: "Receive return" (Refund or
+  Exchange per line; an exchange's new pieces leave at once on their own invoice and challan; the pieces wait in
+  "Returns to check"), "Approve" and "QC" (A-grade, B-grade and Reject adding up to the pieces received). Approving
+  credits the buyer's account, so it needs both "Approve wholesale returns (refunds)" (`sales.returns.approve`)
+  and the money rule's `accounts.receipts.record`, checked in the route and the service. The owner's PIN is asked
+  when this refund plus the invoice's earlier credit notes pass the company's amount (10,000 at first), so a
+  return split in parts never slips under it. A void invoice or cancelled order takes no approval or QC, and an
+  invoice with a return waiting for approval cannot be voided.
+- 2026-11-12 (T&A calendar): the company has one T&A template (Production > T&A calendar > "T&A template", only
+  with company.settings), its steps so many days before the ship date; the starting steps are the Order check
+  card's days, and the AI order runs read the same template, so both show the same dates. Every order with a ship
+  date gets its own copy; a later template change counts only for orders that get their T&A after it. An order's
+  step days can be changed on the order (audit-logged; a later ship date change leaves a changed day alone). Steps
+  tick themselves from the ERP's records, the rest by hand; a person who may change T&A steps can take back the
+  ERP's own tick only with a reason (activity log), and the ERP then leaves that step to be ticked by hand. Seen
+  with sales.view or production.view; changed with sales.order.create or production.manage. A step that becomes
+  late is told once, in one combined message per company per hourly run: the owner gets every late step, the
+  person who made the order the steps of their own orders (inbox), and the owner one bot alarm (with the AI on or
+  off). A step already past its day when the T&A is made is never told, nor a draft order's steps. A late step on
+  the critical path shows "Ship date at risk". Opening a T&A page where nothing may be written (a Full check
+  session) writes nothing.
+
+- 2026-11-12 (leads, phase 1): Sales has a "Leads" tab for companies that are not buyers yet; phase 1 has no AI
+  and the ERP sends nothing itself (email and WhatsApp open in the person's own app, and "I sent it" logs it).
+  Staff see their own leads and those not given to anyone; only "See every lead" (the owner) sees all, and only the
+  owner (or whoever is given "Download the lead list") exports. A lead becomes a buyer with "Make buyer" or at its
+  first quotation, which moves it to Quoted; Won and Lost are set by hand, Lost always with a reason. A lead's
+  history is append-only. "Erase personal data" (only with "Erase a contact's personal data" and the PIN) blanks
+  one contact's name, job title, email and phones for good and keeps only a hashed "Do not contact" marker, so
+  nobody contacts them again; the lead, its history, money, stock and posted documents are never touched. Nothing
+  is ever taken off "Do not contact". A Nurture lead's "look again" day reminds like any next step. On shared sites
+  (Facebook, LinkedIn, Alibaba, Amazon, wa.me ...) only the company's own page counts as the same website. The
+  duplicate warning never names a lead the person may not open.
+
 - 2026-11-11 (B-grade lines for the shops): a shop order line may be A-grade or B-grade. A B line takes the
   factory's own B-grade stock at the B-grade cost; an approved returned B piece goes back to B-grade stock. A
   B-grade piece costs the shop the style's own "B-grade price" (set on the product, with the PIN), or, without one,

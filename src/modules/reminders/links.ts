@@ -40,6 +40,8 @@ export function recordHref(ctx: Can, link: RecordLink | null): string | null {
       return ctx.can("sales.view") ? `/sales/invoices/${id}` : null;
     case "Party":
       return ctx.can("parties.view") ? `/parties/buyers/${id}` : null;
+    case "Lead":
+      return ctx.can("leads.view") || ctx.can("leads.all") ? `/sales/leads/${id}` : null;
     case "PurchaseOrder":
       return ctx.can("materials.view") ? `/materials/orders/${id}` : null;
     case "ComplianceDocument":

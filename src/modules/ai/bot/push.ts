@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { enqueueJob } from "@/modules/jobs/queue";
 import { kickJobWorker } from "@/modules/jobs/worker";
 
+import type { ApprovalKind } from "./approval-codes";
 import { workingLinks } from "./owner";
 
 /*
@@ -27,7 +28,9 @@ export type BotPush =
   | { kind: "deletion"; requestId: string }
   /** Bug Guard: one problem with Fix, Ignore and Remind me later; a correction with Apply or Undo. */
   | { kind: "guard"; findingId: string }
-  | { kind: "guard-correction"; correctionId: string };
+  | { kind: "guard-correction"; correctionId: string }
+  /** Something waits for a person's approval (approvals.ts): a system message, AI or not. */
+  | { kind: "approval"; what: ApprovalKind; id: string };
 
 /** A push as the background job carries it: an alarm goes to the platform owners' links only. */
 export type QueuedPush = BotPush & { alarm?: boolean };
@@ -54,6 +57,19 @@ export async function pushToBot(
 ) {
   try {
     const queued: QueuedPush = options.alarm ? { ...push, alarm: true } : push;
+    if (push.kind === "approval") {
+      // Only to linked people who may approve it and want it; the AI switch does not matter.
+      const { approverLinks } = await import("./approvals");
+      if ((await approverLinks(companyId, push.what)).length === 0) return;
+      await enqueueJob(prisma, {
+        kind: "ai.bot.push",
+        companyId,
+        payload: queued as unknown as Prisma.InputJsonObject,
+        maxAttempts: 1,
+      });
+      kickJobWorker();
+      return;
+    }
     const links = await prisma.aiBotLink.findMany({
       where: {
         companyId,

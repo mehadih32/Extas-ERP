@@ -16,6 +16,11 @@ import { createCampaignSchema, recipientStatusSchema } from "@/modules/parties/s
  * message and a one-click link (WhatsApp wa.me, mailto: or sms:) and tracks
  * delivery and responses. Automatic sending through a WhatsApp Business / email
  * provider plugs in later with the Notifications module.
+ *
+ * The Campaigns screen (Buyers & suppliers > Campaigns, Release 5) sends
+ * nothing by itself: each buyer's "Open WhatsApp" / "Open email" opens the
+ * filled-in message on the person's own phone or computer, and the person
+ * presses send there (a message to a buyer is only ever sent by a person).
  */
 
 type Contact = Pick<Party, "phone" | "whatsapp" | "email">;
@@ -32,6 +37,7 @@ function personalise(
   catalogFileUrl: string | null,
 ): string {
   const text = fillTemplate(template, {
+    name: party.name,
     BuyerName: party.name,
     ContactPerson: party.contactPerson ?? party.name,
     CompanyName: companyName,
@@ -137,6 +143,59 @@ export async function createCampaign(ctx: CompanyContext, raw: unknown, meta?: R
   return { campaign, recipientCount: reachable.length, skipped };
 }
 
+/**
+ * The buyers a campaign can be sent to, for the screen's picker: every open
+ * buyer account, with whether it is dormant (a wholesale or B2B buyer with no
+ * business for the company's dormant months, as listDormantBuyers counts it),
+ * its country, and whether WhatsApp or email can reach it.
+ */
+export async function campaignBuyers(ctx: CompanyContext) {
+  const [buyers, dormant] = await Promise.all([
+    ctx.db.party.findMany({
+      where: {
+        kind: { in: ["BUYER", "BOTH"] },
+        status: { in: ["ACTIVE", "DORMANT"] },
+        systemRole: null,
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        country: true,
+        contactPerson: true,
+        phone: true,
+        whatsapp: true,
+        email: true,
+        lastTransactionAt: true,
+      },
+      orderBy: { name: "asc" },
+      take: 3000,
+    }),
+    listDormantBuyers(ctx),
+  ]);
+  const quiet = new Set(dormant.items.map((p) => p.id));
+  const countries = [
+    ...new Set(buyers.flatMap((b) => (b.country?.trim() ? [b.country.trim()] : []))),
+  ].sort((a, b) => a.localeCompare(b));
+  return {
+    dormantMonths: dormant.months,
+    countries,
+    buyers: buyers.map((b) => ({
+      id: b.id,
+      code: b.code,
+      name: b.name,
+      country: b.country?.trim() || null,
+      contactPerson: b.contactPerson,
+      dormant: quiet.has(b.id),
+      lastTransactionAt: b.lastTransactionAt,
+      whatsapp: canReach("WHATSAPP", b),
+      email: canReach("EMAIL", b),
+    })),
+  };
+}
+
+export type CampaignBuyers = Awaited<ReturnType<typeof campaignBuyers>>;
+
 export async function listCampaigns(ctx: CompanyContext) {
   const campaigns = await ctx.db.reEngagementCampaign.findMany({
     orderBy: { createdAt: "desc" },
@@ -238,7 +297,12 @@ export async function updateRecipientStatus(
     where: { id: recipient.id },
     data: {
       status: input.status,
-      sentAt: input.status === "FAILED" ? recipient.sentAt : (recipient.sentAt ?? now),
+      sentAt:
+        input.status === "PENDING"
+          ? null
+          : input.status === "FAILED"
+            ? recipient.sentAt
+            : (recipient.sentAt ?? now),
       error: input.status === "FAILED" ? (input.error ?? "Not delivered") : null,
       ...(input.responded !== undefined
         ? { respondedAt: input.responded ? (recipient.respondedAt ?? now) : null }

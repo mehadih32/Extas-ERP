@@ -1,6 +1,7 @@
 import { SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { SectionError } from "@/components/dashboard/section-error";
 import { FormAlert } from "@/components/forms/field";
@@ -121,6 +122,15 @@ export default async function NewSalesReturnPage({
         )}
       </div>
     );
+  }
+
+  // A wholesale buyer's goods come back in three steps (2026-11-12): receive, approve, QC.
+  const buyerInvoice = await ctx.db.invoice.findUnique({
+    where: { id: invoiceId },
+    select: { party: { select: { retailStore: { select: { id: true } } } } },
+  });
+  if (buyerInvoice?.party && !buyerInvoice.party.retailStore) {
+    redirect(`/sales/wholesale-returns/new?invoice=${encodeURIComponent(invoiceId)}`);
   }
 
   const result = await getSalesReturnFormAction(invoiceId);

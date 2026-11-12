@@ -9,12 +9,19 @@ export type SalesTab = { href: string; label: string; anyOf: readonly Permission
  */
 export const SALES_TABS: readonly SalesTab[] = [
   { href: "/sales/overview", label: "Overview", anyOf: ["sales.view"] },
+  // Companies that are not buyers yet: own and unassigned leads, or every lead.
+  { href: "/sales/leads", label: "Leads", anyOf: ["leads.view", "leads.all"] },
   { href: "/sales/orders", label: "Orders", anyOf: ["sales.view"] },
   { href: "/sales/quotations", label: "Quotations", anyOf: ["sales.view"] },
   { href: "/sales/proformas", label: "Proformas", anyOf: ["sales.view"] },
   { href: "/sales/invoices", label: "Invoices", anyOf: ["sales.view"] },
   { href: "/sales/payments", label: "Payments", anyOf: ["sales.view"] },
   { href: "/sales/returns", label: "Returns", anyOf: ["sales.view"] },
+  {
+    href: "/sales/wholesale-returns",
+    label: "Wholesale returns",
+    anyOf: ["sales.view", "sales.returns.approve", "sales.returns.qc"],
+  },
 ];
 
 /** The tabs this person may open, in order; the first is where /sales goes. */

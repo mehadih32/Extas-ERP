@@ -1,3 +1,4 @@
+import { readOnlyReason } from "@/lib/read-only";
 import type { Expense, ExpenseHead, Party, Prisma } from "@prisma/client";
 
 import { dayRange, toInstant } from "@/lib/dates";
@@ -9,6 +10,7 @@ import type { RequestMeta } from "@/lib/request-meta";
 import { lockRow } from "@/lib/row-lock";
 import { runTransaction } from "@/lib/transaction";
 import { assertAllowed } from "@/lib/verdict";
+import { notifyApprovers } from "@/modules/ai/bot/approvals";
 import { money, ZERO } from "@/modules/accounts/balances";
 import { cashAccountFor } from "@/modules/accounts/cash-accounts";
 import {
@@ -43,6 +45,7 @@ import {
   canRejectExpense,
   canVoidExpense,
 } from "@/modules/expenses/rules";
+import { ensureB2bAcquisitionHeads } from "@/modules/business/b2b.service";
 import { linkedEmployee } from "@/modules/hr/access";
 import { reverseSettlementsTx, settleAdvancesForExpenseTx } from "@/modules/hr/advance.service";
 import { assertClaimNotPaidBack } from "@/modules/hr/claim-guard";
@@ -189,6 +192,8 @@ const headInclude = {
 export async function listExpenseHeads(ctx: CompanyContext, raw: unknown = {}) {
   const q = listExpenseHeadsSchema.parse(raw);
   await ensureGeneralExpenseHeads(ctx.company.id);
+  // A read-only session (Full check) never writes: the heads are made on a normal visit.
+  if (!(await readOnlyReason())) await ensureB2bAcquisitionHeads(ctx.company.id);
   return ctx.db.expenseHead.findMany({
     where: { isProductionCost: false, ...(q.includeInactive ? {} : { isActive: true }) },
     include: headInclude,
@@ -635,7 +640,10 @@ export async function createExpense(ctx: CompanyContext, raw: unknown, meta?: Re
     );
     return expense.id;
   }, TX_OPTIONS);
-  return getExpense(ctx, expenseId);
+  const saved = await getExpense(ctx, expenseId);
+  // A claim waits for Accounts: those linked to the bot hear of it.
+  if (saved.status === "PENDING") await notifyApprovers(ctx.company.id, "expense", expenseId);
+  return saved;
 }
 
 /**

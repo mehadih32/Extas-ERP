@@ -5,6 +5,8 @@ import { dateColumn, dateOnly, localDay, localTime, nextDay, startOfDayInZone } 
 import { formatAmount, formatDay } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { COMPLIANCE_TYPE_LABELS } from "@/modules/compliance/status";
+import { dueLeads } from "@/modules/leads/due";
+import { STAGE_LABELS as LEAD_STAGE_LABELS } from "@/modules/leads/rules";
 import { STAGE_LABELS } from "@/modules/production/timeline";
 import type { PermissionKey } from "@/modules/rbac/permissions";
 import type { AutoType } from "@/modules/reminders/rules";
@@ -46,6 +48,8 @@ export type DueItem = {
   markKey?: string;
   /** Follow-ups: the day it was due before it was snoozed. */
   originalDay?: string;
+  /** Leads not given to anyone: everyone who sees leads sees them in the agenda. */
+  openToAll?: boolean;
   /** Reminder columns that point at the record. */
   refs: {
     projectId?: string;
@@ -70,6 +74,15 @@ const ORDER_STATUS: Record<(typeof OPEN_ORDER_STATUSES)[number], string> = {
   CONFIRMED: "Confirmed",
   PROCESSING: "Partly delivered",
   PACKED: "Packed",
+};
+
+const NEXT_WORDS: Record<string, string> = {
+  EMAIL: "email",
+  CALL: "call",
+  MEETING: "meeting",
+  SAMPLE: "sample",
+  QUOTE: "quotation",
+  OTHER: "follow up",
 };
 
 const join = (...parts: Array<string | null | undefined | false>) =>
@@ -274,6 +287,28 @@ export async function dueItems(
         alertDaysBefore: d.alertDaysBefore,
         link: { type: "ComplianceDocument", id: d.id },
         refs: { complianceDocumentId: d.id },
+      }));
+    }
+    case "LEAD_FOLLOW_UP": {
+      const leads = await dueLeads(companyId, untilDay, db, limit);
+      return leads.map((l) => ({
+        type,
+        recordId: l.id,
+        dueDay: dateOnly(l.nextActionOn!),
+        dueTime: null,
+        title: `${l.number} ${l.name}`,
+        detail: join(
+          l.nextActionKind && `Next: ${NEXT_WORDS[l.nextActionKind]}`,
+          l.nextActionNote,
+          `Stage: ${LEAD_STAGE_LABELS[l.stage]}`,
+          !l.ownerUserId && "Not given to anyone yet",
+        ),
+        ownerUserIds: l.ownerUserId ? [l.ownerUserId] : l.createdById ? [l.createdById] : [],
+        ownerEmployeeIds: [],
+        alertDaysBefore: null,
+        openToAll: l.ownerUserId === null,
+        link: { type: "Lead", id: l.id },
+        refs: {},
       }));
     }
     case "TASK_DUE": {
@@ -501,6 +536,7 @@ const SUBJECT: Record<AutoType, string> = {
   PAYMENT_DUE: "Payment due",
   PROMISED_PAYMENT: "Promised payment",
   FOLLOW_UP: "Follow up",
+  LEAD_FOLLOW_UP: "Lead follow-up",
 };
 
 const DATE_LABEL: Record<AutoType, string> = {
@@ -513,6 +549,7 @@ const DATE_LABEL: Record<AutoType, string> = {
   PAYMENT_DUE: "Due",
   PROMISED_PAYMENT: "Promised for",
   FOLLOW_UP: "Follow up on",
+  LEAD_FOLLOW_UP: "Next step",
 };
 
 /** "today", "tomorrow", "in 3 days", "1 day ago". */

@@ -28,7 +28,22 @@ import {
   checkBotPin,
   PIN_CHECKED,
 } from "../settings.service";
+import {
+  companyOfApproval,
+  factsVersion,
+  flowOf,
+  isReasonWait,
+  type ReasonWait,
+  renderApproval,
+} from "./approvals";
 import { logBot, senderFor } from "./bot.service";
+import {
+  FILE_TOO_LARGE,
+  fileArrived,
+  FILES_NEED_AI,
+  MAX_FILE_BYTES,
+  readFileAs,
+} from "./bot-files";
 import { botOwner } from "./owner";
 import type { Incoming } from "./channel";
 import { type BotOut, type ButtonPress, draftVersion, readButton, renderAnswer } from "./render";
@@ -36,6 +51,8 @@ import { readTelegramUpdate } from "./telegram";
 import { PIN_TEXT } from "./pin-scrub";
 import { readWhatsAppPayload, whatsappSignatureOk } from "./whatsapp";
 import { NUMBER_HIDDEN_TEXT, pinCandidates } from "../pin-tries";
+import { aiReady } from "../claude";
+import { MAX_VOICE_BYTES, transcribeVoice, VOICE_TOO_LONG } from "../voice";
 
 /*
  * What reaches the bot. The webhook only checks who is calling (Telegram's
@@ -119,7 +136,10 @@ async function checkPinNow(mine: AiBotLink[], m: Incoming, now: Date): Promise<P
   const text = m.text?.trim() ?? "";
   // "Uttara: cancel" stops too: the stop word is read after the store's name.
   if (!text || m.callback || STOP_WORDS.test(storePrefix(text).rest)) return null;
-  let waiting = mine.filter((l) => l.pending && l.pendingUntil && l.pendingUntil > now);
+  // A request for a reason (Reject on an approval) takes words, never a PIN.
+  let waiting = mine.filter(
+    (l) => l.pending && !isReasonWait(l.pending) && l.pendingUntil && l.pendingUntil > now,
+  );
   if (waiting.length === 0) return null;
   const named = await namedStore(mine, text);
   // A name that fits more than one store is for none of them: the bot asks which.
@@ -163,7 +183,8 @@ const LATE_PIN_MINUTES = 60;
  * are sent.
  */
 function hiddenPin(mine: AiBotLink[], m: Incoming, now: Date): "late" | "stray" | null {
-  const text = westernDigits(m.text ?? "");
+  // The words sent with a photo or file count the same as a message.
+  const text = westernDigits(m.text ?? m.caption ?? "");
   if (m.callback) return null;
   const since = now.getTime() - LATE_PIN_MINUTES * 60_000;
   if (
@@ -235,7 +256,7 @@ async function keep(links: AiBotLink[], channel: AiBotChannel, botKey: string, m
     const store = hidden
       ? (mine.find((l) => l.pending) ?? mine[0]!)
       : (linking ?? (known ? await storeOfMessage(mine, m) : null) ?? mine[0] ?? first);
-    const incoming: Incoming = pin || hidden ? { ...m, text: PIN_TEXT } : m;
+    const incoming: Incoming = pin || hidden ? { ...m, text: PIN_TEXT, caption: null } : m;
     await prisma.$transaction(async (tx) => {
       const row = await tx.aiBotMessage.update({
         where: { id: claim.id },
@@ -666,7 +687,9 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
   const now = new Date();
   if (
     (pin !== null || text === PIN_TEXT) &&
-    !mine.some((l) => l.pending && l.pendingUntil && l.pendingUntil > now)
+    !mine.some(
+      (l) => l.pending && !isReasonWait(l.pending) && l.pendingUntil && l.pendingUntil > now,
+    )
   ) {
     return pinNotWaited(mine, m, now);
   }
@@ -694,9 +717,39 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
   }
   const sender = senderFor(link);
 
+  // The reason asked for after Reject on an approval: the person's own words.
+  if (
+    link.pendingUntil &&
+    link.pendingUntil > new Date() &&
+    isReasonWait(link.pending) &&
+    text &&
+    text !== PIN_TEXT
+  ) {
+    await prisma.aiBotLink.update({
+      where: { id: link.id },
+      data: { pending: Prisma.DbNull, pendingUntil: null },
+    });
+    if (STOP_WORDS.test(text)) return say(link, m.chatId, words("Stopped: nothing changed."));
+    const waiting = link.pending as unknown as ReasonWait;
+    return decideApproval(
+      link,
+      ctx,
+      m.chatId,
+      { kind: "approval", ...waiting.reason, approve: false },
+      waiting.sourceId,
+      text,
+    );
+  }
+
   // A PIN asked for a moment ago (checked when it arrived): take it out of the
   // chat, and do what waited for it.
-  if (link.pendingUntil && link.pendingUntil > new Date() && link.pending && text) {
+  if (
+    link.pendingUntil &&
+    link.pendingUntil > new Date() &&
+    link.pending &&
+    !isReasonWait(link.pending) &&
+    text
+  ) {
     await prisma.aiBotLink.update({
       where: { id: link.id },
       data: { pending: Prisma.DbNull, pendingUntil: null },
@@ -724,24 +777,79 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
     return act(link, ctx, m.chatId, waiting.press, waiting.sourceId, PIN_CHECKED);
   }
 
-  if (m.media) {
-    return say(
-      link,
-      m.chatId,
-      words(
-        'I read typed words for now: voice notes and files come later. Type what you need, or "help".',
-      ),
-    );
-  }
+  if (m.media) return gotMedia(link, ctx, m);
   if (!text) return;
+  return answerText(link, ctx, m.chatId, text);
+}
+
+/** Said when a voice note or file came on a plug the bot cannot fetch it from yet. */
+export const MEDIA_NOT_HERE_TEXT =
+  'I can read voice notes and files only on Telegram for now. Type what you need, or "help".';
+
+/**
+ * A voice note or a file (Release 5). Both need the AI (no AI call is made
+ * while it is off or paused). A voice note is written down and then handled
+ * exactly like typed words; a file becomes a draft that waits in the ERP.
+ */
+async function gotMedia(link: AiBotLink, ctx: CompanyContext, m: Incoming) {
+  const ready = await aiReady(link.companyId);
+  if (!ready.on) return say(link, m.chatId, words(FILES_NEED_AI));
+  const sender = senderFor(link);
+  const download = sender.download?.bind(sender);
+  if (!m.file || !download) return say(link, m.chatId, words(MEDIA_NOT_HERE_TEXT));
+  const voice = m.media === "voice";
+  const limit = voice ? MAX_VOICE_BYTES : MAX_FILE_BYTES;
+  const tooLarge = words(voice ? VOICE_TOO_LONG : FILE_TOO_LARGE);
+  // Too large by what Telegram says: not even fetched.
+  if (m.file.size !== null && m.file.size > limit) return say(link, m.chatId, tooLarge);
+  await sender.typing(m.chatId);
+  // And by what really came (the size may be missing or wrong): nothing is kept or read.
+  const bytes = await download(m.file.id);
+  if (bytes.length > limit) return say(link, m.chatId, tooLarge);
+  if (voice) {
+    let heard: string;
+    try {
+      heard = await transcribeVoice(link.companyId, ctx.user.id, {
+        bytes,
+        mime: m.file.mime ?? "audio/ogg",
+      });
+    } catch (error) {
+      if (error instanceof AppError) return say(link, m.chatId, words(error.message));
+      throw error;
+    }
+    if (!heard) {
+      return say(
+        link,
+        m.chatId,
+        words("I could not hear any words in that voice note. Try again, or type it."),
+      );
+    }
+    // A number that could be the PIN, spoken: never passed on, the same as typed (v6.4.2).
+    if (pinCandidates(westernDigits(heard)).length > 0) {
+      await removePin(link, m.chatId, m.messageId);
+      return say(link, m.chatId, words(NUMBER_HIDDEN_TEXT));
+    }
+    await say(link, m.chatId, words(`I heard: "${heard.slice(0, 500)}"`));
+    return answerText(link, ctx, m.chatId, heard.slice(0, 2000));
+  }
+  return say(
+    link,
+    m.chatId,
+    await fileArrived(link, ctx, m.file, m.caption ?? null, bytes, meta(link)),
+  );
+}
+
+/** Words for Mehedi 2.0 (typed, or a voice note written down): the chat's commands and answers. */
+async function answerText(link: AiBotLink, ctx: CompanyContext, chatId: string, text: string) {
+  const sender = senderFor(link);
   if (UNLOCK_WORDS.test(storePrefix(text).rest)) {
-    return act(link, ctx, m.chatId, { kind: "unlock", companyId: link.companyId }, null, null);
+    return act(link, ctx, chatId, { kind: "unlock", companyId: link.companyId }, null, null);
   }
   if (GUARD_WORDS.test(storePrefix(text).rest)) {
     const { guardPress } = await import("@/modules/bug-guard/bot-actions");
     return say(
       link,
-      m.chatId,
+      chatId,
       await guardPress(
         ctx,
         { kind: "guard-run", companyId: link.companyId },
@@ -751,14 +859,14 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
       ),
     );
   }
-  await sender.typing(m.chatId);
+  await sender.typing(chatId);
   let rows: Awaited<ReturnType<typeof sendChat>>;
   try {
     rows = await sendChat(ctx, { text }, meta(link), "BOT");
   } catch (error) {
-    if (error instanceof AppError) return say(link, m.chatId, words(error.message));
+    if (error instanceof AppError) return say(link, chatId, words(error.message));
     if (error instanceof ZodError)
-      return say(link, m.chatId, words("Write at most 2000 characters at a time."));
+      return say(link, chatId, words("Write at most 2000 characters at a time."));
     throw error;
   }
   for (const row of rows) {
@@ -771,8 +879,8 @@ async function wrote(mine: AiBotLink[], m: Incoming, messageId: string, pin: Pin
       },
       appUrl(),
     );
-    await say(link, m.chatId, out);
-    if (out.exportId) await sendReport(link, m.chatId, out.exportId);
+    await say(link, chatId, out);
+    if (out.exportId) await sendReport(link, chatId, out.exportId);
   }
 }
 
@@ -820,6 +928,18 @@ async function storeOfPress(mine: AiBotLink[], press: ButtonPress) {
         select,
       });
       break;
+    case "file":
+      row = await prisma.fileAsset.findFirst({ where: { id: press.fileId, ...where }, select });
+      break;
+    case "approval": {
+      const companyId = await companyOfApproval(
+        press.what,
+        press.id,
+        mine.map((l) => l.companyId),
+      );
+      row = companyId ? { companyId } : null;
+      break;
+    }
     case "guard-run":
     case "unlock":
       row = mine.some((l) => l.companyId === press.companyId)
@@ -889,6 +1009,8 @@ async function pinNeeded(ctx: CompanyContext, press: ButtonPress): Promise<strin
     }
     case "unlock":
       return "unlock your sign-in";
+    case "approval":
+      return press.approve ? flowOf(press.what).pinToApprove : null;
     case "guard-correction":
       return press.choice === "apply"
         ? "apply a data correction"
@@ -931,6 +1053,10 @@ async function act(
   pin: typeof PIN_CHECKED | null,
 ) {
   const sender = senderFor(link);
+  // An approval decided elsewhere, changed, or no longer the person's to answer: said before any PIN.
+  if (press.kind === "approval" && (await approvalStopped(link, ctx, chatId, press, sourceId))) {
+    return;
+  }
   // Send sends only the draft as its message showed it: checked before the PIN
   // is asked and again after it (the draft may change in between).
   if (press.kind === "send" && !(await draftAsShown(ctx, press))) {
@@ -966,6 +1092,13 @@ async function act(
       });
       return say(link, chatId, words(`Send your PIN to ${why}. (Write "বাতিল" to stop.)`));
     }
+  }
+  if (press.kind === "approval")
+    return decideApproval(link, ctx, chatId, press, sourceId, null, pin);
+  if (press.kind === "file") {
+    await sender.clearButtons(chatId, sourceId);
+    await sender.typing(chatId);
+    return say(link, chatId, await readFileAs(link, ctx, press.fileId, press.as, null, meta(link)));
   }
   const m = meta(link);
   let result: string;
@@ -1030,6 +1163,144 @@ async function act(
   }
   await sender.clearButtons(chatId, sourceId);
   await say(link, chatId, words(result));
+}
+
+/**
+ * Whether an approval press stops here, and why (said in the chat): the item
+ * is gone, decided elsewhere ("Already decided by ..."), changed since its
+ * message showed it (shown again as it is now), or the person may no longer
+ * approve it.
+ */
+async function approvalStopped(
+  link: AiBotLink,
+  ctx: CompanyContext,
+  chatId: string,
+  press: Extract<ButtonPress, { kind: "approval" }>,
+  sourceId: string | null,
+): Promise<boolean> {
+  const sender = senderFor(link);
+  const flow = flowOf(press.what);
+  // The permission first: someone who may no longer approve it learns nothing more about it.
+  if (!ctx.can(flow.permission)) {
+    await sender.clearButtons(chatId, sourceId);
+    await say(
+      link,
+      chatId,
+      words(`Not done: you may no longer approve a ${flow.noun}. Ask the owner in the ERP.`),
+    );
+    return true;
+  }
+  const facts = await flow.facts(link.companyId, press.id);
+  if (!facts) {
+    await sender.clearButtons(chatId, sourceId);
+    await say(link, chatId, words("This is not there any more."));
+    return true;
+  }
+  if (!facts.pending) {
+    await sender.clearButtons(chatId, sourceId);
+    await say(
+      link,
+      chatId,
+      words(
+        `Already decided by ${facts.decidedBy ?? "someone else"}: ${facts.title}. Nothing was done.`,
+      ),
+    );
+    return true;
+  }
+  if (factsVersion(facts) !== press.version) {
+    await sender.clearButtons(chatId, sourceId);
+    await say(
+      link,
+      chatId,
+      words(
+        `${facts.title} changed after that message showed it, so nothing was done. Here it is as it is now:`,
+      ),
+    );
+    await say(link, chatId, renderApproval(press.what, press.id, facts));
+    return true;
+  }
+  // Approved only in the ERP (an expense claim: the account it is paid from is picked there).
+  if (press.approve && !flow.approve) {
+    await say(
+      link,
+      chatId,
+      words(
+        `Approve ${facts.title} in the ERP, ${flow.approveInErp ?? "on its page"}: ${appUrl()}${facts.href}. Nothing was done here.`,
+      ),
+    );
+    return true;
+  }
+  return false;
+}
+
+/** How long the bot waits for the reason after Reject. */
+const REASON_MINUTES = 10;
+
+/**
+ * Approve or Reject pressed under an approval message (approvals.ts), or the
+ * reason written after Reject. Read again at every step: an item decided
+ * elsewhere answers who decided it; one whose facts changed after its message
+ * is shown again as it is now and nothing is done; the person's permission is
+ * the one they hold now (their context is read at the press). Approving money
+ * or prices waits for the PIN (act). The ERP's own service does the work, in
+ * the person's name, with its own checks.
+ */
+async function decideApproval(
+  link: AiBotLink,
+  ctx: CompanyContext,
+  chatId: string,
+  press: Extract<ButtonPress, { kind: "approval" }>,
+  sourceId: string | null,
+  reason: string | null,
+  pin: typeof PIN_CHECKED | null = null,
+) {
+  if (await approvalStopped(link, ctx, chatId, press, sourceId)) return;
+  const sender = senderFor(link);
+  const flow = flowOf(press.what);
+  const facts = (await flow.facts(link.companyId, press.id))!;
+  if (!press.approve && !flow.canReject) {
+    return say(link, chatId, words(`A ${flow.noun} is not rejected from the bot. Use the ERP.`));
+  }
+  // Reject: the reason first, from the next message.
+  if (!press.approve && reason === null) {
+    const wait: ReasonWait = {
+      reason: { what: press.what, id: press.id, version: press.version },
+      sourceId,
+    };
+    await prisma.aiBotLink.update({
+      where: { id: link.id },
+      data: {
+        pending: wait as unknown as Prisma.InputJsonObject,
+        pendingUntil: new Date(Date.now() + REASON_MINUTES * 60_000),
+      },
+    });
+    return say(
+      link,
+      chatId,
+      words(`Write why you reject ${facts.title}. (Write "বাতিল" to stop.)`),
+    );
+  }
+  // Approving money or prices: only after the PIN (pinNeeded asked for it in act).
+  if (press.approve && flow.pinToApprove && pin !== PIN_CHECKED) return;
+  const m = meta(link);
+  let result: string;
+  try {
+    result = press.approve
+      ? await flow.approve!(ctx, press.id, m)
+      : await flow.reject!(ctx, press.id, reason!, m);
+  } catch (error) {
+    if (error instanceof AppError) return say(link, chatId, words(`Not done: ${error.message}`));
+    if (error instanceof ZodError) {
+      return say(
+        link,
+        chatId,
+        words("Not done: write a short reason (a few words) and try again."),
+      );
+    }
+    throw error;
+  }
+  await sender.clearButtons(chatId, sourceId);
+  return say(link, chatId, words(result));
 }
 
 /** A cap on what one stranger can make the log keep (the bot never answers them). */

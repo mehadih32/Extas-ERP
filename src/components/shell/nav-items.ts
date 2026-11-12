@@ -125,7 +125,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     href: "/sales",
     label: "Sales",
     icon: ReceiptTextIcon,
-    anyOf: ["sales.view"],
+    anyOf: ["sales.view", "leads.view", "leads.all"],
   },
   {
     // The production overview, projects, factory deliveries, supplier bills,
@@ -189,7 +189,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
     label: "Buyers & suppliers",
     shortLabel: "Parties",
     icon: HandshakeIcon,
-    anyOf: ["parties.view", "parties.ledger.view"],
+    anyOf: ["parties.view", "parties.ledger.view", "sales.campaigns.manage"],
   },
   {
     // Employees, attendance, leave, payroll, salary advances, holidays and HR rules

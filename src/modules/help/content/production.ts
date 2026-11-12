@@ -1,5 +1,7 @@
 import type { HelpSection } from "../types";
 
+import { taHelpArticles } from "./production-ta";
+
 /** Production: projects and their stages, factory deliveries into stock, bills and costs. */
 export const productionHelp: HelpSection = {
   id: "production",
@@ -75,6 +77,10 @@ export const productionHelp: HelpSection = {
         {
           label: "Fault log",
           text: "সরবরাহকারী ও ফ্যাক্টরির ত্রুটি, কম আসা মাল আর তার জন্য কাটার টাকা।",
+        },
+        {
+          label: "T&A calendar",
+          text: "সব অর্ডারের T&A ধাপ সপ্তাহ বা মাস ধরে: কোনটা দেরি, কোনটা শিগগির, কোন অর্ডারের শিপ ডেট ঝুঁকিতে।",
         },
         {
           label: "Tell AI",
@@ -5345,5 +5351,6 @@ export const productionHelp: HelpSection = {
         "প্রতিটি খরচ একবারই হিসাবে ওঠে: খাতের জন্য আলাদা জাবেদা লিখতে হয় না। Accounts-এর লোকেরা অ্যাকাউন্টের নাম চাপলে তার লেজার খোলে।",
       ],
     },
+    ...taHelpArticles,
   ],
 };

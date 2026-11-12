@@ -54,6 +54,8 @@ export const PRODUCTION_TABS: readonly ProductionTab[] = [
   { href: "/production/cost-heads", label: "Cost heads", anyOf: ["production.manage"] },
   { href: "/production/costing", label: "Costing", anyOf: ["costing.view"] },
   { href: "/production/faults", label: "Fault log", anyOf: ["production.view"] },
+  // Every order's T&A steps by week or month (sales people open it from an order).
+  { href: "/production/ta-calendar", label: "T&A calendar", anyOf: ["production.view"] },
 ];
 
 /** The tabs this person may open, in order; the first is where /production goes. */

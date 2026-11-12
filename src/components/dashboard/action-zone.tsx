@@ -5,6 +5,7 @@ import {
   MessageCircleIcon,
   PackageIcon,
   ReceiptTextIcon,
+  UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -312,10 +313,17 @@ function ApprovalItem({ href, children }: { href: string | null; children: React
 }
 
 function ApprovalsCard({ data }: { data: ActionZoneData }) {
-  const { returns, leave, payroll, discounts } = data.approvals!;
+  const { returns, leave, payroll, discounts, wholesaleReturns } = data.approvals!;
   const { currency } = data;
+  const toApprove = wholesaleReturns?.toApprove ?? 0;
+  const toCheck = wholesaleReturns?.toCheck ?? 0;
   const waiting =
-    (leave?.count ?? 0) + (payroll?.count ?? 0) + (returns?.count ?? 0) + (discounts?.count ?? 0);
+    (leave?.count ?? 0) +
+    (payroll?.count ?? 0) +
+    (returns?.count ?? 0) +
+    (discounts?.count ?? 0) +
+    toApprove +
+    toCheck;
   const period = homeRangeLabel(data.range).toLowerCase();
   const money = (fixed: string) => (
     <Amount scope={APPROVALS_SCOPE}>{`${currency} ${groupAmount(fixed, currency)}`}</Amount>
@@ -365,6 +373,18 @@ function ApprovalsCard({ data }: { data: ActionZoneData }) {
               href={hrHref.payrollRun(run.id)}
             />
           ))}
+          {toApprove > 0 && (
+            <ApprovalGroup
+              heading={`${plural(toApprove, "wholesale return", "wholesale returns", currency)} waiting for approval`}
+              href="/sales/wholesale-returns?status=OPEN"
+            />
+          )}
+          {toCheck > 0 && (
+            <ApprovalGroup
+              heading={`${plural(toCheck, "wholesale return", "wholesale returns", currency)} waiting for the QC`}
+              href="/sales/wholesale-returns?status=OPEN"
+            />
+          )}
           {returns && returns.count > 0 && (
             <ApprovalGroup
               heading={`${plural(returns.count, "sales return", "sales returns", currency)} ${period}`}
@@ -470,6 +490,61 @@ function InstallmentsCard({ data }: { data: ActionZoneData }) {
   );
 }
 
+const NEXT_WORDS: Record<string, string> = {
+  EMAIL: "Email",
+  CALL: "Call",
+  MEETING: "Meeting",
+  SAMPLE: "Sample",
+  QUOTE: "Quotation",
+  OTHER: "Follow up",
+};
+
+/** Leads whose next step is today or late: the person's own (and unassigned), or every lead. */
+function LeadFollowUpsCard({ data }: { data: ActionZoneData }) {
+  const due = data.leads!;
+  return (
+    <ZoneCard
+      title="Lead follow-ups"
+      icon={UsersIcon}
+      count={due.count}
+      footer={
+        <Link href="/sales/leads?due=1" className={linkClass}>
+          Open the leads
+        </Link>
+      }
+    >
+      {due.count === 0 ? (
+        <Clear>No lead follow-up is due today.</Clear>
+      ) : (
+        <ul className="grid grid-cols-1 gap-2.5 text-sm">
+          {due.items.map((l) => (
+            <li key={l.id} className="min-w-0 break-words">
+              <Link href={`/sales/leads/${l.id}`} className={linkClass}>
+                {l.number} {l.name}
+              </Link>
+              <span
+                className={cn(
+                  "block text-[0.8125rem]",
+                  l.late ? "text-destructive" : "text-muted-foreground",
+                )}
+              >
+                {l.kind ? NEXT_WORDS[l.kind] : "Follow up"} {l.late ? "late since" : "due"}{" "}
+                {formatDay(l.on)}
+                {l.note ? ` · ${l.note}` : ""}
+              </span>
+            </li>
+          ))}
+          {due.count > due.items.length && (
+            <li className="text-[0.8125rem] text-muted-foreground">
+              And {due.count - due.items.length} more
+            </li>
+          )}
+        </ul>
+      )}
+    </ZoneCard>
+  );
+}
+
 /**
  * The Action Zone: overdue invoices with a WhatsApp reminder a click away, low
  * stock with "Order now", and what is waiting for approval (or, for the owner,
@@ -482,6 +557,7 @@ export function ActionZone({ data }: { data: ActionZoneData }) {
     data.lowStock && <LowStockCard key="low" data={data} />,
     data.approvals && <ApprovalsCard key="approvals" data={data} />,
     data.installments && <InstallmentsCard key="installments" data={data} />,
+    data.leads && <LeadFollowUpsCard key="leads" data={data} />,
   ].filter(Boolean);
   if (cards.length === 0) return null;
   return (

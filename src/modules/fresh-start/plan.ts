@@ -60,6 +60,8 @@ export const FRESH_START_RULES: Readonly<Record<string, FreshStartRule>> = {
   Warehouse: "KEEP",
   // How each factory's packing lists are laid out (a setting, 2026-11-12).
   PackingListSource: "KEEP",
+  // Which approvals the bot may show with buttons (a setting, release 5).
+  BotApprovalSetting: "KEEP",
   SalesChannelIntegration: "KEEP",
   CourierAccount: "KEEP",
   LedgerAccount: "KEEP",
@@ -256,6 +258,23 @@ export const FRESH_START_RULES: Readonly<Record<string, FreshStartRule>> = {
   RetailDailySummary: "ERASE",
   RetailFixedCost: "ERASE",
   RetailBudget: "ERASE",
+  // Release 4 (2026-11-12): wholesale returns and the B2B budgets.
+  WholesaleReturn: "ERASE",
+  WholesaleReturnLine: "ERASE",
+  B2bAcquisitionBudget: "ERASE",
+  // Release 6 (2026-11-12): leads and their history are erased; the lead settings, sources,
+  // the "Do not contact" list and the T&A template stay (settings, and a promise to people).
+  Lead: "ERASE",
+  LeadContact: "ERASE",
+  LeadActivity: "ERASE",
+  LeadSample: "ERASE",
+  LeadFile: "ERASE",
+  LeadSource: "KEEP",
+  LeadSettings: "KEEP",
+  LeadSuppression: "KEEP",
+  TaTemplateStep: "KEEP",
+  TaSettings: "KEEP",
+  OrderTaStep: "ERASE",
   RetailAlert: "ERASE",
   RetailYearReport: "ERASE",
   RetailTarget: "ERASE",

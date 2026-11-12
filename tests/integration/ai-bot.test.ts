@@ -393,7 +393,8 @@ run("The bot", () => {
         voice: { file_id: "v" },
       },
     });
-    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^I read typed words for now/);
+    // Voice notes and files need the AI working (here it has no key yet): nothing is called (Release 5).
+    expect(api.said(OWNER_CHAT).at(-1)).toMatch(/^Voice notes and files need AI\./);
     // A group chat is never answered, even with the owner in it.
     await telegram({
       update_id: (updateId += 1),

@@ -211,6 +211,7 @@ run("Buyers & suppliers screens", () => {
       expect(tabs, who).toEqual([
         ...(view ? ["/parties/buyers", "/parties/suppliers", "/parties/other-suppliers"] : []),
         ...(ledgerView ? ["/parties/dues"] : []),
+        ...(ctx.can("sales.campaigns.manage") ? ["/parties/campaigns"] : []),
       ]);
 
       // Each screen's data comes exactly to the people its page is shown to.

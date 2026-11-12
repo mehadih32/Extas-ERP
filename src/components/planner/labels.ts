@@ -57,6 +57,7 @@ export const REMINDER_TYPE_LABELS: Record<ReminderType, string> = {
   SHIPMENT: "Shipment",
   COMPLIANCE_EXPIRY: "Licence renewal",
   TASK_DUE: "Task due",
+  LEAD_FOLLOW_UP: "Lead follow-up",
   FACTORY_VISIT: "Factory visit",
   PAYMENT_DUE: "Payment due",
   INSTALLMENT_DUE: "Instalment due",
@@ -77,6 +78,7 @@ export const AGENDA_KIND_LABELS: Record<string, string> = {
   PAYMENT_DUE: "Payment due",
   PROMISED_PAYMENT: "Promised",
   FOLLOW_UP: "Follow-up",
+  LEAD_FOLLOW_UP: "Lead",
   REMINDER: "Reminder",
 };
 
@@ -110,6 +112,7 @@ export const RULE_MANAGER_WORDS: Record<string, string | null> = {
   PAYMENT_DUE: "People who take orders or record money received, and the owner",
   PROMISED_PAYMENT: "People who take orders or record money received, and the owner",
   FOLLOW_UP: "The owner",
+  LEAD_FOLLOW_UP: "People who see every lead",
 };
 
 /** "Today", "Tomorrow", "Yesterday" or "12 Oct 2026". */

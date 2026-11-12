@@ -217,6 +217,17 @@ export async function voidInvoiceTx(
   // A sales return holds the invoice's prices (counted with the order locked, as returns are made).
   const returns = await tx.salesReturn.count({ where: { invoiceId: invoice.id, voidedAt: null } });
   assertAllowed(canVoidInvoice(invoice, returns));
+  // A wholesale return received but not yet approved (2026-11-12) holds the invoice too.
+  // One approved with nothing refunded (every piece declined) no longer does.
+  const waiting = await tx.wholesaleReturn.count({
+    where: { invoiceId: invoice.id, approvedAt: null },
+  });
+  if (waiting > 0) {
+    throw new AppError(
+      "CONFLICT",
+      "Goods on this invoice came back on a wholesale return that is not approved yet. Approve it (or settle it with the buyer) before voiding the invoice.",
+    );
+  }
   const { count } = await tx.invoice.updateMany({
     where: { id: invoice.id, status: { not: "VOID" } },
     data: { status: "VOID", dueAmount: ZERO },

@@ -28,6 +28,7 @@ export const AUTO_TYPES = [
   "PAYMENT_DUE",
   "PROMISED_PAYMENT",
   "FOLLOW_UP",
+  "LEAD_FOLLOW_UP",
 ] as const satisfies readonly ReminderType[];
 
 /** The kinds that are follow-ups with buyers: also on Home ("Today's follow-ups") and the owner's bot. */
@@ -141,6 +142,15 @@ export const DEFAULT_RULES: Record<AutoType, Defaults> = {
     notifyManagers: true,
     notifyOwner: true,
   },
+  // A lead's next step: its owner hears a day before, on the day, then every 2 days late.
+  LEAD_FOLLOW_UP: {
+    isActive: true,
+    daysBefore: [1, 0],
+    overdueEveryDays: 2,
+    sendTime: "09:00",
+    notifyManagers: false,
+    notifyOwner: true,
+  },
 };
 
 /**
@@ -211,6 +221,12 @@ export const RULE_INFO: Record<
     managers: ["ai.manage"],
     owner: "who set the follow-up",
     date: "the Follow up on date set on a buyer, a quotation or an order, until it is done",
+  },
+  LEAD_FOLLOW_UP: {
+    label: "Lead follow-ups",
+    managers: ["leads.all"],
+    owner: "who follows the lead up (or who added it)",
+    date: "a lead's next step, while the lead is open",
   },
 };
 

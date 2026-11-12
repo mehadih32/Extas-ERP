@@ -32,7 +32,9 @@ WORKDIR /app
 
 # --- Dependencies (the Prisma client is generated on install) -------------------
 FROM sdk AS deps
-COPY package.json package-lock.json ./
+# .npmrc keeps the ONNX runtime (the handwriting reader) from downloading its
+# graphics-card files: the server has none.
+COPY package.json package-lock.json .npmrc ./
 COPY prisma ./prisma
 # The download cache stays on the server between builds.
 RUN --mount=type=cache,target=/root/.npm \

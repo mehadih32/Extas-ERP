@@ -1,11 +1,21 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+import { rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { unzipSync, zlibSync } from "fflate";
 
 import { AppError } from "@/lib/errors";
 
+import {
+  handLines,
+  handwritingText,
+  type HandRead,
+  preferHandwriting,
+  printedIsWeak,
+} from "./handwriting";
 import { photoText, type PlacedWord, type Sheet, type SheetCell, wordsToRows } from "./layout";
 
 /*
@@ -15,7 +25,9 @@ import { photoText, type PlacedWord, type Sheet, type SheetCell, wordsToRows } f
  *   CSV / TXT           comma, semicolon or tab separated
  *   PDF with text       the words with their place on the page, into rows and columns
  *   photo or scan       read by the OCR engine bundled with the app (English),
- *                       each cell with how sure the engine is
+ *                       each cell with how sure the engine is; when it reads
+ *                       little (handwriting), the handwriting reader too
+ *                       (PaddleOCR's models, also on our own server)
  * An old .xls is refused with what to do instead.
  */
 
@@ -458,8 +470,9 @@ export type PhotoRead = { sheet: Sheet; text: string };
 
 /**
  * Reads photos (JPG, PNG, WEBP) of a printed or handwritten list. Printed
- * tables come out well; handwriting mostly does not, so the text is only a
- * start for the person to correct beside the photo.
+ * tables come out well. Handwriting is read as far as it goes by the
+ * handwriting reader, so the text is a start for the person to check against
+ * the photo (the review screen shows the totals that do not add up).
  */
 export function readImages(images: Uint8Array[]): Promise<PhotoRead> {
   return oneAtATime(() => readImagesNow(images));
@@ -537,6 +550,7 @@ async function readImagesNow(images: Uint8Array[]): Promise<PhotoRead> {
     const texts: string[] = [];
     let total = 0;
     let sum = 0;
+    let handwritten = false;
     for (const image of images) {
       const { data } = await worker.recognize(Buffer.from(image), {}, { blocks: true });
       const words: PlacedWord[] = [];
@@ -546,16 +560,31 @@ async function readImagesNow(images: Uint8Array[]): Promise<PhotoRead> {
             for (const w of line.words) {
               if (!w.text.trim()) continue;
               words.push({ text: w.text, ...w.bbox, confidence: w.confidence });
-              total++;
-              sum += w.confidence;
             }
           }
         }
       }
+      // Printed text read well stays as it is; otherwise the handwriting reader
+      // tries too, and its lines are used when it found more (and surer) numbers.
+      const hand = printedIsWeak(words) ? await readHandwriting(image) : null;
+      if (hand && preferHandwriting(words, hand)) {
+        handwritten = true;
+        texts.push(hand.text);
+        total += hand.confidences.length;
+        sum += hand.confidences.reduce((s, c) => s + c, 0);
+        continue;
+      }
       rows.push(...wordsToRows(words, 0.9));
       texts.push(photoText(words));
+      total += words.length;
+      sum += words.reduce((s, w) => s + (w.confidence ?? 0), 0);
     }
     const notes: string[] = [];
+    if (handwritten) {
+      notes.push(
+        "The handwriting was read as far as it could be. Check every number and every total against the paper.",
+      );
+    }
     if (total === 0) {
       notes.push(
         "No writing was found in the photo. Take it again in good light, flat and straight.",
@@ -568,6 +597,59 @@ async function readImagesNow(images: Uint8Array[]): Promise<PhotoRead> {
     return { sheet: { kind: "PHOTO", rows, notes }, text: texts.join("\n\n") };
   } finally {
     await worker.terminate();
+  }
+}
+
+// --- Handwriting: PaddleOCR's models, run on our own server -------------------------
+
+/** The handwriting reader's part used here (`@gutenye/ocr-node`). */
+type HandReader = { detect(imagePath: string): Promise<unknown> };
+
+/** Loading the reader's models takes seconds: it is made once and kept. */
+let handReader: Promise<HandReader> | null = null;
+
+function handwritingReader(): Promise<HandReader> {
+  handReader ??= (async () => {
+    const { default: Ocr } = await import("@gutenye/ocr-node");
+    // No memory pool kept between photos: a photo's working memory goes back at once.
+    const reader: HandReader = await Ocr.create({
+      onnxOptions: { enableCpuMemArena: false, executionMode: "sequential" },
+    });
+    return reader;
+  })();
+  const loading = handReader;
+  // A reader that failed to load is tried again with the next photo.
+  loading.catch(() => {
+    if (handReader === loading) handReader = null;
+  });
+  return loading;
+}
+
+/** Tests only: forgets the loaded handwriting reader. */
+export function forgetHandwritingReader() {
+  handReader = null;
+}
+
+/**
+ * Reads one photo with the handwriting reader. Null when it cannot run here
+ * (not installed, or it failed on this photo): the printed-text reader's
+ * result is used then, and the upload never stops for it.
+ */
+export async function readHandwriting(image: Uint8Array): Promise<HandRead | null> {
+  // The reader opens the photo by its path: a private file that is always removed.
+  const file = path.join(os.tmpdir(), `extras-packing-list-${randomUUID()}`);
+  try {
+    const reader = await handwritingReader();
+    await writeFile(file, image, { mode: 0o600 });
+    return handwritingText(handLines(await reader.detect(file)));
+  } catch (err) {
+    console.warn(
+      "[packing-list] the handwriting reader could not read the photo; the printed-text reader's result is used:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
+  } finally {
+    await rm(file, { force: true }).catch(() => undefined);
   }
 }
 

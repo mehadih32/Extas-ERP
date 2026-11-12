@@ -44,7 +44,9 @@ export const isAiBranch = (node: AiNode): node is AiBranch => "children" in node
 
 /**
  * Permissions the AI never gets: the team, roles, backups, its own controls,
- * and approving a booking past a check (only a person, with a reason).
+ * and approving a booking past a check (only a person, with a reason). The
+ * owner's one-time Fresh start has no permission to give: it needs the platform
+ * owner in person (fresh-start.service.ts), which the AI's context never is.
  */
 export const NEVER_FOR_AI: ReadonlySet<string> = new Set([
   "production.bookings.override",

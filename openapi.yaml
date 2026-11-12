@@ -1125,7 +1125,9 @@ paths:
         sent. `netProfit` is net sales + delivery charges - all costs, before fixed costs; the ERP checks
         it (`checkedProfit`, `profitMatches`). Allowed `incomplete` keys: orders, sales, income,
         deliveries, goods, returnLosses, packaging, delivery, paymentFees, accessories, ads, other,
-        customers.
+        customers. The ads are required (2026-11-12): send `costs.ads` every day, all 0 when there
+        were no ads. A day whose newest version lists `ads` in `incomplete` is not complete and is
+        asked for again like a missing day (`summary.missing`).
       operationId: putDailySummary
       parameters:
         - { name: date, in: path, required: true, schema: { type: string, format: date } }
@@ -1243,6 +1245,10 @@ paths:
                         incomplete: { type: array, items: { type: string } }
                         netProfit: { type: number }
                   missing: { type: array, items: { type: string, format: date } }
+                  adsMissing:
+                    description: Days the ERP has without the ads figure; send them again with costs.ads.
+                    type: array
+                    items: { type: string, format: date }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Validation" }
@@ -1363,8 +1369,10 @@ webhooks:
     post:
       summary: A retail store's daily summaries the ERP does not have
       description: |
-        From 01:00 (company time) the ERP sends this for the days still missing, again every hour
-        while any is missing (plan v6 sec 6). Send those days at once with PUT /daily-summaries/{date}.
+        From 01:00 (company time) the ERP sends this for the days still missing, and for the days
+        it has without the ads figure (`ads` in `incomplete`), again every hour while any is left
+        (plan v6 sec 6). Send every day in `dates` at once with PUT /daily-summaries/{date}, with
+        `costs.ads` filled in (0 when there were no ads).
       parameters:
         - { name: X-Extas-Event, in: header, required: true, schema: { type: string } }
         - {
@@ -1390,7 +1398,18 @@ webhooks:
                 data:
                   type: object
                   properties:
-                    dates: { type: array, items: { type: string, format: date } }
+                    dates:
+                      description: Every day to send again (missing days and days without ads).
+                      type: array
+                      items: { type: string, format: date }
+                    missing:
+                      description: Days the ERP has no summary for.
+                      type: array
+                      items: { type: string, format: date }
+                    adsMissing:
+                      description: Days the ERP has without the ads figure.
+                      type: array
+                      items: { type: string, format: date }
       responses:
         "2XX":
           description: Received (answer within 5 seconds). Anything else is retried for up to 24 hours.

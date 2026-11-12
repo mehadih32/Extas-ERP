@@ -187,4 +187,49 @@ run("A retail store's daily summaries, fixed costs, budget and target (plan v6 s
     });
     expect(new Set(told.map((t) => t.body)).size).toBe(1);
   });
+
+  it("chases a day sent without the ads like a missing day; 0 ads completes it (2026-11-12)", async () => {
+    await put("2026-11-17", sample("2026-11-17"));
+    const noAds = sample("2026-11-18", { incomplete: ["ads"], netProfit: 41800 });
+    delete (noAds.costs as Record<string, unknown>).ads;
+    expect((await put("2026-11-18", noAds)).status).toBe(200);
+    const zeroAds = sample("2026-11-19", { netProfit: 41800 });
+    (zeroAds.costs as Record<string, unknown>).ads = {
+      facebook: 0,
+      instagram: 0,
+      google: 0,
+      tiktok: 0,
+      other: 0,
+    };
+    expect((await put("2026-11-19", zeroAds)).status).toBe(200);
+
+    // Every day is in, but 18 November has no ads: it is asked for at 01:00.
+    expect(await summaries.summaryGuards(new Date("2026-11-19T20:00:00Z"))).toBe(1);
+    const asked = await prisma.webhookEvent.findFirstOrThrow({
+      where: { eventType: "summary.missing" },
+    });
+    expect((asked.payload as { data: unknown }).data).toEqual({
+      dates: ["2026-11-18"],
+      missing: [],
+      adsMissing: ["2026-11-18"],
+    });
+    const listed = await callShop(shop, summariesRoute, {
+      path: "/daily-summaries?from=2026-11-17&to=2026-11-19",
+    });
+    expect(listed.body.missing).toEqual([]);
+    expect(listed.body.adsMissing).toEqual(["2026-11-18"]);
+    expect((await summaries.storeBooks(shop.owner, store.id)).adsMissing).toEqual(["2026-11-18"]);
+
+    // From 09:00 the owner is told, and the message names the ads.
+    await summaries.summaryGuards(new Date("2026-11-20T03:30:00Z"));
+    const told = await prisma.notificationLog.findFirstOrThrow({
+      where: { subject: { contains: "figures missing" } },
+    });
+    expect(told.body).toContain("The ads figure is missing for: 2026-11-18");
+
+    // Sent again with the ads: nothing is left to chase.
+    await put("2026-11-18", sample("2026-11-18"));
+    expect(await summaries.summaryGuards(new Date("2026-11-20T05:00:00Z"))).toBe(0);
+    expect((await summaries.storeBooks(shop.owner, store.id)).adsMissing).toEqual([]);
+  });
 });

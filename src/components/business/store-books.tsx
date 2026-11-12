@@ -83,6 +83,12 @@ export function StoreBooks({
             Missing days: {books.missing.map(dayName).join(", ")}
           </p>
         )}
+        {books.adsMissing.length > 0 && (
+          <p className="mt-3 flex items-start gap-1.5 text-sm text-destructive">
+            <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+            Ads figure missing: {books.adsMissing.map(dayName).join(", ")}
+          </p>
+        )}
         <dl className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Fact label={`Net sales, ${month}`}>{money(so.netSales)}</Fact>
           <Fact label="Profit before fixed costs">{money(so.netProfit)}</Fact>

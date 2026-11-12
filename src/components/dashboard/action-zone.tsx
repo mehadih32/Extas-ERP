@@ -312,10 +312,17 @@ function ApprovalItem({ href, children }: { href: string | null; children: React
 }
 
 function ApprovalsCard({ data }: { data: ActionZoneData }) {
-  const { returns, leave, payroll, discounts } = data.approvals!;
+  const { returns, leave, payroll, discounts, wholesaleReturns } = data.approvals!;
   const { currency } = data;
+  const toApprove = wholesaleReturns?.toApprove ?? 0;
+  const toCheck = wholesaleReturns?.toCheck ?? 0;
   const waiting =
-    (leave?.count ?? 0) + (payroll?.count ?? 0) + (returns?.count ?? 0) + (discounts?.count ?? 0);
+    (leave?.count ?? 0) +
+    (payroll?.count ?? 0) +
+    (returns?.count ?? 0) +
+    (discounts?.count ?? 0) +
+    toApprove +
+    toCheck;
   const period = homeRangeLabel(data.range).toLowerCase();
   const money = (fixed: string) => (
     <Amount scope={APPROVALS_SCOPE}>{`${currency} ${groupAmount(fixed, currency)}`}</Amount>
@@ -365,6 +372,18 @@ function ApprovalsCard({ data }: { data: ActionZoneData }) {
               href={hrHref.payrollRun(run.id)}
             />
           ))}
+          {toApprove > 0 && (
+            <ApprovalGroup
+              heading={`${plural(toApprove, "wholesale return", "wholesale returns", currency)} waiting for approval`}
+              href="/sales/wholesale-returns?status=OPEN"
+            />
+          )}
+          {toCheck > 0 && (
+            <ApprovalGroup
+              heading={`${plural(toCheck, "wholesale return", "wholesale returns", currency)} waiting for the QC`}
+              href="/sales/wholesale-returns?status=OPEN"
+            />
+          )}
           {returns && returns.count > 0 && (
             <ApprovalGroup
               heading={`${plural(returns.count, "sales return", "sales returns", currency)} ${period}`}

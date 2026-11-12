@@ -44,6 +44,7 @@ import {
   canRejectExpense,
   canVoidExpense,
 } from "@/modules/expenses/rules";
+import { ensureB2bAcquisitionHeads } from "@/modules/business/b2b.service";
 import { linkedEmployee } from "@/modules/hr/access";
 import { reverseSettlementsTx, settleAdvancesForExpenseTx } from "@/modules/hr/advance.service";
 import { assertClaimNotPaidBack } from "@/modules/hr/claim-guard";
@@ -190,6 +191,7 @@ const headInclude = {
 export async function listExpenseHeads(ctx: CompanyContext, raw: unknown = {}) {
   const q = listExpenseHeadsSchema.parse(raw);
   await ensureGeneralExpenseHeads(ctx.company.id);
+  await ensureB2bAcquisitionHeads(ctx.company.id);
   return ctx.db.expenseHead.findMany({
     where: { isProductionCost: false, ...(q.includeInactive ? {} : { isActive: true }) },
     include: headInclude,

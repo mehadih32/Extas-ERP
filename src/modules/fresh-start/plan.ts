@@ -258,6 +258,10 @@ export const FRESH_START_RULES: Readonly<Record<string, FreshStartRule>> = {
   RetailDailySummary: "ERASE",
   RetailFixedCost: "ERASE",
   RetailBudget: "ERASE",
+  // Release 4 (2026-11-12): wholesale returns and the B2B budgets.
+  WholesaleReturn: "ERASE",
+  WholesaleReturnLine: "ERASE",
+  B2bAcquisitionBudget: "ERASE",
   RetailAlert: "ERASE",
   RetailYearReport: "ERASE",
   RetailTarget: "ERASE",

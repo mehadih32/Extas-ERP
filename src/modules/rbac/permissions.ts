@@ -95,6 +95,12 @@ export const PERMISSIONS = [
     description: "Inspect returns and move items to main or bad stock",
   },
   {
+    key: "sales.returns.approve",
+    module: "SALES",
+    description:
+      "Approve wholesale returns: how many pieces are refunded to the buyer's account (above the set amount with the PIN)",
+  },
+  {
     key: "sales.campaigns.manage",
     module: "WHOLESALE",
     description: "Run dormant buyer re-engagement campaigns",
@@ -440,6 +446,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRole, readonly PermissionKey
     "accounts.manage",
     "accounts.receipts.record",
     "accounts.payments.record",
+    // A wholesale return's credit goes on the buyer's account (2026-11-12).
+    "sales.returns.approve",
     "expenses.create",
     "expenses.manage",
     // Accounts prepares payroll; approving it is Super Admin's by default (two people

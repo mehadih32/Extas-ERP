@@ -93,7 +93,7 @@ export default async function SalesReturnPage({
             </>
           }
         />
-        {query.created === "1" && !r.voided && (
+        {query.created === "1" && !r.voided && !r.wholesale && (
           <FormAlert tone="success">
             Sales return {r.number} was recorded: {money(r.total, currency)} is credited to {buyer}
             &apos;s account and the {formatCount(r.pieces, currency)} pcs are in Damage &amp; QC
@@ -105,8 +105,12 @@ export default async function SalesReturnPage({
             Voided on {formatDay(r.voided.on)}
             {r.voided.reason ? `: ${r.voided.reason}` : ""}. The credit was taken back and the
             pieces{" "}
-            {restocked ? "put back into stock were taken out again" : "left Damage & QC Rejects"}.
-            It is kept as a record.
+            {r.wholesale
+              ? `of ${r.wholesale.number} stayed with that return`
+              : restocked
+                ? "put back into stock were taken out again"
+                : "left Damage & QC Rejects"}
+            . It is kept as a record.
           </FormAlert>
         )}
         <SalesReturnActions
@@ -167,8 +171,20 @@ export default async function SalesReturnPage({
             <dl className="mt-4 grid gap-4 sm:grid-cols-2">
               <Fact label="Reason">{r.reason ?? "Not given"}</Fact>
               <Fact label="Pieces went to">
-                {restocked ? wentTo : "Damage & QC Rejects"}
-                {r.warehouse ? `, ${r.warehouse}` : ""}
+                {r.wholesale ? (
+                  <>
+                    Wholesale return{" "}
+                    <Link href={`/sales/wholesale-returns/${r.wholesale.id}`} className={linkClass}>
+                      {r.wholesale.number}
+                    </Link>
+                    : its QC places them
+                  </>
+                ) : (
+                  <>
+                    {restocked ? wentTo : "Damage & QC Rejects"}
+                    {r.warehouse ? `, ${r.warehouse}` : ""}
+                  </>
+                )}
               </Fact>
               {r.cost !== null && (
                 <Fact label="Their cost (written off)">

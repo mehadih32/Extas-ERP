@@ -262,6 +262,14 @@ overwrites a stored total or figure.
   confirmed by a person), and nothing posts by itself. Buyers & suppliers > Campaigns (`sales.campaigns.manage`)
   fills each buyer's name into one message and opens it in WhatsApp or email on the person's own device: the
   person sends it, the ERP never does.
+- 2026-11-12 (wholesale returns): a wholesale buyer's return has three steps: "Receive return" (Refund or
+  Exchange per line; an exchange's new pieces leave at once on their own invoice and challan; the pieces wait in
+  "Returns to check"), "Approve" and "QC" (A-grade, B-grade and Reject adding up to the pieces received). Approving
+  credits the buyer's account, so it needs both "Approve wholesale returns (refunds)" (`sales.returns.approve`)
+  and the money rule's `accounts.receipts.record`, checked in the route and the service. The owner's PIN is asked
+  when this refund plus the invoice's earlier credit notes pass the company's amount (10,000 at first), so a
+  return split in parts never slips under it. A void invoice or cancelled order takes no approval or QC, and an
+  invoice with a return waiting for approval cannot be voided.
 - 2026-11-11 (B-grade lines for the shops): a shop order line may be A-grade or B-grade. A B line takes the
   factory's own B-grade stock at the B-grade cost; an approved returned B piece goes back to B-grade stock. A
   B-grade piece costs the shop the style's own "B-grade price" (set on the product, with the PIN), or, without one,

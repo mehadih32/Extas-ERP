@@ -348,7 +348,8 @@ All of these come as webhooks with an `eventId`. Store each one once: a repeated
   - The ERP keeps every version and shows the owner what changed.
 - **Send it every day at 00:30 for the day before,** even with no sales (send zeros).
 - **If it fails,** keep it in a queue and retry with backoff (1, 5, 15 and 60 minutes, then every hour) until the ERP answers 2xx.
-- **Answer the ERP's reminder.** The ERP checks at 01:00. For any missing day it sends the webhook `summary.missing` with `{ dates: [...] }` and repeats it every hour. When it arrives, send those days at once.
+- **Send the ads every day (required from 2026-11-12).** `costs.ads` must be in every day's summary. When there were no ads that day, send it with zeros (`{ "facebook": 0, "instagram": 0, "google": 0, "tiktok": 0, "other": 0 }`). A day sent with `ads` in `incomplete` is not complete: the ERP asks for it again every hour, exactly like a missing day, and tells the owner from 09:00.
+- **Answer the ERP's reminder.** The ERP checks at 01:00. For any missing day, and any day it has without the ads figure, it sends the webhook `summary.missing` with `{ dates: [...], missing: [...], adsMissing: [...] }` and repeats it every hour. `dates` holds every day to send again; `missing` and `adsMissing` say why. When it arrives, send those days at once, with the ads filled in. `GET /daily-summaries` also lists `adsMissing`.
 - **Keep the ERP's answers.** Store each summary the site sent, and the ERP's reply, in a log the admin can see.
 - **Fill gaps.** `GET /daily-summaries?from&to` (new) returns which days the ERP has, so the site can fill any gap by itself, for example after downtime.
 
@@ -413,7 +414,7 @@ All of these come as webhooks with an `eventId`. Store each one once: a repeated
 - **`returns`:** for information only, never added to costs.
   - `approvedCredit`: that day's `credit` from `APPROVED` and `APPROVED_AT_PACKING`.
   - `waitingCheckValue`: the value still waiting for the owner's check at the end of the day.
-- **`incomplete`:** the categories the site does not have yet for that day, for example `["ads"]` when the ad platforms have not reported.
+- **`incomplete`:** the categories the site does not have yet for that day, for example `["ads"]` when the ad platforms have not reported. Ads are required: a day listed with `ads` here is chased by the ERP until the site sends it again with `costs.ads` (0 if there were no ads).
   - Send what is known so far. The ERP marks those figures "not complete yet" for the owner and never reads a missing figure as 0.
   - Send the day again when it is complete, with that category taken off the list.
   - Allowed keys: `orders`, `sales`, `income`, `deliveries`, `goods`, `returnLosses`, `packaging`, `delivery`, `paymentFees`, `accessories`, `ads`, `other`, `customers`.

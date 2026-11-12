@@ -111,8 +111,13 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
     (sum, i) => sum.plus(i.badStockEntry?.lossValue ?? 0),
     money(0),
   );
+  // A wholesale return's credit note (2026-11-12): its pieces wait for that return's QC.
+  const wholesale = await ctx.db.wholesaleReturn.findFirst({
+    where: { salesReturnId: r.id },
+    select: { id: true, number: true },
+  });
   const wentTo = { stock: 0, bGrade: 0, rejects: 0 };
-  for (const i of r.items) {
+  for (const i of wholesale ? [] : r.items) {
     const qc = qcOf(i.qcStatus);
     if (qc === "GOOD") wentTo.stock += i.quantity;
     else if (qc === "B_GRADE") wentTo.bGrade += i.quantity;
@@ -155,12 +160,14 @@ export async function getSalesReturnScreen(ctx: CompanyContext, returnId: string
       pieces: r.items.reduce((s, i) => s + i.quantity, 0),
       /** Pieces back in sellable stock, in B-grade stock and in Damage & QC Rejects. */
       wentTo,
+      /** The wholesale return this credit note refunds: its QC places the pieces. */
+      wholesale,
       goods: fixed(r.goodsValue),
       discount: fixed(r.discount),
       tax: fixed(r.tax),
       total: fixed(r.amount),
       /** What the pieces cost: only for people who see costs. */
-      cost: access.seeCosts && r.costValue !== null ? fixed(r.costValue) : null,
+      cost: access.seeCosts && r.costValue !== null && !wholesale ? fixed(r.costValue) : null,
       /** What the pieces moved to Damage & QC Rejects cost (written off). */
       writtenOff: access.seeCosts && r.costValue !== null ? fixed(writtenOff) : null,
       /** What the pieces put back into stock (A or B grade) cost. */

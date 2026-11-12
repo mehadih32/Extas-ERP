@@ -22,7 +22,9 @@ import { assertCanManageStores, assertCanSeeStores } from "./stores.service";
  * not have yet is listed in `incomplete` and shown "not complete yet", never
  * as 0. No day may go missing: the site sends at 00:30; from 01:00 the ERP asks
  * for missing days (webhook summary.missing, hourly); from 09:00 it tells the
- * owner. The owner sets a budget per month and line (80% yellow, over 100% red
+ * owner. The ads are required (2026-11-12): a day whose newest version still
+ * lists `ads` in `incomplete` is chased like a missing day (0 is a valid ads
+ * figure, so a day without ads is sent with zeros). The owner sets a budget per month and line (80% yellow, over 100% red
  * and an alarm) and a monthly sales target. The ERP's own side (what the store
  * took and gave back) never depends on these: it is in the ERP's books.
  */
@@ -232,6 +234,17 @@ async function latestDays(storeId: string, from: string, to: string) {
   return byDay;
 }
 
+/**
+ * Days whose newest version still has no ads figure (`ads` listed in
+ * `incomplete`): not complete, so chased like a missing day.
+ */
+export function daysWithoutAds(days: Iterable<{ date: Date; incomplete: string[] }>) {
+  return [...days]
+    .filter((d) => d.incomplete.includes("ads"))
+    .map((d) => dateOnly(d.date))
+    .sort();
+}
+
 /** Days with no summary from the store's first one (or `from`) up to yesterday. */
 async function missingDays(storeId: string, from: string, yesterday: string, have: Set<string>) {
   const first = await prisma.retailDailySummary.findFirst({
@@ -274,6 +287,8 @@ export async function listDailySummaries(ctx: CompanyContext, store: Store, raw:
       to < yesterday ? to : yesterday,
       new Set(days.keys()),
     ),
+    /** Days the ERP has without the ads figure: send them again with costs.ads (0 if none). */
+    adsMissing: daysWithoutAds(days.values()),
   };
 }
 
@@ -604,6 +619,7 @@ export async function storeBooks(ctx: CompanyContext, storeId: string) {
     ctx.db.retailTarget.findUnique({ where: { storeId_month: { storeId, month } } }),
   ]);
   const missing = await missingDays(storeId, lookFrom, yesterday, new Set(all.keys()));
+  const adsMissing = daysWithoutAds(all.values());
   const days = [...all.values()].slice(-14);
   const daysSoFar = Number(day.slice(8, 10)) - 1;
   const fixedSoFar = figures.fixed
@@ -612,6 +628,7 @@ export async function storeBooks(ctx: CompanyContext, storeId: string) {
   return {
     month,
     missing,
+    adsMissing,
     days: days.reverse().map((d) => {
       const previous = d.versions.length > 1 ? d.versions[d.versions.length - 2]! : null;
       return {
@@ -669,8 +686,9 @@ const HOUR = 60 * 60 * 1000;
 
 /**
  * Every minute (the shops' webhook clock): from 01:00 asks each site for its
- * missing days (summary.missing, at most hourly); from 09:00 tells the owner
- * once a day. Returns how many stores were asked.
+ * missing days and its days without the ads figure (summary.missing, at most
+ * hourly: `dates` holds both, `missing` and `adsMissing` say which is which);
+ * from 09:00 tells the owner once a day. Returns how many stores were asked.
  */
 export async function summaryGuards(now: Date = new Date()) {
   const stores = await prisma.retailStore.findMany({
@@ -687,15 +705,15 @@ export async function summaryGuards(now: Date = new Date()) {
     const from = addDays(yesterday, -(LOOK_BACK_DAYS - 1));
     const rows = await prisma.retailDailySummary.findMany({
       where: { storeId: store.id, date: { gte: dateColumn(from), lte: dateColumn(yesterday) } },
-      select: { date: true },
+      select: { date: true, incomplete: true },
+      orderBy: [{ date: "asc" }, { version: "asc" }],
     });
-    const missing = await missingDays(
-      store.id,
-      from,
-      yesterday,
-      new Set(rows.map((r) => dateOnly(r.date))),
-    );
-    if (missing.length === 0) continue;
+    // The newest version of each day counts.
+    const newest = new Map(rows.map((r) => [dateOnly(r.date), r]));
+    const missing = await missingDays(store.id, from, yesterday, new Set(newest.keys()));
+    const adsMissing = daysWithoutAds(newest.values());
+    if (missing.length === 0 && adsMissing.length === 0) continue;
+    const dates = [...new Set([...missing, ...adsMissing])].sort();
     const shop = store.integration;
     if (
       shop?.isActive &&
@@ -703,7 +721,7 @@ export async function summaryGuards(now: Date = new Date()) {
       (!store.summaryAskedAt || now.getTime() - store.summaryAskedAt.getTime() >= HOUR)
     ) {
       const { queueShopEvent } = await import("@/modules/ecommerce/webhooks");
-      await queueShopEvent(shop, "summary.missing", { dates: missing }, now);
+      await queueShopEvent(shop, "summary.missing", { dates, missing, adsMissing }, now);
       await prisma.retailStore.update({ where: { id: store.id }, data: { summaryAskedAt: now } });
       asked += 1;
     }
@@ -712,10 +730,18 @@ export async function summaryGuards(now: Date = new Date()) {
         where: { id: store.id },
         data: { summaryAlertedOn: dateColumn(day) },
       });
+      const what = [
+        missing.length > 0 ? `Missing days: ${missing.join(", ")}.` : null,
+        adsMissing.length > 0
+          ? `The ads figure is missing for: ${adsMissing.join(", ")} (the site sends 0 when there were no ads).`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
       await alarm(
         store,
         `${store.name}: daily figures missing`,
-        `Missing days: ${missing.join(", ")}. The site was asked for them; check its connection.`,
+        `${what} The site was asked for them; check its connection.`,
       );
       await recordAudit({
         companyId: store.companyId,
@@ -723,7 +749,16 @@ export async function summaryGuards(now: Date = new Date()) {
         action: "STATUS_CHANGE",
         entityType: "RetailStore",
         entityId: store.id,
-        summary: `${store.name}: daily summaries missing for ${missing.join(", ")}`,
+        summary: [
+          missing.length > 0
+            ? `${store.name}: daily summaries missing for ${missing.join(", ")}`
+            : null,
+          adsMissing.length > 0
+            ? `${store.name}: ads figure missing for ${adsMissing.join(", ")}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("; "),
       });
     }
   }

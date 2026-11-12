@@ -15,6 +15,11 @@ export const SALES_TABS: readonly SalesTab[] = [
   { href: "/sales/invoices", label: "Invoices", anyOf: ["sales.view"] },
   { href: "/sales/payments", label: "Payments", anyOf: ["sales.view"] },
   { href: "/sales/returns", label: "Returns", anyOf: ["sales.view"] },
+  {
+    href: "/sales/wholesale-returns",
+    label: "Wholesale returns",
+    anyOf: ["sales.view", "sales.returns.approve", "sales.returns.qc"],
+  },
 ];
 
 /** The tabs this person may open, in order; the first is where /sales goes. */

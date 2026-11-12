@@ -2,12 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 
+import { AppError } from "@/lib/errors";
 import { getRequestMeta } from "@/lib/request-meta";
 import { runAction } from "@/lib/result";
 import { requirePermission } from "@/modules/auth/context";
+import * as files from "@/modules/files/file.service";
 import * as catalog from "@/modules/inventory/catalog.service";
 import * as lots from "@/modules/inventory/lot.service";
 import * as matrix from "@/modules/inventory/matrix.service";
+import * as packingLists from "@/modules/inventory/packing-list.service";
 import * as screens from "@/modules/inventory/screens.service";
 import * as sizeCharts from "@/modules/inventory/size-chart.service";
 import * as stock from "@/modules/inventory/stock.service";
@@ -175,6 +178,42 @@ export const listStockLotsAction = async (query: unknown) =>
   runAction(async () => lots.listLots(await view(), query));
 export const getStockSummaryAction = async () =>
   runAction(async () => stock.getStockSummary(await view()));
+
+// --- Upload packing list (without AI; "Read with AI" only while AI is on) -----------
+export const getPackingListSetupAction = async () =>
+  runAction(async () => packingLists.getPackingListSetup(await manage()));
+/** FormData: `file` (Excel, CSV, PDF or photo, 10 MB at most) and `source` (who sent it). */
+export const readPackingListAction = async (form: FormData) =>
+  runAction(async () => {
+    const ctx = await manage();
+    const file = await files.fileFromForm(form);
+    return packingLists.readPackingList(ctx, file, {
+      source: String(form.get("source") ?? "") || undefined,
+    });
+  });
+/** FormData: `file`, a photo or PDF. Refused while AI is off. */
+export const readPackingListWithAiAction = async (form: FormData) =>
+  runAction(async () => {
+    const ctx = await manage();
+    const file = await files.fileFromForm(form);
+    const type = files.detectFileType(file.bytes);
+    if (!type) {
+      throw new AppError("VALIDATION", "AI reads photos (JPG, PNG, WEBP) and PDFs.");
+    }
+    return packingLists.readPackingListWithAi(ctx, { ...file, mimeType: type.mimeType });
+  });
+export const rememberPackingSourceAction = async (input: unknown) =>
+  runAction(async () =>
+    packingLists.rememberPackingSource(await manage(), input, await getRequestMeta()),
+  );
+export const preparePackingStyleAction = async (input: unknown) =>
+  change(async () =>
+    packingLists.preparePackingStyle(await manage(), input, await getRequestMeta()),
+  );
+export const addPackingListStockAction = async (input: unknown) =>
+  change(async () =>
+    packingLists.addPackingListStock(await manage(), input, await getRequestMeta()),
+  );
 
 // --- Size chart --------------------------------------------------------------------
 export const getSizeChartAction = async (styleId: string) =>

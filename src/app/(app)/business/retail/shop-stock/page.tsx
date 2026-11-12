@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { AiTimeZone } from "@/components/ai/when";
 import { ShopStockScreen } from "@/components/business/shop-stock-screen";
 import { SectionError } from "@/components/dashboard/section-error";
+import { readBuyPrefill } from "@/components/products/packing-list-model";
 import { NoAccess } from "@/components/settings/no-access";
 import { shopStockPageAction } from "@/server/actions/retail.actions";
 import { requireCompanyPage } from "@/server/pages/guards";
@@ -10,8 +11,14 @@ import { requireCompanyPage } from "@/server/pages/guards";
 export const metadata: Metadata = { title: "Shop stock" };
 
 /** Business > Shop stock: the shops' reserve and ready stock bought for them. */
-export default async function ShopStockPage() {
+export default async function ShopStockPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const ctx = await requireCompanyPage();
+  // "Upload packing list" sends its pieces here to fill in Buy ready stock.
+  const prefill = readBuyPrefill(await searchParams);
   const result = await shopStockPageAction();
   if (!result.ok) {
     if (result.error.code === "FORBIDDEN") {
@@ -31,7 +38,7 @@ export default async function ShopStockPage() {
   }
   return (
     <AiTimeZone timeZone={ctx.company.timezone}>
-      <ShopStockScreen page={result.data} />
+      <ShopStockScreen page={result.data} prefill={prefill} />
     </AiTimeZone>
   );
 }

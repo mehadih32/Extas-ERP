@@ -11,6 +11,7 @@ import { FormDialog } from "@/components/sales/dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import type { BuyPrefill } from "@/components/products/packing-list-model";
 import type { ShopStockPage } from "@/modules/retail/shop-stock.service";
 import { setReserveAction } from "@/server/actions/retail.actions";
 
@@ -30,8 +31,17 @@ const PRICE_MODE: Record<string, string> = {
   AT_COST: "At cost",
 };
 
-export function ShopStockScreen({ page }: { page: ShopStockPage }) {
-  const [dialog, setDialog] = useState<Dialog | null>(null);
+export function ShopStockScreen({
+  page,
+  prefill,
+}: {
+  page: ShopStockPage;
+  /** From "Upload packing list": opens Buy ready stock with its style and pieces. */
+  prefill?: BuyPrefill | null;
+}) {
+  const [dialog, setDialog] = useState<Dialog | null>(
+    prefill && page.canBuy ? { kind: "buy" } : null,
+  );
   const when = useWhen();
   const close = () => setDialog(null);
   const { currency } = page;
@@ -153,7 +163,9 @@ export function ShopStockScreen({ page }: { page: ShopStockPage }) {
       {dialog?.kind === "reserve" && (
         <ReserveDialog page={page} reserve={dialog.reserve} onClose={close} />
       )}
-      {dialog?.kind === "buy" && <BuyReadyStockDialog page={page} onClose={close} />}
+      {dialog?.kind === "buy" && (
+        <BuyReadyStockDialog page={page} onClose={close} prefill={prefill} />
+      )}
     </div>
   );
 }

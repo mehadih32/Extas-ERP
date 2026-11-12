@@ -151,7 +151,8 @@ model Company {
   retailReserves         RetailReserve[]
   readyStockPurchases    ReadyStockPurchase[]
   styleSizeCharts        StyleSizeChart[]
-  readyStockLines        ReadyStockLine[]
+  packingListSources     PackingListSource[]
+  readyStockLines       ReadyStockLine[]
   retailDailySummaries   RetailDailySummary[]
   retailFixedCosts       RetailFixedCost[]
   retailBudgets          RetailBudget[]
@@ -8056,5 +8057,29 @@ model StyleSizeChart {
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   style   Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
 
+  @@index([companyId, updatedAt])
+}
+
+/// A factory's or supplier's packing lists (2026-11-12, "Upload packing list" without AI):
+/// the column names its lists use and the colour names written on them matched to the
+/// catalog, remembered from the last upload so the next one maps by itself.
+model PackingListSource {
+  id          String   @id @default(cuid())
+  companyId   String
+  /// The name as typed, and the key it is found by (upper case letters and digits).
+  name        String
+  key         String
+  /// SavedLayout (modules/inventory/packing-list/layout.ts); null until a file had columns.
+  layout      Json?
+  /// { "ANTRA": colorId }: colour names as written on its lists, matched to the catalog.
+  colours     Json     @default("{}")
+  uses        Int      @default(0)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, key])
   @@index([companyId, updatedAt])
 }

@@ -20,6 +20,9 @@ const nextConfig = {
     "pdfkit",
     "harfbuzzjs",
     "nodemailer",
+    // "Upload packing list" reads PDFs with PDF.js on the server, which loads its own
+    // files at run time.
+    "unpdf",
   ],
   // The Bengali font and Mehedi 2.0's books are read from assets at run time, so
   // the build copies them in.
@@ -28,6 +31,7 @@ const nextConfig = {
       "./assets/fonts/*.ttf",
       "./assets/knowledge/*",
       "./node_modules/harfbuzzjs/dist/harfbuzz.wasm",
+      "./node_modules/unpdf/dist/**/*",
     ],
   },
   // Retail stores, Returns and Shop stock moved inside Business > Retail (2026-10-31):
@@ -41,7 +45,7 @@ const nextConfig = {
   },
   experimental: {
     serverActions: {
-      // Allows packing-list photos / PDFs for AI stock intake.
+      // Allows packing-list photos, PDFs and Excel files (stock intake, Upload packing list).
       bodySizeLimit: "10mb",
     },
   },

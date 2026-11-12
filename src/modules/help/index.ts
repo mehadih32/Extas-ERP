@@ -218,8 +218,22 @@ export function helpSearchEntries(
   platformOwner = false,
 ): HelpSearchEntry[] {
   return HELP_SECTIONS.flatMap((section) =>
-    shownArticles(section, permissions, platformOwner).map((article) =>
-      helpSearchEntry(section, article, articleOpen(article, permissions, platformOwner)),
-    ),
+    shownArticles(section, permissions, platformOwner).map((article) => ({
+      ...searchEntryOf(section, article),
+      open: articleOpen(article, permissions, platformOwner),
+    })),
   );
+}
+
+/** Each guide's search text, worked out once: the guides never change while the app runs. */
+const SEARCH_CACHE = new Map<string, HelpSearchEntry>();
+
+function searchEntryOf(section: HelpSection, article: HelpArticle): HelpSearchEntry {
+  const key = `${section.id}/${article.slug}`;
+  let entry = SEARCH_CACHE.get(key);
+  if (!entry) {
+    entry = helpSearchEntry(section, article, true);
+    SEARCH_CACHE.set(key, entry);
+  }
+  return entry;
 }

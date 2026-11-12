@@ -66,8 +66,22 @@ export function helpSearchEntry(
     summary: article.summary,
     open,
     keywords: normalizeHelpText(article.keywords.join(" ")),
-    body: normalizeHelpText(body),
+    body: searchableWords(body),
   };
+}
+
+/**
+ * A guide's text for matching, as each of its words once. A search word never
+ * holds a space, so it is found inside one word of the text or nowhere: keeping
+ * each word once (and dropping a word found inside a longer one) finds exactly
+ * the same guides, with a third of the text to send to the browser.
+ */
+export function searchableWords(text: string): string {
+  const words = [...new Set(normalizeHelpText(text).split(" ").filter(Boolean))];
+  words.sort((a, b) => b.length - a.length);
+  const kept: string[] = [];
+  for (const word of words) if (!kept.some((longer) => longer.includes(word))) kept.push(word);
+  return kept.join(" ");
 }
 
 /** How well one word matches a guide: 0 when it doesn't. */

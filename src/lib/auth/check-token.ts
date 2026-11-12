@@ -296,6 +296,7 @@ export const CHECK_READ_ROUTES: readonly string[] = [
   "/api/production/suppliers/[supplierId]/report-card",
   "/api/reminders",
   "/api/follow-ups",
+  "/api/help/search",
   "/api/document-sends",
   "/api/reminders/[reminderId]",
   "/api/reminders/rules",

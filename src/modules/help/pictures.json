@@ -1635,9 +1635,9 @@
       "target": "marks"
     },
     "route": "/help",
-    "screen": "ae969cde19096ecb",
+    "screen": "08e5b5cb9465d03d",
     "guide": "822c3e29925c52fd",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "help-missing-feature": {
     "src": "/help/shots/help-missing-feature.webp",
@@ -1654,9 +1654,9 @@
       "target": "marks"
     },
     "route": "/help",
-    "screen": "ae969cde19096ecb",
+    "screen": "08e5b5cb9465d03d",
     "guide": "b7869a9ba945b716",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "help-read-guide": {
     "src": "/help/shots/help-read-guide.webp",
@@ -1711,9 +1711,9 @@
       "target": "marks"
     },
     "route": "/help",
-    "screen": "ae969cde19096ecb",
+    "screen": "08e5b5cb9465d03d",
     "guide": "72633166bdc3d78e",
-    "taken": "2026-11-11"
+    "taken": "2026-11-12"
   },
   "hr-360-report": {
     "src": "/help/shots/hr-360-report.webp",

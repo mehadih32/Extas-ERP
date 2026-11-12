@@ -23,7 +23,10 @@ const photos = readdirSync(folder)
   .sort();
 for (const photo of photos) {
   const started = Date.now();
-  const lines = await ocr.detect(path.join(folder, photo));
+  const { texts: lines } = await ocr.detect(path.join(folder, photo));
   console.log(`=== ${photo} (${Date.now() - started} ms, ${lines.length} lines)`);
-  for (const line of lines) console.log(`${line.text}   [${(line.mean ?? 0).toFixed(2)}]`);
+  for (const line of lines)
+    console.log(
+      `${line.text}   [${(line.mean ?? 0).toFixed(2)}] @${(line.box ?? []).map((p) => p.map(Math.round).join(",")).join(" ")}`,
+    );
 }

@@ -328,7 +328,7 @@ export function applySavedLayout(sheet: Sheet, saved: SavedLayout): PackingLayou
 }
 
 /** Fixes a photo reader makes in numbers: O for 0, I or l for 1, S for 5, B for 8. */
-const DIGIT_FIXES: Record<string, string> = {
+export const DIGIT_FIXES: Record<string, string> = {
   O: "0",
   o: "0",
   D: "0",

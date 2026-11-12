@@ -5,6 +5,7 @@ import { recordAudit } from "@/modules/audit/audit.service";
 import { purgeExpiredSessions } from "@/modules/auth/session.service";
 import { parseCron, previousRun } from "@/modules/backups/cron";
 import { purgeKeptSalesPdfs } from "@/modules/documents/print.service";
+import { purgeEndedLinkFiles } from "@/modules/documents/send.service";
 import { purgeShopLogs } from "@/modules/ecommerce/housekeeping";
 import { recordDueFixedCosts } from "@/modules/expenses/recurring.service";
 import { purgeOldPings } from "@/modules/hr/location.service";
@@ -30,6 +31,9 @@ import { purgeUnusedReferenceImages } from "@/modules/sales/reference-image.serv
  *     uses (the quotation was never saved) are deleted from disk;
  *   - PDFs of sales documents made more than a day ago are deleted from disk
  *     (printing again makes a fresh copy; documents/print.service.ts);
+ *   - the PDF copy behind a WhatsApp link is deleted 3 days after the link
+ *     expired or was stopped; the link and its "Sent" row stay
+ *     (documents/send.service.ts);
  *   - background jobs finished more than 30 days ago (failed: 90) are cleared
  *     (jobs/queue.ts);
  *   - on-duty location pings older than 90 days are deleted
@@ -84,6 +88,7 @@ export async function runHousekeeping(now: Date = new Date()) {
   const proofsRemoved = await purgeUnusedProofs(now);
   const picturesRemoved = await purgeUnusedReferenceImages(now);
   const salesPdfsRemoved = await purgeKeptSalesPdfs(now);
+  const linkPdfsRemoved = await purgeEndedLinkFiles(now);
   const jobsCleared = await purgeOldJobs(now);
   const pingsRemoved = await purgeOldPings(now);
   const shopLogsCleared = await purgeShopLogs(now);
@@ -101,6 +106,7 @@ export async function runHousekeeping(now: Date = new Date()) {
     proofsRemoved,
     picturesRemoved,
     salesPdfsRemoved,
+    linkPdfsRemoved,
     jobsCleared,
     pingsRemoved,
     shopLogsCleared,

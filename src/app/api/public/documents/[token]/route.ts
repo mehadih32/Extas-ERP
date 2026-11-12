@@ -1,7 +1,7 @@
 import { fileResponse } from "@/lib/download";
 import { PDF_MIME } from "@/lib/pdf";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { openDocumentLink } from "@/modules/documents/send.service";
+import { linkVisitor, openDocumentLink } from "@/modules/documents/send.service";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ const notFound = () =>
  */
 export async function GET(request: Request, context: { params: Promise<{ token: string }> }) {
   const { token } = await context.params;
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = linkVisitor(request.headers) ?? "unknown";
   try {
     checkRateLimit(`doc-link:${ip}`, 60, 60_000);
   } catch {

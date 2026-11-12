@@ -10,7 +10,7 @@ import { formatInstantDay } from "@/lib/format";
 import { PDF_MIME } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rate-limit";
-import type { RequestMeta } from "@/lib/request-meta";
+import { clientAddress, type RequestMeta } from "@/lib/request-meta";
 import { isAiAddress } from "@/modules/ai/ai-address";
 import { auditInCompany } from "@/modules/audit/audit.service";
 import type { CompanyContext } from "@/modules/auth/context";
@@ -490,4 +490,59 @@ export async function openDocumentLink(token: string, now: Date = new Date()) {
     data: { openCount: { increment: 1 }, lastOpenedAt: now },
   });
   return { bytes, fileName: link.fileName };
+}
+
+/** Days a WhatsApp link's own PDF copy is kept after the link expired or was stopped. */
+export const LINK_FILE_KEEP_DAYS = 3;
+
+/**
+ * Nightly (housekeeping/scheduler.ts): deletes the PDF copy of each WhatsApp
+ * link that expired or was stopped more than LINK_FILE_KEEP_DAYS days ago.
+ * The link and its "Sent" row stay (the file link is cleared: onDelete SetNull),
+ * so the history still shows it. Returns the files deleted.
+ */
+export async function purgeEndedLinkFiles(now: Date = new Date()) {
+  const before = new Date(now.getTime() - LINK_FILE_KEEP_DAYS * 24 * 60 * 60 * 1000);
+  let removed = 0;
+  for (let batch = 0; batch < 20; batch++) {
+    const files = await prisma.fileAsset.findMany({
+      where: {
+        // A link's file, and no link on it still running or ended less than the keep days ago
+        // (an empty stoppedAt is said outright: SQL never compares it).
+        documentLinks: {
+          some: {},
+          none: {
+            expiresAt: { gte: before },
+            OR: [{ stoppedAt: null }, { stoppedAt: { gte: before } }],
+          },
+        },
+      },
+      select: { id: true, storagePath: true },
+      orderBy: { createdAt: "asc" },
+      take: 500,
+    });
+    for (const file of files) {
+      await prisma.fileAsset.delete({ where: { id: file.id } });
+      await deleteStoredFile(file).catch((error) => {
+        console.error("[housekeeping] could not delete a link's PDF", file.storagePath, error);
+      });
+    }
+    removed += files.length;
+    if (files.length < 500) break;
+  }
+  return removed;
+}
+
+/**
+ * Who is opening a link, for the rate limit: the right-most X-Forwarded-For
+ * entry, the one our own proxy (Caddy) added, so an address a visitor writes
+ * into the header first never counts; then the same Cloudflare handling as
+ * every other route (clientAddress).
+ */
+export function linkVisitor(headers: Pick<Headers, "get">) {
+  const ours = headers.get("x-forwarded-for")?.split(",").at(-1)?.trim();
+  return clientAddress({
+    get: (name: string) =>
+      name.toLowerCase() === "x-forwarded-for" ? (ours ?? null) : headers.get(name),
+  });
 }

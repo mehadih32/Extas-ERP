@@ -107,11 +107,12 @@ export const DEFAULT_RULES: Record<AutoType, Defaults> = {
     notifyManagers: false,
     notifyOwner: true,
   },
-  // Three days before it ends, on its last day, then once the day after ("expired").
+  // Three days before it ends, on its last day, then once the day after ("expired"):
+  // 0 here means that one "expired" reminder (see FOLLOW_UP_LIMITS).
   QUOTATION_EXPIRY: {
     isActive: true,
     daysBefore: [3, 0],
-    overdueEveryDays: 30,
+    overdueEveryDays: 0,
     sendTime: "09:00",
     notifyManagers: true,
     notifyOwner: true,
@@ -141,6 +142,16 @@ export const DEFAULT_RULES: Record<AutoType, Defaults> = {
     notifyOwner: true,
   },
 };
+
+/**
+ * Limits that keep follow-ups with buyers from nagging for ever:
+ *   - `repeats`: reminders after the date, at most (then it waits for Done or payment);
+ *   - `stalePeriods`: a date first seen this many repeat periods late is old news, never sent;
+ *   - a quotation with no repeat set still says "expired" once, the day after it ends.
+ * On a kind's first run, the dates already overdue are marked as reminded, not sent,
+ * so turning these on does not flood the inbox with the old backlog.
+ */
+export const FOLLOW_UP_LIMITS = { repeats: 5, stalePeriods: 2, onceAfter: 100_000 } as const;
 
 export const RULE_INFO: Record<
   AutoType,

@@ -102,7 +102,8 @@ const inbox = async (ctx: CompanyContext) =>
 const reminderKeys = async (env: Env) =>
   (
     await prisma.reminder.findMany({
-      where: { companyId: env.company.id },
+      // Sent ones only (not the quiet start marks).
+      where: { companyId: env.company.id, status: "SENT" },
       orderBy: { createdAt: "asc" },
       select: { sourceKey: true },
     })
@@ -385,6 +386,68 @@ run("follow-up reminders without the AI", () => {
     ).not.toContain("QUOTATION_EXPIRY");
     await runReminders(at("2026-11-25"), { companyId: env.company.id });
     expect(await quoteKeys()).toHaveLength(1);
+  });
+
+  it("does not flood the inbox with the old backlog, and stops repeating after 5 times", async () => {
+    const env = await setup("Extras");
+    // 50 old overdue dates already in the ERP when these reminders begin.
+    for (let i = 0; i < 20; i++) await env.invoice("2026-10-01");
+    for (let i = 0; i < 20; i++) await env.invoice("2026-11-18");
+    const oldQuotes = [];
+    for (let i = 0; i < 10; i++) oldQuotes.push(await env.quote("2026-12-31"));
+    await prisma.quotation.updateMany({
+      where: { id: { in: oldQuotes.map((q) => q.id) } },
+      data: { validUntil: new Date("2026-11-15T00:00:00Z") },
+    });
+    const sent = () =>
+      prisma.notificationLog.count({ where: { companyId: env.company.id, channel: "IN_APP" } });
+    await runReminders(at("2026-11-20"), { companyId: env.company.id });
+    await runReminders(at("2026-11-20"), { companyId: env.company.id });
+    expect(await sent()).toBe(0);
+    expect(
+      await prisma.backgroundJob.count({
+        where: { companyId: env.company.id, kind: "ai.bot.push" },
+      }),
+    ).toBe(0);
+    // They are marked as reminded (not sent), and those marks are not in anyone's list.
+    expect(
+      await prisma.reminder.count({ where: { companyId: env.company.id, status: "SENT" } }),
+    ).toBe(0);
+
+    // A new date after that fires once; an old invoice entered now (long past) does not.
+    const fresh = await env.invoice("2026-11-21");
+    const late = await env.invoice("2026-11-01");
+    await runReminders(at("2026-11-21"), { companyId: env.company.id });
+    await runReminders(at("2026-11-21"), { companyId: env.company.id });
+    const keysOf = async (id: string) =>
+      (
+        await prisma.reminder.findMany({
+          where: { companyId: env.company.id, sourceKey: { contains: id }, status: "SENT" },
+          orderBy: { createdAt: "asc" },
+          select: { sourceKey: true },
+        })
+      ).map((r) => r.sourceKey!.split(":").pop());
+    expect(await keysOf(fresh.id)).toEqual(["d0"]);
+    expect(await keysOf(late.id)).toEqual([]);
+    expect(await inbox(env.as.ACCOUNTS)).toEqual([
+      `Payment due: Invoice ${fresh.number} for Rahim Traders`,
+    ]);
+    // An expired quotation is not told again and again: it was due once, the day after.
+    for (const q of oldQuotes) expect(await keysOf(q.id)).toEqual([]);
+
+    // Overdue: every 3 days, 5 times at most, then it waits for Done or payment.
+    for (const day of [
+      "2026-11-22",
+      "2026-11-25",
+      "2026-11-28",
+      "2026-12-01",
+      "2026-12-04",
+      "2026-12-07",
+      "2026-12-10",
+    ])
+      await runReminders(at(day), { companyId: env.company.id });
+    expect(await keysOf(fresh.id)).toEqual(["d0", "late0", "late1", "late2", "late3", "late4"]);
+    expect(await keysOf(late.id)).toEqual([]);
   });
 
   it("tells the owner's linked bot about the follow-ups, AI on or off", async () => {

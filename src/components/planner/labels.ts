@@ -164,10 +164,20 @@ export function daysBeforeText(days: readonly number[]): string {
 }
 
 /** "Every 3 days while overdue". */
-export function overdueText(everyDays: number): string {
+/** Follow-ups with buyers: their repeats stop after 5 (FOLLOW_UP_LIMITS in rules.ts). */
+const FOLLOW_UP_KINDS = new Set([
+  "QUOTATION_EXPIRY",
+  "PAYMENT_DUE",
+  "PROMISED_PAYMENT",
+  "FOLLOW_UP",
+]);
+
+export function overdueText(everyDays: number, type?: string): string {
+  if (type === "QUOTATION_EXPIRY" && everyDays <= 0) return "Once, the day after it ends";
+  const limit = type && FOLLOW_UP_KINDS.has(type) ? ", 5 times at most" : "";
   if (everyDays <= 0) return "Not again once overdue";
-  if (everyDays === 1) return "Every day while overdue";
-  return `Every ${everyDays} days while overdue`;
+  if (everyDays === 1) return `Every day while overdue${limit}`;
+  return `Every ${everyDays} days while overdue${limit}`;
 }
 
 /** Reads "7, 3, 1, 0" into days; null when something is not a whole number 0–365. */

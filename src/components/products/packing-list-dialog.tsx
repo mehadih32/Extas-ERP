@@ -149,7 +149,8 @@ function Choices<T extends string>({
   onChange,
 }: {
   legend: string;
-  value: T;
+  /** Empty: nothing picked yet. */
+  value: T | "";
   options: ReadonlyArray<{ value: T; label: string }>;
   onChange: (value: T) => void;
 }) {
@@ -209,7 +210,7 @@ export function PackingListDialog({
   const [notes, setNotes] = useState<string[]>([]);
   const [active, setActive] = useState(0);
   const [states, setStates] = useState<Record<number, BlockState>>({});
-  const [destination, setDestination] = useState<Destination>("OPENING");
+  const [destination, setDestination] = useState<Destination | "">("");
   const [warehouseId, setWarehouseId] = useState(screen.warehouseId ?? "");
   const [projects, setProjects] = useState<Array<{ id: string; code: string; name: string }>>();
   const [projectId, setProjectId] = useState("");
@@ -409,6 +410,7 @@ export function PackingListDialog({
         "The totals do not add up. Fix the numbers, or tick that the paper's totals are wrong.",
       );
     }
+    if (!destination) return setProblem("Pick where the pieces go.");
     if (destination === "DELIVERY" && !projectId) {
       return setProblem("Pick the production project the pieces came from.");
     }
@@ -1161,15 +1163,20 @@ export function PackingListDialog({
                             ...(setup.can.buy
                               ? [{ value: "BUY" as const, label: "Buy ready stock" }]
                               : []),
-                            { value: "OPENING" as const, label: "Opening stock" },
+                            {
+                              value: "OPENING" as const,
+                              label: "Opening stock (from before the ERP)",
+                            },
                           ]}
                         />
                         <p className="text-sm text-muted-foreground">
-                          {destination === "DELIVERY"
-                            ? "Makes a draft delivery for the project with these pieces. Check it and confirm it there, as with any delivery."
-                            : destination === "BUY"
-                              ? "Opens the Buy ready stock form with this style and these pieces filled in. Add the supplier, price and payment there."
-                              : "Adds the pieces to stock now as opening stock (as Bulk update and stock counts do), at the cost you give or the style's average cost."}
+                          {destination === ""
+                            ? "Pick where the pieces go: new goods from a factory or a supplier come in through a production delivery or Buy ready stock."
+                            : destination === "DELIVERY"
+                              ? "Makes a draft delivery for the project with these pieces. Check it and confirm it there, as with any delivery."
+                              : destination === "BUY"
+                                ? "Opens the Buy ready stock form with this style and these pieces filled in. Add the supplier, price and payment there."
+                                : "Only for stock that was already here before you started using the ERP: adds it now as opening stock (as Bulk update and stock counts do), at the cost you give or the style's average cost."}
                         </p>
                         <div className="grid gap-3 sm:grid-cols-2">
                           {destination === "DELIVERY" && (
@@ -1194,22 +1201,23 @@ export function PackingListDialog({
                               )}
                             </Field>
                           )}
-                          {destination !== "BUY" && setup.warehouses.length > 1 && (
-                            <Field id="pl-warehouse" label="Warehouse">
-                              <NativeSelect
-                                id="pl-warehouse"
-                                value={warehouseId}
-                                onChange={(e) => setWarehouseId(e.target.value)}
-                              >
-                                {setup.warehouses.map((w) => (
-                                  <option key={w.id} value={w.id}>
-                                    {w.name}
-                                  </option>
-                                ))}
-                              </NativeSelect>
-                            </Field>
-                          )}
-                          {destination !== "BUY" && (
+                          {(destination === "DELIVERY" || destination === "OPENING") &&
+                            setup.warehouses.length > 1 && (
+                              <Field id="pl-warehouse" label="Warehouse">
+                                <NativeSelect
+                                  id="pl-warehouse"
+                                  value={warehouseId}
+                                  onChange={(e) => setWarehouseId(e.target.value)}
+                                >
+                                  {setup.warehouses.map((w) => (
+                                    <option key={w.id} value={w.id}>
+                                      {w.name}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                              </Field>
+                            )}
+                          {(destination === "DELIVERY" || destination === "OPENING") && (
                             <Field id="pl-grade" label="Grade">
                               <NativeSelect
                                 id="pl-grade"

@@ -543,8 +543,13 @@ const median = (values: number[]) => {
 };
 
 /** Words grouped into the lines they sit on (top to bottom, each left to right). */
+/** A page or photo is read up to this many words, rows and columns (a bigger one is not a packing list). */
+const MAX_WORDS = 20_000;
+const MAX_WORD_ROWS = 5000;
+const MAX_WORD_COLS = 200;
+
 export function wordLines(words: PlacedWord[]): { lines: PlacedWord[][]; height: number } {
-  const placed = words.filter((w) => w.text.trim());
+  const placed = words.filter((w) => w.text.trim()).slice(0, MAX_WORDS);
   const height = median(placed.map((w) => Math.max(1, w.y1 - w.y0)));
   const sorted = [...placed].sort((a, b) => (a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2);
   const lines: PlacedWord[][] = [];
@@ -600,7 +605,8 @@ export function wordsToRows(
   /** Words closer than this many line heights join into one cell. */
   joinGap = 1.1,
 ): SheetCell[][] {
-  const { lines, height } = wordLines(words);
+  const { lines: all, height } = wordLines(words);
+  const lines = all.slice(0, MAX_WORD_ROWS);
   if (lines.length === 0) return [];
 
   type Cell = { text: string; x0: number; x1: number; confidence?: number };
@@ -626,7 +632,9 @@ export function wordsToRows(
     return cells;
   });
 
-  const anchors = cellLines.reduce<Cell[]>((a, b) => (b.length > a.length ? b : a), []);
+  const anchors = cellLines
+    .reduce<Cell[]>((a, b) => (b.length > a.length ? b : a), [])
+    .slice(0, MAX_WORD_COLS);
   const overlap = (a: Cell, b: Cell) => Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
   const centreOf = (c: Cell) => (c.x0 + c.x1) / 2;
   return cellLines.map((cells) => {

@@ -914,7 +914,7 @@ export const productsHelp: HelpSection = {
           text: "“The totals do not add up” লাল বাক্স এলে কোন সারি মেলেনি তা লেখা থাকে। সংখ্যা ঠিক করুন; কাগজের মোটই ভুল হলে “I checked the paper: its totals are wrong, the pieces in the grid are right” টিক দিন।",
         },
         {
-          text: "“Where do the pieces go?”-এ বেছে নিন: “Production delivery” (প্রজেক্টের ড্রাফট ডেলিভারি হয়, সেখানে মিলিয়ে কনফার্ম করবেন), “Buy ready stock” (কেনার ফর্ম এই পিস দিয়ে ভরা খোলে) বা “Opening stock” (এখনই স্টকে যোগ হয়)। তারপর “Save these pieces” চাপুন।",
+          text: "“Where do the pieces go?”-এ বেছে নিন: “Production delivery” (প্রজেক্টের ড্রাফট ডেলিভারি হয়, সেখানে মিলিয়ে কনফার্ম করবেন), “Buy ready stock” (কেনার ফর্ম এই পিস দিয়ে ভরা খোলে) বা “Opening stock (from before the ERP)” (শুধু ইআরপি শুরুর আগের মাল, এখনই স্টকে যোগ হয়)। কিছুই আগে থেকে বাছা থাকে না, নিজে বাছুন। তারপর “Save these pieces” চাপুন।",
         },
       ],
       fields: [
@@ -1079,8 +1079,8 @@ export const productsHelp: HelpSection = {
           text: "Business > Retail > Shop stock-এর কেনার ফর্ম খোলে, এই স্টাইল আর পিস ভরা। সাপ্লায়ার, দাম আর টাকা সেখানে দিন; টাকার নিয়ম আগের মতোই।",
         },
         {
-          label: "Opening stock",
-          text: "এখনই স্টকে যোগ করে, Bulk update আর স্টক গণনা যে পথে করে। হিসাবে Opening stock হিসেবে যায়।",
+          label: "Opening stock (from before the ERP)",
+          text: "শুধু Extas ERP শুরুর আগে থেকেই গুদামে থাকা মালের জন্য। এখনই স্টকে যোগ করে, Bulk update আর স্টক গণনা যে পথে করে; হিসাবে মালের দাম শুরুর মূলধন (Opening Balance Equity)-এ যায়। কারখানা বা সাপ্লায়ারের নতুন মাল এখানে নয়।",
         },
         {
           label: "Warehouse",
@@ -1119,12 +1119,12 @@ export const productsHelp: HelpSection = {
           text: "অন্তত একটা স্টাইল সেভ হওয়ার পর জানালা বন্ধ করে।",
         },
       ],
-      next: "“Opening stock”-এ পিস সাথে সাথে স্টাইলের ছকে, ড্যাশবোর্ডে আর Accounts-এ দেখায়, ইতিহাসে “Opening stock” নামে আপনার নামসহ। “Production delivery”-তে ড্রাফট ডেলিভারির পাতা খোলে, কনফার্ম করলে স্টক ওঠে। “Buy ready stock”-এ ভরা ফর্ম খোলে, সেভ করলে বিল সাপ্লায়ারের হিসাবে যায়। “From”-এ নাম দিলে পরের বার সেই কারখানার কলাম আর রঙের বানান নিজেই বসে।",
+      next: "“Opening stock (from before the ERP)”-এ পিস সাথে সাথে স্টাইলের ছকে, ড্যাশবোর্ডে আর Accounts-এ দেখায়, ইতিহাসে “Opening stock” নামে আপনার নামসহ। “Production delivery”-তে ড্রাফট ডেলিভারির পাতা খোলে, কনফার্ম করলে স্টক ওঠে। “Buy ready stock”-এ ভরা ফর্ম খোলে, সেভ করলে বিল সাপ্লায়ারের হিসাবে যায়। “From”-এ নাম দিলে পরের বার সেই কারখানার কলাম আর রঙের বানান নিজেই বসে।",
       mistakes: [
         "হলুদ সংখ্যা না দেখেই সেভ করা: ছবি থেকে পড়া সংখ্যায় 7 আর 1, 0 আর 6 গুলিয়ে যায়। কাগজের সাথে মিলিয়ে নিন।",
         "লাল মোট দেখে না মিলিয়েই টিক দেওয়া: আগে দেখুন কোন সারিটা মেলেনি; বেশির ভাগ সময় একটা সংখ্যা ভুল পড়া হয়েছে।",
         "আন্দাজে বসানো রং না দেখা: GREE মানে Grey না Green, তা আপনিই জানেন। হলুদ রং মিলিয়ে নিন।",
-        "উৎপাদনের মাল “Opening stock” দিয়ে তোলা: তাতে প্রজেক্টের খরচ মাল পর্যন্ত যায় না। প্রজেক্টের মাল হলে “Production delivery” বাছুন।",
+        "নতুন মাল “Opening stock (from before the ERP)” দিয়ে তোলা: তাতে দাম শুরুর মূলধনে যায়, প্রজেক্ট বা সাপ্লায়ারের হিসাবে নয়। প্রজেক্টের মাল হলে “Production delivery”, কেনা মাল হলে “Buy ready stock” বাছুন।",
         "কার্টনের সংখ্যা পিস হিসেবে নেওয়া: “Columns”-এ “Pieces column” মোট পিসের কলামে আছে কি না দেখুন।",
       ],
       tips: [

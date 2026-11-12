@@ -6,13 +6,14 @@ import { ROUTES } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 
 import { CompanySwitcher } from "./company-switcher";
+import { SearchButton } from "./global-search";
 import { MainNav } from "./main-nav";
 import type { ShellCompany, ShellUser } from "./types";
 import { UserMenu } from "./user-menu";
 
 /**
- * The green top bar: the house mark, the sections, the company switcher, the
- * inbox bell with the unread count, and the person.
+ * The green top bar: the house mark, the sections, the search, the company
+ * switcher, the inbox bell with the unread count, and the person.
  */
 export function TopBar({
   user,
@@ -45,6 +46,7 @@ export function TopBar({
         </Link>
         <MainNav permissions={permissions} className="hidden md:flex" />
         <div className="ml-auto flex min-w-0 items-center gap-3">
+          <SearchButton variant="bar" />
           <CompanySwitcher companies={companies} activeCompany={activeCompany} />
           <InboxBell unread={unread} />
           <UserMenu

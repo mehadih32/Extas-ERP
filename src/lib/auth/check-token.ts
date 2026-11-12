@@ -313,6 +313,7 @@ export const CHECK_READ_ROUTES: readonly string[] = [
   "/api/sales/returns",
   "/api/sales/returns/[returnId]",
   "/api/sales/summary",
+  "/api/search",
   "/api/tasks",
   "/api/tasks/[taskId]",
   "/api/tech-packs/[techPackId]/logos/[logoId]/brief",

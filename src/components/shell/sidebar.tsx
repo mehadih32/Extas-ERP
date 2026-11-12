@@ -10,6 +10,7 @@ import { ROUTES } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 
 import { CompanySwitcher } from "./company-switcher";
+import { SearchButton } from "./global-search";
 import { isActivePath, visibleNavItems } from "./nav-items";
 import { SIDEBAR_COOKIE, type SidebarMode } from "./sidebar-state";
 import type { ShellCompany, ShellUser } from "./types";
@@ -64,7 +65,7 @@ const ACTIVE = "bg-primary-foreground/12 font-medium text-primary-foreground";
 /**
  * The modern look's side menu (tablets and computers; phones keep the bottom
  * tab bar): every section the person's role opens, the company switcher, the
- * inbox, the Help Center and their account. It narrows to icons and back, and
+ * search, the inbox, the Help Center and their account. It narrows to icons and back, and
  * the choice is remembered on this device.
  */
 export function Sidebar({
@@ -130,6 +131,10 @@ export function Sidebar({
           wide
           className="w-full max-w-none justify-start sm:max-w-none md:max-w-none lg:max-w-none [&>span]:flex-1 [&>span]:text-left"
         />
+      </div>
+
+      <div className="shrink-0 px-3 pb-3" title={wide ? undefined : "Search"}>
+        <SearchButton variant="sidebar" labelClassName={WIDE_ONLY[mode]} />
       </div>
 
       <nav aria-label="Main" data-layout-nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">

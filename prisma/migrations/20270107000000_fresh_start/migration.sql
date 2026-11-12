@@ -18,6 +18,7 @@ CREATE TABLE "FreshStart" (
     "startedById" TEXT,
     "startedByName" TEXT NOT NULL,
     "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "claimId" TEXT,
     "backupRunId" TEXT,
     "backupName" TEXT,
     "finishedAt" TIMESTAMP(3),

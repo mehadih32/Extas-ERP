@@ -106,7 +106,7 @@ export function FreshStartCard({ initial }: { initial: State }) {
         </h3>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
           Erase the practice data once, when you start real work. It can be used only once in the
-          life of this ERP.
+          life of this company.
         </p>
       </div>
       <div className="grid gap-4 px-5 py-5 text-sm sm:px-6">
@@ -177,17 +177,21 @@ export function FreshStartCard({ initial }: { initial: State }) {
                 Orders, quotations, proformas, invoices, money received and paid, journal entries,
                 stock and its movements, purchase orders, bills, bookings, tech packs, production
                 and CM, shop orders and returns, attendance, payroll, leave and advances, loans and
-                fixed costs, assets, reminders, the inbox, AI drafts, Bug Guard findings, the
-                activity log and uploaded files. Every balance starts at zero.
+                fixed costs, assets, reminders, notes and the planner, the inbox, AI drafts, Bug
+                Guard findings, the activity log and uploaded files. Every balance starts at zero.
+                Your online shops are told their stock is now zero, and erased products are taken
+                off them.
               </p>
             </div>
             <div className="grid gap-1">
               <p className="font-medium">What is kept</p>
               <p className="text-muted-foreground">
                 The company&apos;s details and logo, the team, roles and permissions, your PIN,
-                backups and Google Drive, the AI and the Telegram bot, shop connections and their
-                keys, the chart of accounts, bank accounts, warehouses, categories, colours, sizes
-                and every other setting.
+                backups and Google Drive, shop connections and their keys, the retail stores and
+                their buyers, the Walk-in customer, the chart of accounts, bank accounts, petty cash
+                boxes, expense heads, warehouses, categories, brands, colours, sizes, terms,
+                document templates, reminder rules, HR settings, holidays and leave types, the AI
+                Center and the Telegram bot, Bug Guard&apos;s settings and every other setting.
               </p>
             </div>
             <fieldset className="grid gap-3">
@@ -204,8 +208,9 @@ export function FreshStartCard({ initial }: { initial: State }) {
             </fieldset>
             <FormAlert tone="note">
               First a full backup is made and checked in Google Drive; it is kept for ever. If it
-              cannot be made, nothing is erased. Restoring a backup from before the fresh start
-              brings the old data back, and this button with it.
+              cannot be made, nothing is erased. Until it finishes nobody can change this
+              company&apos;s data. Restoring a backup from before the fresh start brings the old
+              data back, and this button with it.
             </FormAlert>
             <Field
               id="fresh-start-name"

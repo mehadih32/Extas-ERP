@@ -220,19 +220,23 @@ overwrites a stored total or figure.
   link by itself: the person copies and shares it.
 - 2026-11-12 (Fresh start, once for life): the one exception to "the ERP reverses, it never deletes history".
   Settings > Company has a "Fresh start" card that only the platform owner (Super Admin) sees; it erases this
-  company's business data once in the ERP's life, after the owner types the company name exactly and gives the PIN.
+  company's business data once in the company's life, after the owner types the company name exactly and gives the PIN.
   Three ticks, all off at first: "Keep buyers and suppliers", "Keep products and styles", "Keep employees". Kept
   always: the Company record, users, roles, permissions, PIN, sessions, backup settings and Drive, recovery key,
   bot, AI settings and keys, shop connections and keys, the chart of accounts, bank accounts, warehouses and every
   other setting, the Walk-in customers account and each retail store's own buyer. Erased (this company only):
   every order, document, money and stock record, journal, production, tech pack, retail order, HR record, loan,
-  fixed cost, asset, reminder, inbox item, AI draft and log, Bug Guard finding, activity log and file nothing kept
-  uses; kept rows' running figures (opening balances, average costs, material stock, leave used) go back to zero,
-  so every balance is zero. First a complete backup through the normal backup system must be checked in Google
-  Drive, or nothing is erased; it is labelled "Before fresh start" and kept for ever (never counted in the server's
+  fixed cost, asset, reminder, note and planner item, inbox item, AI draft and log, Bug Guard finding, activity log
+  and file nothing kept uses; kept rows' running figures (opening balances, average costs, material stock, leave used) go back to zero,
+  so every balance is zero. First a complete backup through the normal backup system (nothing missing: the code
+  and the locked settings too) must be checked in Google Drive, or nothing is erased; it is labelled "Before fresh start" and kept for ever (never counted in the server's
   newest N or Drive's newest 3; the frozen restore files are unchanged). The wipe, the DONE mark and one "Fresh
   start" activity-log row are one transaction. A one-time row per company (`FreshStart`) is claimed first, so a
-  second click is refused; once DONE the card says when and by whom and the button is gone. The AI (never a Super
+  second click is refused; only the job holding its claim moves it, never off DONE, and a row no running job holds
+  (a stopped server, a restored backup) is settled as FAILED. From the claim until DONE or FAILED nobody can write
+  to that company's data (`src/lib/fresh-start-guard.ts`), and the wipe locks its tables. Connected online shops
+  are sent stock 0 and, when products are erased, their SKUs as inactive, through the usual webhooks. Once DONE
+  the card says when and by whom and the button is gone. The AI (never a Super
   Admin in its context) and the bot (no command reaches it) can never start it. Every table is classified in
   `src/modules/fresh-start/plan.ts` (a test fails for a new table not in the list). Restoring a backup from before
   the fresh start brings the old data, and the button, back.

@@ -1,13 +1,17 @@
 import { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
+import { rawWriteTables } from "@/lib/read-only";
 import {
   erases,
+  FILE_MENTIONS,
   FRESH_START_RESETS,
   FRESH_START_RULES,
   freshStartSteps,
   type FreshStartTicks,
+  touchedTables,
 } from "@/modules/fresh-start/plan";
+import { fileSql, lockSql } from "@/modules/fresh-start/wipe";
 
 const ALL_TICKS: FreshStartTicks[] = [false, true].flatMap((keepParties) =>
   [false, true].flatMap((keepProducts) =>
@@ -105,5 +109,41 @@ describe("Fresh start plan", () => {
   it("only resets figures of models that exist", () => {
     for (const model of Object.keys(FRESH_START_RESETS))
       expect(FRESH_START_RULES[model]).toBeDefined();
+  });
+
+  it("erases notes and the planner (2026-11-12 review)", () => {
+    for (const ticks of ALL_TICKS) expect(erases("Note", ticks)).toBe(true);
+  });
+
+  it("looks for kept files only in real file columns, each of which exists", () => {
+    const models = new Map(Prisma.dmmf.datamodel.models.map((m) => [m.name, m]));
+    for (const c of FILE_MENTIONS) {
+      const field = models.get(c.model)?.fields.find((f) => f.name === c.column);
+      expect(field, `${c.model}.${c.column}`).toBeDefined();
+      expect(field!.type).toBe(c.json ? "Json" : "String");
+    }
+    // Erased tables are never searched; kept ones are, by their column only.
+    const none = { keepParties: false, keepProducts: false, keepEmployees: false };
+    const sql = fileSql(none);
+    expect(sql).not.toContain('"Style"');
+    expect(sql).toContain('"Company" t');
+    expect(fileSql({ ...none, keepProducts: true })).toContain('t."imageUrl"');
+  });
+
+  it("locks every table it writes to before it writes", () => {
+    for (const ticks of ALL_TICKS) {
+      const tables = touchedTables(ticks);
+      for (const step of freshStartSteps(ticks)) expect(tables).toContain(step.model);
+      expect(tables).toContain("FileAsset");
+      expect(lockSql(ticks)).toMatch(/^LOCK TABLE .* IN EXCLUSIVE MODE$/);
+      expect(rawWriteTables(lockSql(ticks))[0]).toBe(tables[0]);
+    }
+  });
+
+  it("names the tables a raw write touches, for the fresh start guard", () => {
+    expect(rawWriteTables('UPDATE "Party" SET "name" = $1 WHERE "id" = $2')).toEqual(["Party"]);
+    expect(rawWriteTables('INSERT INTO "AuditLog" ("id") VALUES ($1)')).toEqual(["AuditLog"]);
+    expect(rawWriteTables('DELETE FROM "Note" WHERE "companyId" = $1')).toEqual(["Note"]);
+    expect(rawWriteTables('SELECT 1 FROM "Party"')).toEqual([]);
   });
 });

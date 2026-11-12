@@ -769,7 +769,28 @@ run("v6.4 backups", { timeout: 120_000 }, () => {
       await connectDrive();
       await setKey();
       await backups.updateBackupConfig(owner, { serverKeep: 3 });
-      const { driveBackup } = await import("@/modules/fresh-start/fresh-start.service");
+      const fresh = await import("@/modules/fresh-start/fresh-start.service");
+      const { backupReadiness, driveBackup } = fresh;
+
+      // Without the code and the locked settings the backup is not complete: refused.
+      expect(await backupReadiness()).toMatch(/has not yet saved the code/);
+      const failed = await fresh.startFreshStart(
+        ctx,
+        { companyName: "Extas", pin: PIN },
+        undefined,
+        { readiness: async () => null, wait: true },
+      );
+      expect(failed).toMatchObject({ status: "FAILED" });
+      expect(failed!.error).toMatch(/the backup is not complete: The code at the running version/);
+      // Nothing was erased: the backup is an ordinary one again, in Drive too.
+      const ordinary = await prisma.backupRun.findFirstOrThrow({ orderBy: { startedAt: "desc" } });
+      expect(ordinary).toMatchObject({ keepForever: false, label: null });
+      expect(ordinary.driveFileId).not.toBeNull();
+      expect(google.files.get(ordinary.driveFileId!)!.appProperties).not.toHaveProperty("keep");
+      expect(google.files.get(ordinary.driveFileId!)!.appProperties).not.toHaveProperty("note");
+
+      await prepareHost(backupLock(await backups.getBackupConfig())!.key as PublicKey);
+      expect(await backupReadiness()).toBeNull();
       const before = await driveBackup(owner);
       expect(before).toMatchObject({ ok: true });
       const kept = await prisma.backupRun.findUniqueOrThrow({

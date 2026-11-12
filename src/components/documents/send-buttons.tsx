@@ -125,9 +125,11 @@ function EmailDialog({
   const [setup, setSetup] = useState<{ emailReady: boolean; canSetUpEmail: boolean }>();
   const [sent, setSent] = useState<string[]>();
   useEffect(() => {
-    void documentSendSetupAction().then((result) => {
-      if (result.ok) setSetup(result.data);
-    });
+    void documentSendSetupAction()
+      .then((result) => {
+        if (result.ok) setSetup(result.data);
+      })
+      .catch(() => setSetup({ emailReady: false, canSetUpEmail: false }));
   }, []);
 
   if (sent) {

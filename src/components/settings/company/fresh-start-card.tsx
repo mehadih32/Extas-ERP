@@ -220,7 +220,10 @@ export function FreshStartCard({ initial }: { initial: State }) {
             >
               <Input id="fresh-start-name" name="companyName" autoComplete="off" />
             </Field>
-            <PinField id="fresh-start-pin" error={error?.fieldErrors?.pin?.[0]} />
+            <PinField
+              id="fresh-start-pin"
+              error={error?.fieldErrors?.pin?.[0] ?? error?.fieldErrors?.["pinNotSet"]?.[0]}
+            />
             {error && error.code !== "INTERNAL" && !error.fieldErrors && (
               <FormAlert>{error.message}</FormAlert>
             )}

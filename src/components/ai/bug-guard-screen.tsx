@@ -789,7 +789,7 @@ function SchedulePanel({ g, setMessage }: { g: Screen; setMessage: (m: Message) 
         {askPin && (
           <PinField
             id="guard-pin"
-            error={errors.pin?.[0] ?? errors.pinNotSet?.[0]}
+            error={errors.pin?.[0] ?? errors["pinNotSet"]?.[0]}
             hint="Your PIN, to let Bug Guard prepare fixes by itself."
           />
         )}

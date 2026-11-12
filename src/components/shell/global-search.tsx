@@ -296,7 +296,14 @@ export function SearchButton({
           className="flex h-10 w-full cursor-pointer items-center gap-3 rounded-md bg-primary-foreground/8 px-3 text-sm text-primary-foreground/80 transition-colors outline-none hover:bg-primary-foreground/12 hover:text-primary-foreground focus-visible:ring-[3px] focus-visible:ring-primary-foreground/30"
         >
           <SearchIcon className="size-[1.125rem] shrink-0" aria-hidden />
-          <span className={cn("flex-1 truncate pr-12 text-left", labelClassName)}>Search</span>
+          <span
+            className={cn(
+              "flex-1 overflow-hidden pr-12 text-left whitespace-nowrap",
+              labelClassName,
+            )}
+          >
+            Search
+          </span>
         </button>
         <Shortcut className={labelClassName} />
       </span>

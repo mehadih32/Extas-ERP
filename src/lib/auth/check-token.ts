@@ -19,6 +19,14 @@ export const isCheckToken = (token: string | undefined) =>
  */
 export const CHECK_NEVER_ROUTES: ReadonlyArray<{ route: string; why: string }> = [
   {
+    route: "/api/public/documents/[token]",
+    why: "A buyer's document link: it answers only its own token, never a session, and notes when it was opened.",
+  },
+  {
+    route: "/api/company/fresh-start",
+    why: "The one-time Fresh start card: reading it settles a run no job holds, so it writes.",
+  },
+  {
     route: "/api/v1/ecommerce/health",
     why: "The online shops' API: it answers only a shop's own API key, never a session.",
   },
@@ -283,6 +291,8 @@ export const CHECK_READ_ROUTES: readonly string[] = [
   "/api/production/projects/[projectId]/tech-pack/measurements",
   "/api/production/suppliers/[supplierId]/report-card",
   "/api/reminders",
+  "/api/follow-ups",
+  "/api/document-sends",
   "/api/reminders/[reminderId]",
   "/api/reminders/rules",
   "/api/reminders/upcoming",

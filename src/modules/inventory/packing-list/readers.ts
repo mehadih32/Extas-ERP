@@ -526,6 +526,9 @@ async function readImagesNow(images: Uint8Array[]): Promise<PhotoRead> {
     langPath: ocrLanguagePath(),
     gzip: true,
     cacheMethod: "none",
+    // A photo it cannot read rejects that one job; without a handler the worker
+    // would also throw where nothing catches it and stop the whole server.
+    errorHandler: () => {},
   });
   try {
     // One column of lines of different sizes: reads the factories' tables best.

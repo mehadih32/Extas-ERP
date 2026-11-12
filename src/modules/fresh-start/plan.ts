@@ -60,6 +60,8 @@ export const FRESH_START_RULES: Readonly<Record<string, FreshStartRule>> = {
   Warehouse: "KEEP",
   // How each factory's packing lists are laid out (a setting, 2026-11-12).
   PackingListSource: "KEEP",
+  // Which approvals the bot may show with buttons (a setting, release 5).
+  BotApprovalSetting: "KEEP",
   SalesChannelIntegration: "KEEP",
   CourierAccount: "KEEP",
   LedgerAccount: "KEEP",

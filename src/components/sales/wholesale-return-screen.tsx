@@ -216,7 +216,7 @@ export function WholesaleReturnScreen({ r }: { r: Screen }) {
               </Field>
               <PinField
                 id="approve-pin"
-                error={fieldError("pin")}
+                error={fieldError("pin") ?? fieldError("pinNotSet")}
                 hint={`Needed when the refund is over ${money(r.pinAbove, cur)}.`}
               />
             </>

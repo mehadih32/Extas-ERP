@@ -298,8 +298,11 @@ run("Sales screens", () => {
               "/sales/invoices",
               "/sales/payments",
               "/sales/returns",
+              "/sales/wholesale-returns",
             ]
-          : [],
+          : ["sales.returns.approve", "sales.returns.qc"].some((k) => ctx.can(k))
+            ? ["/sales/wholesale-returns"]
+            : [],
       );
 
       // Each screen's data comes exactly to the people its page is shown to.

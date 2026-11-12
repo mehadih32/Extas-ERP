@@ -194,7 +194,7 @@ export function WholesaleReturnList({ page }: { page: Page }) {
                   defaultValue={page.pinAbove}
                 />
               </Field>
-              <PinField id="wr-settings-pin" error={fieldError("pin")} />
+              <PinField id="wr-settings-pin" error={fieldError("pin") ?? fieldError("pinNotSet")} />
             </>
           )}
         </FormDialog>

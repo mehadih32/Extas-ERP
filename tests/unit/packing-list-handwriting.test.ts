@@ -294,3 +294,17 @@ describe("running the handwriting reader", () => {
     expect(paddle.creates).toBe(0);
   });
 });
+
+describe("a merged row whose digits cannot add up to the written total", () => {
+  it("still splits into the sizes, closest to the total, every cell unsure", () => {
+    // The paper: NAVY 16 38 28 13 7 = 102; the reader saw the 7 as a 2.
+    const row = handwrittenRow("NAW-163828132=102", 5)!;
+    expect(row.cells.map((c) => c.pieces)).toEqual([16, 38, 28, 13, 2]);
+    expect(row.cells.every((c) => c.unsure)).toBe(true);
+    expect(row.checked).toBe(false);
+  });
+  it("leaves the run whole when the size count is not known", () => {
+    const row = handwrittenRow("NAW-163828132=102", null)!;
+    expect(row.cells).toHaveLength(1);
+  });
+});

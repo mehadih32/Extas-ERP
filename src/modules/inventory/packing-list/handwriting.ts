@@ -158,6 +158,64 @@ const MAX_SIZES = 12;
  * Reads one handwritten row. `sizeCount` is the number of sizes on the paper's
  * size line (null when it was not read). Null for a line without digits.
  */
+/**
+ * When no split adds up to the written total (one digit was misread), the split
+ * into exactly `parts` sizes whose sum comes closest to it: a start the person
+ * corrects, every cell marked unsure. Null when the digits cannot make that many sizes.
+ */
+export function nearestSplit(
+  runs: readonly string[],
+  total: number,
+  parts: number,
+): number[] | null {
+  if (runs.length === 0 || runs.length > parts || parts > MAX_SIZES) return null;
+  if (runs.some((r) => !/^\d+$/.test(r))) return null;
+  const length = runs.join("").length;
+  if (length < parts || length > 3 * parts) return null;
+  let best: number[] | null = null;
+  let bestCost: [number, number, number] = [Infinity, Infinity, Infinity];
+  let budget = 200_000;
+  const cells: number[] = [];
+  const walk = (run: number, at: number, sum: number, threes: number, ones: number) => {
+    if (--budget < 0 || cells.length > parts) return;
+    const digits = runs[run];
+    if (digits === undefined) {
+      if (cells.length !== parts) return;
+      const cost: [number, number, number] = [Math.abs(sum - total), threes, ones];
+      const better =
+        cost[0] < bestCost[0] ||
+        (cost[0] === bestCost[0] &&
+          (cost[1] < bestCost[1] || (cost[1] === bestCost[1] && cost[2] < bestCost[2])));
+      if (better) {
+        best = [...cells];
+        bestCost = cost;
+      }
+      return;
+    }
+    if (at === digits.length) {
+      walk(run + 1, 0, sum, threes, ones);
+      return;
+    }
+    const lengths = digits.length <= 2 ? [digits.length] : [1, 2, 3];
+    for (const size of lengths) {
+      if (at + size > digits.length) break;
+      const piece = digits.slice(at, at + size);
+      if (piece.length > 1 && piece.startsWith("0")) continue;
+      cells.push(Number(piece));
+      walk(
+        run,
+        at + size,
+        sum + Number(piece),
+        threes + (size === 3 ? 1 : 0),
+        ones + (size === 1 ? 1 : 0),
+      );
+      cells.pop();
+    }
+  };
+  walk(0, 0, 0, 0, 0);
+  return budget < 0 ? null : best;
+}
+
 export function handwrittenRow(text: string, sizeCount: number | null): HandRow | null {
   const line = cleanHandText(text);
   if (!/\d/.test(line)) return null;
@@ -208,6 +266,9 @@ export function handwrittenRow(text: string, sizeCount: number | null): HandRow 
       if (split) {
         cells = split.cells.map((pieces) => ({ pieces, unsure: lost || split.ambiguous }));
         checked = !lost && !split.ambiguous;
+      } else if (sizeCount !== null && runs.some(isMerged)) {
+        const near = nearestSplit(runs, total, sizeCount);
+        if (near) cells = near.map((pieces) => ({ pieces, unsure: true }));
       }
     }
   }

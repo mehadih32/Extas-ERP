@@ -625,6 +625,27 @@ function handwritingReader(): Promise<HandReader> {
   return loading;
 }
 
+/** The longest side the handwriting reader gets: enough for a page, and memory stays small. */
+const HAND_MAX_SIDE = 2000;
+
+/**
+ * The photo as the handwriting reader should get it: turned the way the phone
+ * says it was held, and no bigger than HAND_MAX_SIDE (a 12-20 Mpx photo would
+ * take gigabytes in the reader). Unchanged when it cannot be decoded here.
+ */
+async function handwritingPhoto(image: Uint8Array): Promise<Uint8Array> {
+  try {
+    const { default: sharp } = await import("sharp");
+    return await sharp(image)
+      .rotate()
+      .resize(HAND_MAX_SIDE, HAND_MAX_SIDE, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+  } catch {
+    return image;
+  }
+}
+
 /** Tests only: forgets the loaded handwriting reader. */
 export function forgetHandwritingReader() {
   handReader = null;
@@ -640,7 +661,7 @@ export async function readHandwriting(image: Uint8Array): Promise<HandRead | nul
   const file = path.join(os.tmpdir(), `extras-packing-list-${randomUUID()}`);
   try {
     const reader = await handwritingReader();
-    await writeFile(file, image, { mode: 0o600 });
+    await writeFile(file, await handwritingPhoto(image), { mode: 0o600 });
     return handwritingText(handLines(await reader.detect(file)));
   } catch (err) {
     console.warn(

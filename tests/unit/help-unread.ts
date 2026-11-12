@@ -19,6 +19,8 @@ export const UNREAD_LABELS: Readonly<Record<string, string>> = {
     "The quick buttons beside “Magic Ratio” show the names of the size-ratio presets saved in the product setup (data). The order guide explains Magic Ratio.",
   "src/app/(app)/sales/orders/new/page.tsx: <OrderForm form={result.data}>":
     "The quick buttons beside “Magic Ratio” show the names of the size-ratio presets saved in the product setup (data). The order guide explains Magic Ratio.",
+  "src/components/products/packing-list-dialog.tsx: {s.code}":
+    "The “Closest styles:” buttons show the codes of the company's own styles (data) that look most like the paper's title; pressing one picks that style. The packing list guide explains them.",
   "src/components/sales/order-style-card.tsx: <ColorName name={row.color.name} hexCode={row.color.hexCode} />":
     "The colour chips show the colours of the style (data); pressing one shows or hides that colour's row.",
   "src/components/sales/pickers.tsx: {renderOption(option)}":
